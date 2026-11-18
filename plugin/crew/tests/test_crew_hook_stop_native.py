@@ -1,0 +1,810 @@
+"""The Stop completion audit runs natively on Windows (crew 1.3.99).
+
+`completion-audit.sh` is a wrapper for `completion_audit.py`: python resolution, a printf|tr|grep pipeline, the
+blocked-once marker (printf|tr|sed, cksum|cut, rm) and then python. On Git Bash that is 15-20 forks, 40-50 s on a
+loaded Windows host for a verdict python reaches in 0.2-0.6 s, and the row's 60 s limit then reads as UNKNOWN.
+`crew_hook.DIRECT` now gives the row its own python route, as it already gave the PreToolUse guards.
+
+What these tests hold:
+
+  * the route: a Windows Stop dispatch runs `completion_audit.py` and starts no `completion-audit.sh`;
+  * UNKNOWN stays UNKNOWN: a timeout is exit 2 labelled `UNKNOWN (guard timeout` in an armed repo, a crash or a
+    failed launch is handed to the wrapper (never believed as a pass), and no fault is ever exit 0 when armed;
+  * the wrapper's marker bookkeeping is reproduced: the same file name (a real `cksum` and the wrapper itself are
+    the oracle), cleared on `stop_hook_active` and on a verdict, left alone on a timeout;
+  * must-block and must-allow verdicts through the native route, and the same verdict from the wrapper;
+  * speed: the native row is far below the wrapper's wall time on a trivially small input, and a hung child
+    still settles as UNKNOWN well inside the limit.
+"""
+import json
+import os
+import shutil
+import subprocess
+import sys
+import textwrap
+import time
+
+import pytest
+
+import context  # noqa: F401  pylint: disable=unused-import
+import crew_fixtures
+import crew_hook
+import crew_hook_harness as h
+import record_golden_hooks as rgh
+
+SCRIPTS = h.SCRIPTS
+FAKE_BASH = "C:/fake/bash.exe"
+AUDIT = "completion-audit.sh"
+
+
+def _stop(root, session="s-1", active=False):
+    return json.dumps({"hook_event_name": "Stop", "session_id": session, "cwd": str(root),
+                       "stop_hook_active": active}).encode()
+
+
+def _result(code=0, out=b"", err=b"", timed_out=False, error=""):
+    return {"exit": None if timed_out or error else code, "stdout": out, "stderr": err, "timed_out": timed_out,
+            "error": error, "pid": 1}
+
+
+class Spy:
+    """crew_hook.run_child replaced: records every start, answers through `decide(argv)`."""
+
+    def __init__(self, monkeypatch, decide=None):
+        self.calls = []
+        self.decide = decide or (lambda argv: _result())
+        monkeypatch.setattr(crew_hook, "run_child", self)
+
+    def __call__(self, argv, raw, timeout, env, cwd=None):
+        self.calls.append({"argv": list(argv), "raw": raw, "env": env, "cwd": cwd})
+        return self.decide(list(argv))
+
+    def wrappers(self):
+        return [c for c in self.calls if str(c["argv"][1]).endswith(".sh")]
+
+    def direct(self):
+        return [c for c in self.calls if not str(c["argv"][1]).endswith(".sh")]
+
+
+@pytest.fixture(name="audit_only")
+def _audit_only(monkeypatch):
+    """The Stop table cut to the audit row, so a dispatch measures and judges that row alone."""
+    row = crew_hook._row("Stop", "", AUDIT, 60, guard=True)  # pylint: disable=protected-access
+    monkeypatch.setattr(crew_hook, "TABLE", (row,))
+    return row
+
+
+def _dispatch(project, payload, tmp, armed=True, windows=True, direct=None, scripts=SCRIPTS, env_extra=None,
+              deadline_s=30, bash=FAKE_BASH, real_env=False):
+    """`crew_hook.dispatch` for the Stop event. A stubbed run (a Spy) needs no real environment; a real child
+    gets the constructed one the golden suites use (`real_env`)."""
+    if real_env:
+        env = rgh.env_for(str(project), str(tmp))
+        env["TMPDIR"] = str(tmp)
+    else:
+        env = {"CLAUDE_PROJECT_DIR": str(project), "TMPDIR": str(tmp)}
+    env.update(env_extra or {})
+    code, out, err = crew_hook.dispatch("Stop", "claude", payload, crew_hook.now_ms() + deadline_s * 1000, env,
+                                        str(project), windows=windows, resolve_bash=lambda strict=True: (bash, ""),
+                                        resolve_pwsh=lambda: (None, ""), scripts=scripts,
+                                        armed_fn=lambda _root: armed, direct=direct)
+    return code, out.decode("utf-8", "replace"), err.decode("utf-8", "replace")
+
+
+def _marker(project, tmp, payload):
+    return crew_hook._audit_marker(payload, {"CLAUDE_PROJECT_DIR": str(project), "TMPDIR": str(tmp)})  # pylint: disable=protected-access
+
+
+# --- the route ----------------------------------------------------------------------------------
+
+def test_a_windows_stop_runs_the_audit_in_python_and_starts_no_wrapper(audit_only, monkeypatch, tmp_path):
+    spy = Spy(monkeypatch)
+    payload = _stop(tmp_path)
+
+    code, _, _ = _dispatch(tmp_path, payload, tmp_path)
+
+    assert code == 0 and spy.wrappers() == []
+    assert [os.path.basename(c["argv"][1]) for c in spy.direct()] == ["completion_audit.py"]
+    call = spy.direct()[0]
+    assert call["argv"][0] == sys.executable and call["raw"] == payload
+    assert call["env"]["PYTHONUTF8"] == "1" and call["env"]["PYTHONIOENCODING"] == "utf-8"
+    assert audit_only.timeout == 60  # the row's limit is not what changed
+
+
+def test_off_windows_the_audit_still_runs_through_its_wrapper(audit_only, monkeypatch, tmp_path):
+    spy = Spy(monkeypatch)
+
+    _dispatch(tmp_path, _stop(tmp_path), tmp_path, windows=False)
+
+    assert [os.path.basename(c["argv"][1]) for c in spy.wrappers()] == [AUDIT] and spy.direct() == []
+
+
+def test_the_audit_direct_route_takes_exactly_the_exits_its_wrapper_passes_through():
+    spec = crew_hook.DIRECT[AUDIT]
+    assert spec.module == "completion_audit.py" and spec.accept == (0, 2) and spec.args == ()
+    assert spec.env["PYTHONUTF8"] == "1" and spec.env["PYTHONIOENCODING"] == "utf-8"
+    text = h.read_text(os.path.join(SCRIPTS, AUDIT))
+    assert 'status" -ne 0 ] && [ "$status" -ne 2 ]' in text  # the wrapper's own pass-through set
+
+
+# --- UNKNOWN stays UNKNOWN ----------------------------------------------------------------------
+
+@pytest.mark.parametrize("code", [1, 3, 127, 137])
+def test_a_python_exit_the_wrapper_would_not_pass_through_is_judged_by_the_wrapper(
+        code, audit_only, monkeypatch, tmp_path):
+    def decide(argv):
+        if argv[0] == FAKE_BASH:
+            return _result(2, err=b"COMPLETION AUDIT: wrapper verdict\n")
+        return _result(code, err=b"STALE-DIRECT-OUTPUT\n")
+
+    spy = Spy(monkeypatch, decide)
+
+    got, _, err = _dispatch(tmp_path, _stop(tmp_path), tmp_path)
+
+    assert got == 2 and "wrapper verdict" in err and "STALE-DIRECT-OUTPUT" not in err
+    assert [os.path.basename(c["argv"][1]) for c in spy.wrappers()] == [AUDIT]
+
+
+def test_a_python_that_failed_to_launch_is_judged_by_the_wrapper(audit_only, monkeypatch, tmp_path):
+    def decide(argv):
+        if argv[0] == FAKE_BASH:
+            return _result(2, err=b"COMPLETION AUDIT: wrapper verdict\n")
+        return _result(error="could not start python: [WinError 5]")
+
+    spy = Spy(monkeypatch, decide)
+
+    got, _, err = _dispatch(tmp_path, _stop(tmp_path), tmp_path)
+
+    assert got == 2 and "wrapper verdict" in err and len(spy.wrappers()) == 1
+
+
+def test_a_python_that_cannot_be_judged_by_the_wrapper_either_is_unknown_not_a_pass(
+        audit_only, monkeypatch, tmp_path):
+    """The wrapper ran and also exited without a decision: that is a fault, never an allow."""
+    spy = Spy(monkeypatch, lambda argv: _result(1))
+
+    got, _, err = _dispatch(tmp_path, _stop(tmp_path), tmp_path)
+
+    assert got == 2 and "exited 1 without a decision" in err and "failing closed" in err
+    assert len(spy.wrappers()) == 1
+
+
+def test_exit_2_from_the_audit_is_a_decision_and_the_wrapper_is_not_run(audit_only, monkeypatch, tmp_path):
+    spy = Spy(monkeypatch, lambda argv: _result(2, err=b"COMPLETION AUDIT: not approved\n"))
+
+    got, _, err = _dispatch(tmp_path, _stop(tmp_path), tmp_path)
+
+    assert got == 2 and "not approved" in err and spy.wrappers() == []
+
+
+def test_an_audit_that_times_out_is_unknown_when_armed_and_is_not_rerun(audit_only, monkeypatch, tmp_path):
+    spy = Spy(monkeypatch, lambda argv: _result(timed_out=True))
+
+    got, _, err = _dispatch(tmp_path, _stop(tmp_path), tmp_path)
+
+    assert got == 2 and "UNKNOWN (guard timeout" in err and "completion-audit.sh timed out" in err
+    assert "failing closed (armed repo)" in err
+    assert spy.wrappers() == [] and len(spy.direct()) == 1  # not retried, not handed to the wrapper
+
+
+def test_an_unarmed_repo_is_told_but_not_blocked_on_a_timeout(audit_only, monkeypatch, tmp_path):
+    Spy(monkeypatch, lambda argv: _result(timed_out=True))
+
+    got, _, err = _dispatch(tmp_path, _stop(tmp_path), tmp_path, armed=False)
+
+    assert got == 0 and "UNKNOWN (guard timeout" in err and "not a block" in err
+
+
+# --- the wrapper's marker bookkeeping, reproduced ---------------------------------------------------
+
+CKSUM_SAMPLES = ((b"", 4294967295), (b"a", 1220704766), (rb"C:\repos\x y", 1222081875),
+                 (b"/tmp/\xc3\xa9" * 40, 1962763380), (b"abc" * 300, None))
+
+
+@pytest.mark.parametrize("data,expected", CKSUM_SAMPLES)
+def test_the_python_cksum_is_posix_cksum(data, expected):
+    got = crew_hook._posix_cksum(data)  # pylint: disable=protected-access
+    if expected is not None:
+        assert got == expected  # recorded from the system `cksum`
+    cksum = shutil.which("cksum")
+    if cksum:
+        said = subprocess.run([cksum], input=data, capture_output=True, check=True, timeout=60).stdout.split()[0]
+        assert got == int(said)
+
+
+def test_the_marker_is_named_by_the_last_session_id_and_the_project(tmp_path):
+    env = {"CLAUDE_PROJECT_DIR": "/proj/a", "TMPDIR": str(tmp_path)}
+    one = json.dumps({"session_id": "first", "x": {"session_id": "s.2_ok-3"}}).encode()
+    name = os.path.basename(crew_hook._audit_marker(one, env))  # pylint: disable=protected-access
+    assert name == f"crew-completion-audit.s.2_ok-3-{crew_hook._posix_cksum(b'/proj/a')}"  # pylint: disable=protected-access
+    bare = os.path.basename(crew_hook._audit_marker(b"{}", env))  # pylint: disable=protected-access
+    assert bare.startswith("crew-completion-audit.nosession-")
+    spaced = b'{"session_id"\r\n :\n "line\\nbreak"}'  # not a legal id: the wrapper's sed does not match it
+    assert os.path.basename(crew_hook._audit_marker(spaced, env)).startswith("crew-completion-audit.nosession-")  # pylint: disable=protected-access
+
+
+def _path_without_python(tmp_path):
+    """A PATH that holds every tool the wrapper needs and no python, whatever the runner's layout. Git for Windows
+    keeps python out of its own bin and usr/bin; a Linux runner's /usr/bin holds python3, so there the tools are
+    linked one by one into a directory of their own, minus every name that could be an interpreter."""
+    bin_dir = os.path.dirname(h.BASH)
+    if sys.platform == "win32":
+        return os.pathsep.join([bin_dir, os.path.join(os.path.dirname(bin_dir), "usr", "bin")])
+    tools = tmp_path / "tools-without-python"
+    tools.mkdir()
+    for name in os.listdir(bin_dir):
+        if not name.lower().startswith(("python", "py", "pypy")):
+            os.symlink(os.path.join(bin_dir, name), str(tools / name))
+    return str(tools)
+
+
+@pytest.mark.skipif(h.BASH is None, reason="no bash: the wrapper's marker name was NOT compared")
+@crew_fixtures.SLOW
+@pytest.mark.parametrize("name", ["proj", "prôj-é 日本"], ids=["ascii", "non-ascii"])
+def test_the_marker_name_is_the_one_the_wrapper_writes(tmp_path, name):
+    """The wrapper itself is the oracle: with no python on PATH and a config present it blocks once and leaves
+    its marker, and the python route must name the same file. The non-ASCII project holds the hash to the bytes
+    bash has for the path (UTF-8), not to python's own idea of them."""
+    project = tmp_path / name
+    (project / ".crew").mkdir(parents=True)
+    (project / ".crew" / "config.json").write_text("{}", encoding="utf-8")
+    tmp = tmp_path / "tmp"
+    tmp.mkdir()
+    payload = _stop(project, session="sess-9")
+    env = {"PATH": _path_without_python(tmp_path),
+           "CLAUDE_PROJECT_DIR": str(project), "TMPDIR": str(tmp), "HOME": str(tmp_path)}
+    done = subprocess.run([h.BASH, os.path.join(SCRIPTS, AUDIT).replace("\\", "/")], input=payload, env=env,
+                          capture_output=True, cwd=str(project), timeout=900, check=False)
+
+    written = sorted(os.listdir(str(tmp)))
+    assert done.returncode == 2, done.stderr
+    assert written == [os.path.basename(_marker(project, tmp, payload))], written
+
+
+@pytest.mark.parametrize("env", [{}, {"CLAUDE_PROJECT_DIR": ""}], ids=["unset", "empty"])
+def test_direct_plan_defers_the_audit_to_the_wrapper_when_the_project_dir_is_unknown(env, tmp_path):
+    """The wrapper hashes `${CLAUDE_PROJECT_DIR:-$PWD}` (a POSIX path); python's os.getcwd() is another string,
+    so a marker named from it could split the blocked-once count between the two routes."""
+    # a usable TMPDIR, so the project directory is the ONLY unknown (without it the temp-directory rule
+    # deferred as well, and the project check could be deleted unseen)
+    got = crew_hook.direct_plan([AUDIT], {}, _stop("/x"), dict(env, TMPDIR=str(tmp_path)), SCRIPTS)
+    assert got is None
+    assert crew_hook.direct_plan([AUDIT], {}, _stop("/x"),
+                                  {"CLAUDE_PROJECT_DIR": "/x", "TMPDIR": str(tmp_path)}, SCRIPTS) is not None
+
+
+def test_direct_plan_defers_the_audit_when_tmpdir_is_not_a_directory(tmp_path):
+    """The wrapper fails open on a TMPDIR it cannot write a marker into; python's fallback to the system temp
+    directory would block instead, so the wrapper keeps that case."""
+    env = {"CLAUDE_PROJECT_DIR": str(tmp_path), "TMPDIR": str(tmp_path / "missing")}
+    assert crew_hook.direct_plan([AUDIT], {}, _stop(tmp_path), env, SCRIPTS) is None
+    env["TMPDIR"] = str(tmp_path)
+    assert crew_hook.direct_plan([AUDIT], {}, _stop(tmp_path), env, SCRIPTS) is not None
+
+
+def _no_tmpdir(project, env_tmp, posix_tmp=None):
+    """An environment as a non-login Git Bash leaves it: TMPDIR unset (None) or empty, and the launcher's
+    CREW_HOOK_POSIX_TMP when it gave one."""
+    env = {"CLAUDE_PROJECT_DIR": str(project)}
+    if env_tmp is not None:
+        env["TMPDIR"] = env_tmp
+    if posix_tmp is not None:
+        env[crew_hook.POSIX_TMP] = str(posix_tmp)
+    return env
+
+
+@pytest.mark.parametrize("env_tmp", [None, ""], ids=["unset", "empty"])
+def test_direct_plan_defers_the_audit_when_tmpdir_is_unset_and_no_launcher_named_tmp(tmp_path, env_tmp):
+    """The wrapper names its marker under `${TMPDIR:-/tmp}`; python can only guess `/tmp` as
+    tempfile.gettempdir(), which is another directory wherever Git Bash maps /tmp elsewhere. A clear in one place
+    and a marker in the other would make the next wrapper failure read a stale marker and fail open."""
+    env = _no_tmpdir(tmp_path, env_tmp)
+    assert crew_hook.direct_plan([AUDIT], {}, _stop(tmp_path), env, SCRIPTS) is None
+    env["TMPDIR"] = str(tmp_path)
+    assert crew_hook.direct_plan([AUDIT], {}, _stop(tmp_path), env, SCRIPTS) is not None
+
+
+@pytest.mark.parametrize("env_tmp", [None, ""], ids=["unset", "empty"])
+def test_with_tmpdir_unset_the_audit_runs_natively_where_the_launcher_named_tmp(audit_only, monkeypatch, tmp_path,
+                                                                                env_tmp):
+    """The ordinary Windows Stop: a non-login Git Bash has no TMPDIR, and crew-hook.sh hands the dispatcher its
+    own `/tmp` as CREW_HOOK_POSIX_TMP. The audit runs in python, no wrapper starts, and the verdict clears the
+    marker in THAT directory."""
+    posix_tmp = tmp_path / "bash-slash-tmp"
+    posix_tmp.mkdir()
+    env = _no_tmpdir(tmp_path, env_tmp, posix_tmp)
+    payload = _stop(tmp_path)
+    marker = crew_hook._audit_marker(payload, env)  # pylint: disable=protected-access
+    assert os.path.dirname(marker) == str(posix_tmp)
+    with open(marker, "w", encoding="utf-8"):
+        pass
+    spy = Spy(monkeypatch)
+
+    code, _, _ = crew_hook.dispatch("Stop", "claude", payload, crew_hook.now_ms() + 30000, env, str(tmp_path),
+                                    windows=True, resolve_bash=lambda strict=True: (FAKE_BASH, ""),
+                                    resolve_pwsh=lambda: (None, ""), armed_fn=lambda _root: True)
+
+    assert code == 0 and spy.wrappers() == [], spy.calls
+    assert [os.path.basename(c["argv"][1]) for c in spy.direct()] == ["completion_audit.py"]
+    assert not os.path.exists(marker)
+
+
+def test_with_tmpdir_unset_and_no_launcher_tmp_the_audit_keeps_its_wrapper(audit_only, monkeypatch, tmp_path):
+    spy = Spy(monkeypatch)
+
+    crew_hook.dispatch("Stop", "claude", _stop(tmp_path), crew_hook.now_ms() + 30000, _no_tmpdir(tmp_path, None),
+                       str(tmp_path), windows=True, resolve_bash=lambda strict=True: (FAKE_BASH, ""),
+                       resolve_pwsh=lambda: (None, ""), armed_fn=lambda _root: True)
+
+    assert spy.direct() == [] and len(spy.wrappers()) == 1
+
+
+def test_a_set_tmpdir_names_the_marker_directory_whatever_the_launcher_said(tmp_path):
+    """`${TMPDIR:-/tmp}`: a set TMPDIR wins, and one that is not a directory is still the wrapper's case (it
+    fails open there) however good the launcher's `/tmp` is."""
+    tmp, posix_tmp = tmp_path / "tmpdir", tmp_path / "bash-slash-tmp"
+    tmp.mkdir()
+    posix_tmp.mkdir()
+    env = _no_tmpdir(tmp_path, str(tmp), posix_tmp)
+    assert os.path.dirname(crew_hook._audit_marker(_stop(tmp_path), env)) == str(tmp)  # pylint: disable=protected-access
+    env["TMPDIR"] = str(tmp_path / "missing")
+    assert crew_hook.direct_plan([AUDIT], {}, _stop(tmp_path), env, SCRIPTS) is None
+
+
+UNTELLABLE_TMP = [
+    pytest.param("", id="empty"),
+    pytest.param("bash-slash-tmp", id="relative"),
+    pytest.param("{tmp}/missing", id="not-a-directory"),
+    pytest.param("{tmp}/a-file", id="a-file"),
+    # MSYS_NO_PATHCONV=1 or MSYS2_ENV_CONV_EXCL leaves the value as bash wrote it; to a native python `/tmp` is
+    # a directory on the CURRENT drive, which is not bash's /tmp even when it exists
+    pytest.param("/", id="unconverted-posix-path",
+                 marks=pytest.mark.skipif(os.name != "nt", reason="a drive-less path is only untellable on Windows")),
+]
+
+
+@pytest.mark.parametrize("value", UNTELLABLE_TMP)
+def test_a_launcher_tmp_that_cannot_be_trusted_leaves_the_audit_to_the_wrapper(value, tmp_path, monkeypatch):
+    (tmp_path / "bash-slash-tmp").mkdir()
+    (tmp_path / "a-file").write_text("", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)  # so `relative` DOES name a directory from here, and is refused all the same
+    env = _no_tmpdir(tmp_path, None, value.format(tmp=tmp_path))
+
+    assert crew_hook._audit_tmp(env) == ""  # pylint: disable=protected-access
+    assert crew_hook.direct_plan([AUDIT], {}, _stop(tmp_path), env, SCRIPTS) is None
+    with pytest.raises(ValueError):
+        crew_hook._audit_marker(_stop(tmp_path), env)  # pylint: disable=protected-access
+    # and the clear changes nothing: it does not raise
+    crew_hook._audit_marker_clear(_stop(tmp_path), env)  # pylint: disable=protected-access
+
+
+def test_the_sh_launcher_hands_the_dispatcher_its_own_slash_tmp():
+    """The static half: the assignment sits on the dispatcher's command line, as a literal `/tmp` (what the
+    wrapper's `${TMPDIR:-/tmp}` falls back to), so no hook's environment changes but through the dispatcher."""
+    text = h.read_text(os.path.join(SCRIPTS, "crew-hook.sh"))
+    assert text.count(crew_hook.POSIX_TMP + "=") == 1
+    assert 'PYTHONIOENCODING=utf-8 ' + crew_hook.POSIX_TMP + '=/tmp "$1" "$DIR/crew_hook.py"' in text
+
+
+STAND_IN = """\
+import json, os, subprocess
+handed = os.environ.get("CREW_HOOK_POSIX_TMP")
+with open(os.environ["STAND_IN_PAYLOAD"], "rb") as handle:
+    payload = handle.read()
+env = dict(os.environ, PATH=os.environ["STAND_IN_PATH"])
+env.pop("CREW_PYTHON", None)  # the launcher's python: the wrapper must find none, so it blocks and leaves its marker
+done = subprocess.run([os.environ["STAND_IN_BASH"], os.environ["STAND_IN_AUDIT"]], input=payload, env=env,
+                      capture_output=True, timeout=600, check=False)
+names = None
+if handed and os.path.isdir(handed):
+    names = sorted(name for name in os.listdir(handed) if name.startswith("crew-completion-audit."))
+with open(os.environ["STAND_IN_SEEN"], "w", encoding="utf-8") as handle:
+    json.dump({"tmp": handed, "tmpdir": os.environ.get("TMPDIR"), "wrapper_exit": done.returncode,
+               "wrapper_stderr": done.stderr.decode("utf-8", "replace")[-400:], "names": names}, handle)
+"""
+
+
+@pytest.mark.skipif(h.BASH is None, reason="no bash: the launcher's /tmp was NOT compared with bash's")
+@crew_fixtures.SLOW
+def test_the_launcher_tmp_is_the_directory_the_wrapper_writes_its_marker_in(tmp_path):
+    """The real round trip, TMPDIR unset, in the shape a Stop has: the real crew-hook.sh starts a stand-in
+    dispatcher, and the stand-in starts the real wrapper as its child (no python on its PATH and a config
+    present, so it blocks once and leaves its marker under its own `/tmp`). The python route must name that very
+    file from the value the launcher handed over, and clear it.
+
+    The wrapper has to run UNDER the launcher, as the dispatcher's wrapper does. Git Bash keeps one mount table
+    for all its running processes, fixed by the first of them, so two bashes started one after the other can
+    disagree about `/tmp` when a third, with another TEMP, started the table in between (seen on CI, where the
+    suites run bashes in parallel, each test with its own TEMP)."""
+    launcher_dir = tmp_path / "launcher"
+    launcher_dir.mkdir()
+    for script in ("crew-hook.sh", "_common.sh"):
+        shutil.copy(os.path.join(SCRIPTS, script), str(launcher_dir / script))
+    (launcher_dir / "crew_hook.py").write_text(STAND_IN, encoding="utf-8", newline="\n")
+    seen = tmp_path / "seen.json"
+    project = tmp_path / "proj"
+    (project / ".crew").mkdir(parents=True)
+    (project / ".crew" / "config.json").write_text("{}", encoding="utf-8")
+    payload = _stop(project, session=f"posix-tmp-{os.getpid()}-{time.time_ns()}")
+    (tmp_path / "payload.json").write_bytes(payload)
+    base = {k: v for k, v in os.environ.items() if k.upper() not in ("TMPDIR", crew_hook.POSIX_TMP,
+                                                                     "MSYS_NO_PATHCONV", "MSYS2_ENV_CONV_EXCL")}
+    base.update({"CLAUDE_PROJECT_DIR": str(project), "HOME": str(tmp_path),
+                 "STAND_IN_PAYLOAD": str(tmp_path / "payload.json"), "STAND_IN_SEEN": str(seen),
+                 "STAND_IN_BASH": h.BASH, "STAND_IN_AUDIT": os.path.join(SCRIPTS, AUDIT).replace("\\", "/"),
+                 "STAND_IN_PATH": _path_without_python(tmp_path),
+                 "PATH": os.pathsep.join([os.path.dirname(sys.executable), os.environ.get("PATH", "")])})
+    launched = subprocess.run([h.BASH, str(launcher_dir / "crew-hook.sh").replace("\\", "/"), "Stop"], input=payload,
+                              env=base, capture_output=True, cwd=str(project), timeout=900, check=False)
+    if not seen.exists():
+        pytest.skip(f"the launcher did not reach its dispatcher on this host (exit {launched.returncode}): "
+                    f"{launched.stderr[-300:]!r}; the launcher's /tmp was NOT compared")
+    got = json.loads(seen.read_text(encoding="utf-8"))
+    env = {"CLAUDE_PROJECT_DIR": str(project), crew_hook.POSIX_TMP: got["tmp"] or ""}
+    marker = crew_hook._audit_marker(payload, env) if crew_hook._audit_tmp(env) else None  # pylint: disable=protected-access
+    try:
+        assert got["tmpdir"] in (None, ""), got
+        assert marker, got
+        if got["wrapper_exit"] not in (0, 2):
+            pytest.skip(f"the wrapper did not run to an answer on this host (exit {got['wrapper_exit']}): "
+                        f"{got['wrapper_stderr']!r}; the launcher's /tmp was NOT compared")
+        assert got["wrapper_exit"] == 2, got
+        assert os.path.basename(marker) in (got["names"] or []), f"the wrapper's marker is not at {marker}: {got}"
+        crew_hook._audit_marker_clear(payload, env)  # pylint: disable=protected-access
+        assert not os.path.exists(marker)
+    finally:
+        if marker and os.path.exists(marker):
+            os.remove(marker)
+
+def test_a_project_path_python_cannot_encode_changes_nothing(tmp_path):
+    """The wrapper hashes the bytes bash holds; a lone surrogate has no UTF-8 form, so the python route names no
+    marker and clears nothing (the verdict stands, and a stale marker costs at most one unblocked wrapper
+    failure). Stated here rather than guessed at: the route does not raise."""
+    env = {"CLAUDE_PROJECT_DIR": str(tmp_path) + "\ud800", "TMPDIR": str(tmp_path)}
+    with pytest.raises(ValueError):
+        crew_hook._audit_marker(_stop(tmp_path), env)  # pylint: disable=protected-access
+    crew_hook._audit_marker_clear(_stop(tmp_path), env)  # pylint: disable=protected-access
+    assert os.listdir(str(tmp_path)) == []
+
+
+NUL = bytes(1)  # bash's `INPUT=$(cat)` drops these, so the wrapper reads the joined text
+
+
+def test_a_nul_inside_the_stop_hook_active_key_is_a_continuation_as_in_the_wrapper(audit_only, monkeypatch, tmp_path):
+    spy = Spy(monkeypatch)
+    payload = b'{"session_id":"s","stop_hook_ac' + NUL + b'tive":true}'
+    marker = crew_hook._audit_marker(payload, {"CLAUDE_PROJECT_DIR": str(tmp_path), "TMPDIR": str(tmp_path)})  # pylint: disable=protected-access
+    with open(marker, "w", encoding="utf-8"):
+        pass
+
+    code, _, _ = _dispatch(tmp_path, payload, tmp_path)
+
+    assert code == 0 and spy.calls == [], spy.calls
+    assert not os.path.exists(marker)
+
+
+def test_a_nul_inside_the_session_id_names_the_joined_marker_and_the_audit_is_not_handed_it(audit_only, monkeypatch,
+                                                                                            tmp_path):
+    env = {"CLAUDE_PROJECT_DIR": str(tmp_path), "TMPDIR": str(tmp_path)}
+    split = b'{"session_id":"s' + NUL + b'id"}'
+    joined = b'{"session_id":"sid"}'
+    assert crew_hook._audit_marker(split, env) == crew_hook._audit_marker(joined, env)  # pylint: disable=protected-access
+    assert "nosession" not in crew_hook._audit_marker(split, env)  # pylint: disable=protected-access
+    spy = Spy(monkeypatch)
+
+    _dispatch(tmp_path, split, tmp_path)
+
+    assert len(spy.direct()) == 1 and spy.direct()[0]["raw"] == joined
+
+
+def test_an_unset_project_dir_sends_the_audit_to_the_wrapper(audit_only, monkeypatch, tmp_path):
+    spy = Spy(monkeypatch)
+
+    _dispatch(tmp_path, _stop(tmp_path), tmp_path, env_extra={"CLAUDE_PROJECT_DIR": ""})
+
+    assert spy.direct() == [] and len(spy.wrappers()) == 1
+
+
+@pytest.mark.skipif(h.BASH is None, reason="no bash: the wrapper fallback was NOT run")
+@crew_fixtures.SLOW
+def test_crash_verdict_crash_with_no_project_dir_blocks_the_third_stop_as_the_wrapper_does(monkeypatch, tmp_path):
+    """CLAUDE_PROJECT_DIR unset: the direct route and the wrapper would name different markers. With the wrapper
+    owning the whole sequence, crash -> block, a verdict clears the marker, crash -> block again (never a pass)."""
+    row = crew_hook._row("Stop", "", AUDIT, 300, guard=True)  # pylint: disable=protected-access
+    monkeypatch.setattr(crew_hook, "TABLE", (row,))
+    project = tmp_path / "proj"
+    (project / ".crew").mkdir(parents=True)
+    (project / ".crew" / "config.json").write_text("{}", encoding="utf-8")
+    tmp = tmp_path / "tmp"
+    tmp.mkdir()
+    payload = _stop(project)
+    monkeypatch.chdir(project)
+    results = []
+    for body in ("raise SystemExit(1)\n", "raise SystemExit(0)\n", "raise SystemExit(1)\n"):
+        home = tmp_path / f"s{len(results)}"
+        home.mkdir()
+        scripts = _fake_scripts(home, body)
+        results.append(_dispatch(project, payload, tmp, scripts=scripts, deadline_s=400, bash=h.BASH,
+                                 real_env=True, env_extra={"CLAUDE_PROJECT_DIR": ""}))
+
+    # no step can be judged when the wrapper's own run timed out on a loaded host: a timeout is exit 2 as well,
+    # so the first and third stops would pass their assertions for the wrong reason
+    for number, result in enumerate(results):
+        why = _wrapper_host_slow(result[2])
+        if why:
+            pytest.skip(f"stop {number}: {why}")
+    assert results[0][0] == 2 and results[1][0] == 0, results
+    assert results[2][0] == 2 and "Not blocking again" not in results[2][2], results[2]
+
+
+def test_a_stop_hook_active_stop_runs_nothing_and_ends_the_blocked_once_count(audit_only, monkeypatch, tmp_path):
+    spy = Spy(monkeypatch)
+    payload = _stop(tmp_path, active=True)
+    marker = _marker(tmp_path, tmp_path, payload)
+    with open(marker, "w", encoding="utf-8"):
+        pass
+
+    code, _, _ = _dispatch(tmp_path, payload, tmp_path)
+
+    assert code == 0 and spy.calls == []
+    assert not os.path.exists(marker)
+
+
+def test_stop_hook_active_is_found_across_json_whitespace_and_line_breaks(audit_only, monkeypatch, tmp_path):
+    spy = Spy(monkeypatch)
+    payload = b'{"session_id": "s-1",\r\n "stop_hook_active"\r\n  :\t\n true}'
+
+    # the wrapper's `tr -d` of CR and LF joins a name or a value that a line break splits, too
+    split = b'{"session_id": "s-1", "stop_hook_ac\ntive": tr\r\nue}'
+
+    _dispatch(tmp_path, payload, tmp_path)
+    _dispatch(tmp_path, split, tmp_path)
+
+    assert spy.calls == []
+
+
+def test_a_verdict_ends_the_blocked_once_count(audit_only, monkeypatch, tmp_path):
+    payload = _stop(tmp_path)
+    marker = _marker(tmp_path, tmp_path, payload)
+    for code in (0, 2):
+        with open(marker, "w", encoding="utf-8"):
+            pass
+        Spy(monkeypatch, lambda argv, c=code: _result(c))
+
+        _dispatch(tmp_path, payload, tmp_path)
+
+        assert not os.path.exists(marker), f"exit {code} reached a verdict and must clear the marker"
+
+
+def test_a_timeout_leaves_the_marker_as_the_wrapper_does(audit_only, monkeypatch, tmp_path):
+    payload = _stop(tmp_path)
+    marker = _marker(tmp_path, tmp_path, payload)
+    with open(marker, "w", encoding="utf-8"):
+        pass
+    Spy(monkeypatch, lambda argv: _result(timed_out=True))
+
+    _dispatch(tmp_path, payload, tmp_path)
+
+    assert os.path.exists(marker)
+
+
+def test_a_marker_that_cannot_be_removed_changes_nothing(audit_only, monkeypatch, tmp_path):
+    payload = _stop(tmp_path)
+    marker = _marker(tmp_path, tmp_path, payload)
+    os.mkdir(marker)  # `rm -f` of a directory fails too; the verdict stands
+    Spy(monkeypatch, lambda argv: _result(2, err=b"COMPLETION AUDIT: x\n"))
+
+    got, _, err = _dispatch(tmp_path, payload, tmp_path)
+
+    assert got == 2 and "COMPLETION AUDIT: x" in err
+
+
+# --- the verdicts through the native route (must-block, must-allow) ----------------------------------
+
+pytestmark_git = pytest.mark.skipif(
+    shutil.which("git") is None, reason="needs git: the native verdict cases were NOT run"
+)
+
+
+def _repo(tmp_path):
+    return rgh.build_repo(str(tmp_path), True)
+
+
+def _write(root, rel, text):
+    with open(os.path.join(root, rel), "w", encoding="utf-8") as handle:
+        handle.write(text)
+
+
+def _run(root, tmp_path, direct, payload=None):
+    return _dispatch(root, payload or _stop(root), tmp_path / "t", direct=direct, windows=True,
+                     scripts=SCRIPTS, deadline_s=880, bash=h.BASH or FAKE_BASH, real_env=True)
+
+
+def _out_of_scope(root):
+    _write(root, "docs-out.md", "outside the ticket's Touch\n")
+
+
+def _stale(root):
+    _write(root, os.path.join("src", "app.py"), "x = 3\n")
+    spec = os.path.join(root, ".work", "tickets", "T-1", "spec.md")
+    with open(spec, encoding="utf-8") as handle:
+        text = handle.read()
+    _write(root, os.path.relpath(spec, root), text.replace("`src/**`", "`**`"))
+
+
+def _in_scope(root):
+    _write(root, os.path.join("src", "app.py"), "x = 2\n")
+
+
+CASES = (("stale-approval", _stale, 2, "not approved"), ("out-of-scope", _out_of_scope, 2, "docs-out.md"),
+         ("in-scope", _in_scope, 0, ""))
+
+
+@pytestmark_git
+@pytest.mark.parametrize("name,mutate,want,said", CASES, ids=[c[0] for c in CASES])
+def test_the_native_route_blocks_and_allows_as_the_audit_decides(name, mutate, want, said, audit_only, tmp_path):
+    root, _ = _repo(tmp_path)
+    mutate(root)
+    os.makedirs(str(tmp_path / "t"), exist_ok=True)
+
+    code, _, err = _run(root, tmp_path, direct=True)
+
+    assert code == want, f"{name}: stderr: {err}"
+    assert said in err, err
+    assert "UNKNOWN" not in err  # a decision, not a fault
+
+
+HOST_SLOW_LABELS = (
+    (crew_hook.UNKNOWN_TIMEOUT, "the wrapper timed out"),
+    (crew_hook.UNKNOWN_PYTHON,
+     "the wrapper's 3 s python probe (crew_py_strict) timed out and was reported as 'no usable python'"),
+)
+
+
+def _python_on_path():
+    """True when the names the wrapper's python probe walks (`crew_py_strict`) resolve on this process's PATH,
+    which the real-env dispatches copy. When it is False a 'no usable python' is TRUE, not a slow host."""
+    return any(shutil.which(name) for name in ("python3", "python", "py"))
+
+
+def _wrapper_host_slow(stderr):
+    """A skip reason when the WRAPPER side shows an UNKNOWN that a loaded host explains, else None. The label must
+    be a whole line, exactly the one the dispatcher writes (a denial that merely quotes the words, in a file
+    name for one, is a verdict and fails the comparison), and 'no usable python' counts only where python IS on
+    PATH, so a genuinely missing python is not skipped. Any real verdict returns None."""
+    lines = [line.rstrip("\r") for line in stderr.splitlines()]
+    for label, what in HOST_SLOW_LABELS:
+        if label not in lines:
+            continue
+        if label == crew_hook.UNKNOWN_PYTHON and not _python_on_path():
+            continue
+        return (f"{what} on this host (a Git Bash + python probe takes tens of seconds when it is loaded, the "
+                "fork cost this change removes): the wrapper's verdict was NOT compared")
+    return None
+
+
+def test_the_host_slow_guard_skips_only_on_a_wrapper_unknown():
+    assert "no usable python" in _wrapper_host_slow(crew_hook.UNKNOWN_PYTHON)
+    assert "timed out" in _wrapper_host_slow(os.linesep.join(["COMPLETION AUDIT: x", crew_hook.UNKNOWN_TIMEOUT, ""]))
+    assert "timed out" in _wrapper_host_slow(crlf("COMPLETION AUDIT: x", crew_hook.UNKNOWN_TIMEOUT))
+    # a genuinely different verdict must not be skipped
+    assert _wrapper_host_slow("crew: BLOCKED - completion audit found unfinished work") is None
+    assert _wrapper_host_slow("") is None
+
+
+def crlf(*lines):
+    return "".join(line + chr(13) + chr(10) for line in lines)
+
+
+def test_the_host_slow_guard_does_not_skip_a_denial_that_quotes_a_label():
+    quoted = os.linesep.join([
+        "completion audit: BLOCKED: out-of-scope file docs/UNKNOWN (guard timeout).md",
+        "COMPLETION AUDIT: see 'UNKNOWN (no usable python' in the notes",
+        "  " + crew_hook.UNKNOWN_TIMEOUT,  # indented: not the dispatcher's line either
+        ""])
+    assert _wrapper_host_slow(quoted) is None
+    assert _wrapper_host_slow(f"x {crew_hook.UNKNOWN_PYTHON}") is None
+
+
+def test_the_host_slow_guard_does_not_skip_a_genuinely_missing_python(monkeypatch):
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+    assert _wrapper_host_slow(crew_hook.UNKNOWN_PYTHON) is None
+    assert "timed out" in _wrapper_host_slow(crew_hook.UNKNOWN_TIMEOUT)  # a timeout is still a slow host
+
+
+@pytestmark_git
+@pytest.mark.skipif(h.BASH is None, reason="no bash: the wrapper side of the parity was NOT run")
+@crew_fixtures.SLOW
+@pytest.mark.parametrize("name,mutate,want,said", CASES, ids=[c[0] for c in CASES])
+def test_the_native_route_and_the_wrapper_give_one_verdict(name, mutate, want, said, monkeypatch, tmp_path):
+    # a long row limit: the wrapper's own verdict is wanted here, not its 60 s UNKNOWN on a loaded host
+    monkeypatch.setattr(crew_hook, "TABLE", (crew_hook._row("Stop", "", AUDIT, 900, guard=True),))  # pylint: disable=protected-access
+    root, _ = _repo(tmp_path)
+    mutate(root)
+    os.makedirs(str(tmp_path / "t"), exist_ok=True)
+    wrapper = _run(root, tmp_path, direct=False)
+    native = _run(root, tmp_path, direct=True)
+
+    why = _wrapper_host_slow(wrapper[2])
+    if why:
+        pytest.skip(why)
+    assert native[0] == wrapper[0] == want
+    assert native[1:] == wrapper[1:] or said in native[2] and said in wrapper[2], (native, wrapper)
+
+
+# --- speed, and a hung child -------------------------------------------------------------------------
+
+def _fake_scripts(tmp_path, body):
+    """A scripts directory whose `completion_audit.py` is `body`; the wrapper and its helper are the real ones."""
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    for name in (AUDIT, "_common.sh"):
+        shutil.copy(os.path.join(SCRIPTS, name), str(scripts / name))
+    (scripts / "completion_audit.py").write_text(textwrap.dedent(body), encoding="utf-8", newline="\n")
+    return str(scripts)
+
+
+def test_a_hung_audit_settles_as_unknown_well_inside_its_limit(monkeypatch, tmp_path):
+    row = crew_hook._row("Stop", "", AUDIT, 3, guard=True)  # pylint: disable=protected-access
+    monkeypatch.setattr(crew_hook, "TABLE", (row,))
+    scripts = _fake_scripts(tmp_path, "import time\ntime.sleep(120)\n")
+    project = tmp_path / "proj"
+    project.mkdir()
+    started = time.monotonic()
+
+    code, _, err = _dispatch(project, _stop(project), tmp_path, scripts=scripts, deadline_s=60, real_env=True)
+
+    took = time.monotonic() - started
+    assert code == 2, err
+    assert "UNKNOWN (guard timeout" in err and "failing closed (armed repo)" in err
+    assert took < 30, f"a 3 s row took {took:.1f}s to settle"
+
+
+@crew_fixtures.SLOW
+def test_a_crashing_audit_never_comes_back_as_a_pass(monkeypatch, tmp_path):
+    """The real round trip: python raises, the wrapper runs, finds an armed repo (a config present, so
+    scope.mode is not provably off) and blocks. It never reads as exit 0, and on a host so loaded that the
+    wrapper itself runs out of time it is the UNKNOWN timeout, which is also exit 2."""
+    if h.BASH is None:
+        pytest.skip("no bash: the wrapper fallback was NOT run")
+    row = crew_hook._row("Stop", "", AUDIT, 120, guard=True)  # pylint: disable=protected-access
+    monkeypatch.setattr(crew_hook, "TABLE", (row,))
+    scripts = _fake_scripts(tmp_path, "raise SystemExit(1)\n")
+    project = tmp_path / "proj"
+    (project / ".crew").mkdir(parents=True)
+    (project / ".crew" / "config.json").write_text("{}", encoding="utf-8")
+    tmp = tmp_path / "tmp"
+    tmp.mkdir()
+
+    code, _, err = _dispatch(project, _stop(project), tmp, scripts=scripts, deadline_s=200, bash=h.BASH,
+                             real_env=True)
+
+    assert code == 2, err
+    assert "did not run to a verdict" in err or "UNKNOWN (guard timeout" in err, err
+
+
+@pytest.mark.skipif(not h.WINDOWS or h.BASH is None,
+                    reason="needs Windows and Git Bash: the Git Bash fork cost is what is being compared")
+def test_the_native_row_is_far_faster_than_the_wrapper_on_a_trivial_input(audit_only, tmp_path):
+    project = tmp_path / "proj"
+    (project / ".crew").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q"], cwd=str(project), check=True, capture_output=True)
+    payload = _stop(project)
+
+    def timed(direct):
+        best = None
+        for _ in range(2):
+            started = time.monotonic()
+            code, _, err = _dispatch(project, payload, tmp_path, direct=direct, deadline_s=120, bash=h.BASH,
+                                     real_env=True)
+            # the wrapper may run out of its 60 s on a loaded host (UNKNOWN): that is the slowness measured
+            assert code == 0 or (not direct and "UNKNOWN (guard timeout" in err), err
+            took = time.monotonic() - started
+            best = took if best is None else min(best, took)
+        return best
+
+    native = timed(True)
+    wrapper = timed(False)
+
+    assert native < 5.0, f"the native row took {native:.2f}s"
+    assert native * 3 < wrapper, f"native {native:.2f}s is not far below the wrapper's {wrapper:.2f}s"

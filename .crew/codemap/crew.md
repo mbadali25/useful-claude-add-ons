@@ -239,6 +239,12 @@ fast path also treats exit 49 (the Store `python3` stub) as an interpreter failu
 platform is Win32NT or `$env:OS -eq 'Windows_NT'`, and now runs only for Codex's `commandWindows`. On Windows
 `crew_hook.dispatch` runs `DIRECT`'s Python files without their `.sh` wrappers (`crew_hook.py`, `DIRECT`, `direct_plan`; the
 wrapper is the fallback for any exit it would not pass through) and resolves Git Bash lazily; `CREW_HOOK_DIRECT=0` turns it off.
+DERIVED (crew 1.3.99, `crew_hook.py`: `DIRECT["completion-audit.sh"]`, `_audit_marker`, `_audit_marker_clear`, `direct_plan`): the Stop
+row `completion-audit.sh` is also in `DIRECT` (accept `(0, 2)`); the dispatcher keeps the wrapper's blocked-once marker itself (the
+`crew-completion-audit.<session>-<cksum>` file, a Python POSIX cksum), skips python on a `stop_hook_active` continuation and clears the
+marker on that and on a verdict, never on a timeout. `_audit_scope_unknown` (`CLAUDE_PROJECT_DIR` unset/empty, or `_audit_tmp` cannot
+name the wrapper's `${TMPDIR:-/tmp}`: `TMPDIR` set to a missing directory, or unset/empty without an absolute, drive-qualified `CREW_HOOK_POSIX_TMP`
+directory, which `crew-hook.sh` sets to `/tmp` on the dispatcher's command line since crew 1.3.147) makes `direct_plan` return None, so the wrapper keeps the whole sequence. Test: `plugin/crew/tests/test_crew_hook_stop_native.py`.
 Tests: `test_crew_hook_direct.py`. With no usable python `crew-hook.sh` runs the event's `.sh` scripts directly from a static
 list and `crew-hook.ps1` fails an armed repo closed on the three blocking events. Tests:
 `plugin/crew/tests/test_crew_hook_parity.py`, `test_crew_hook_merge.py`, `test_crew_hook_faults.py`,
@@ -1007,6 +1013,57 @@ passes a prompt naming `crew:confirm-config`. Since crew 1.3.69 every
 `len(HUMANONLY_MUTATIONS)`; 34 at crew 1.3.69). JUDGEMENT: `humanOnly.promoteMarker` is still read
 by no hook, and a session that runs arbitrary python can still forge a receipt.
 
+## Git commands past the guards: `guards.git.allow` (crew 1.3.125)
+
+DERIVED from `plugin/crew/hooks/scripts/crew_gitallow.py` (stdlib only); tests
+`plugin/crew/tests/test_git_allow.py`, mutations `plugin/crew/tests/gitallow_mutations.py`
+(re-measure with `len(GITALLOW_MUTATIONS)`; 141 at crew 1.3.125, run alone: `sabotage*.py` is
+harness), and the differential test `plugin/crew/tests/test_git_allow_differential.py`. `settings` (`crew_gitallow.py:574`) reads the machine file only (`read_layer`,
+`:358`, one open: absent / unset / set / unreadable plus the file binding; a dangling link
+or a non-directory parent is unreadable, `_dangles` `:401`) and honours `"all"` or a list
+only when `newest_receipt` (`:510`) is a whole applied record (`receipt_problem`, `:466`)
+for exactly that value AND the record's `binding` (sha256, size, mtime_ns, change time,
+`_change_ns` `:416`) equals the file now. A repo `"off"`, malformed value or unreadable file
+vetoes (`_repo_veto`, `:534`), as does each `git -C` target repo's file. Writers:
+`write_refusal` (`:150`) from `crew_config._layer_path_refusal`; `crew_config.write_global_config`
+re-binds through `_carry_git_allow` (`crew_config.py:4077`, `crew_gitallow.backing` `:653` /
+`rebind` `:630`) when it leaves the key alone. Readers, since round 4 ONE reader and since round 6 ONE plain command: a
+fail-closed allowlist. `plain_commands` (`:910`) reads a line as the one command of plain
+literal words or None, WITHOUT the shared splitter: bash through `_bash_raw_words` (`:751`:
+words split on blank and tab only, quotes and backslash escapes kept raw; a newline, `;&|<>()#`, an
+expansion or a glob character outside quotes ends the reading) and `_bash_commands` (`:799`),
+`_bash_plain_word` (`:692`) judging each word; PowerShell through `_ps_commands` (`:837`:
+`_PS_SAFE` bare words, whole quoted words with no `$`, a backtick only before `_PS_ESCAPES`, no
+curly quotes, `--%` or `%NAME%`, an unquoted first word, no separator or redirection at all). The
+shared splitter still feeds the other guards (`crew_guards.py:1957`, `_GateReader` `:1587`): an fd
+prefix is stripped by `_fd_prefix` (`:1540`), `>&-` takes its `-` as bash does, a continuation
+next to a possible fd prefix is `_Unsure` (`_continuation_in_fd_prefix` `:1562`) and so is a
+heredoc delimiter ending in a dangling backslash (`_dangling_backslash` `:1554`).
+`line_git_commands` (`:920`) needs every command to be exactly `git` and `hold` (`:292`:
+`-c`, `--config-env`, `--exec-path`, an option that runs a command in any prefix git takes
+`_option_hit` `:277`, a `git config` that is not plainly a read `_config_is_read` `:241`; since
+crew 1.3.153 also a built-in whose job is to run a handed program, `_RUNS_PROGRAM` = `merge-index`,
+a subcommand word that starts a helper, `_HELPER_WORDS`, and a URL scheme git hands to a
+`git-remote-<scheme>` program, `_helper_scheme`; re-find each by name) to
+say nothing; `line_exempt` (`:950`) adds the setting. The cloud guard: `_classify`
+(`cloud_guard.py:2168`) tags a `git` finding with its subcommand only (none for an `xargs`
+finding); `evaluate` (`cloud_guard.py:3181`) asks `line_plan` (`:964`, the setting read for
+the line's `-C` targets, or off) and `finding_exempt` (`:983`); `_judge_one`
+(`cloud_guard.py:3113`) keeps a git scope off the terraform table. The promote gate:
+`_promote_gate.Gate.git_allowed` (`_promote_gate.py:451`, bash) and
+`_promote_dispatch._git_allowed` (`_promote_dispatch.py:289`, the `allow` record
+`promote-gate.ps1:713` exits 0 on) call `promote_exempt` (`crew_gitallow.py:1021`): the line
+is `line_exempt` and no declared deploy that is itself a git command is contained in it.
+JUDGEMENT: six review rounds each found a new run-time word form or a new redirect, heredoc or
+continuation shape, so the reader lists what is plain rather than what is dangerous and follows none
+of those shapes (a chain, a redirect or a heredoc message falls back to the pre-switch verdict); one reader for both paths is what keeps them from
+diverging (`test_both_paths_read_one_corpus_alike`), and the differential test is what keeps
+that reader honest against the shells themselves (a shim git logging its argv). `gh` is deliberately not git; the
+receipt store is plain files the scope guard protects only while `scope.mode` is on, so a
+forged whole record is a deliberate act, not a sandbox escape; git programs the repo
+configures persistently (hooks, `alias.*` set earlier) are outside what a command-line
+guard can read; a Windows CopyFile restore carries ChangeTime over.
+
 ## Orphan reaper and hook self-limit (crew 1.3.50)
 
 anchor for this section: 170d4c4b2
@@ -1020,15 +1077,15 @@ anchor for this section: 170d4c4b2
 - JUDGEMENT `scope_guard.py`, `approval_hook.py` and `crew_hook.py` are review-harness paths (`HARNESS` in `scripts/check-tooling-pr.py`) that must land alone, so they carry no self-limit yet.
 - JUDGEMENT the host-local task `CrewOrphanCygpathSweep` lives outside this repo; the reaper covers its cygpath case through the `cygpath` allow-list entry but does not replace or edit it.
 
-## The Stop budget key (thd-jobs 5a, crew 1.3.127)
+## The Stop budget key (thd-jobs 5a, crew 1.3.157)
 
 anchor for this section: c1042aa2d
 
-- DERIVED `plugin/crew/hooks/scripts/crew_state.py:579` `VERIFY_DEFAULTS = {"stopBudgetSeconds": 60}` and `:580` `STOP_BUDGET_BOUNDS = (1, 600)`; `crew_config.py:314` declares the `verify` block in `default_config()` only, so `is_global_path("verify.stopBudgetSeconds")` is False (repo only).
+- DERIVED `plugin/crew/hooks/scripts/crew_state.py:579` `VERIFY_DEFAULTS = {"stopBudgetSeconds": 60}` and `:580` `STOP_BUDGET_BOUNDS = (1, 540)`; `crew_config.py:314` declares the `verify` block in `default_config()` only, so `is_global_path("verify.stopBudgetSeconds")` is False (repo only).
 - DERIVED `crew_config.py:3524` `INT_BOUNDS` and `:3527` `bounds_problem` refuse anything but an `int` in range (`type(value) is int`, so `True` and `60.0` fail); `value_allowed` calls it last (`:3517`), after the null rule, so `null` is accepted and means unset. `_content_problem` does not call it: a file already holding an unusable value is not locked against unrelated writes.
 - DERIVED `plugin/crew/hooks/scripts/verify-gate.sh:1929` the reader is unchanged: `budget = 60`, replaced by a numeric non-bool `>= 0` value from `CREW_REPO_CONFIG`, else left at 60 (never None; None is `--all`/`--ci` only).
-- JUDGEMENT the upper bound 600 is the Stop row's `timeout` in `crew_hook.TABLE`; `test_verify_stop_budget_key.py` holds the two equal.
-- JUDGEMENT the reader still accepts 0 and decimals that the writer refuses; tightening that is a harness change (`verify-gate.sh` is in `HARNESS`) and was left out of this PR on purpose.
+- JUDGEMENT the upper bound 540 is the Stop row's `timeout` in `crew_hook.TABLE` (600) less `DEADLINE_MARGIN=60` in `verify-gate.sh`, so a budget spent to the last second still leaves the gate its margin; `test_verify_stop_budget_key.py` holds the three together.
+- JUDGEMENT the reader still accepts 0, decimals and numbers over 540 that the writer refuses; tightening that is a harness change (`verify-gate.sh` is in `HARNESS`, owner rule: a harness change lands alone) and was left out of this PR on purpose.
 
 ## `/crew:autopilot` (T-0004, crew 1.0.41)
 

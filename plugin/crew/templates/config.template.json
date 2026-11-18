@@ -127,7 +127,10 @@
   },
   "guards": {
     "profile": "off",
-    "overrides": {}
+    "overrides": {},
+    "git": {
+      "allow": null
+    }
   },
   "production": {
     "databases": [],

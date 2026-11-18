@@ -1,12 +1,12 @@
 """`verify.stopBudgetSeconds` is a settable, documented, bounded config key (thd-jobs 5a).
 
-Before crew 1.3.127 the verify gate READ the key (`verify-gate.sh`, default 60) but the key was in
+Before crew 1.3.157 the verify gate READ the key (`verify-gate.sh`, default 60) but the key was in
 no template, so `crew_config` refused every write of it as "not a settable leaf of
 .crew/config.json" and the budget could only be tuned by hand-editing the file. These cases hold:
 
 * the key is a repo leaf with a KEY_META row, and its default is the 60 the gate already used;
 * a whole number inside the bounds is ACCEPTED and written;
-* anything else (zero, negative, over the Stop hook's timeout, a float, a string, a boolean, a
+* anything else (zero, negative, over the Stop hook's timeout less the gate's margin, a float, a string, a boolean, a
   list, an object) is REFUSED with the value and the range named, and the file is left untouched,
   rather than stored for the reader to turn into its default without a word;
 * it is repo only (the machine layer refuses it by name).
@@ -16,6 +16,7 @@ suite goes red for the stated reason.
 """
 import json
 import os
+import re
 
 import pytest
 
@@ -57,15 +58,26 @@ def test_key_is_repo_only():
     assert reason is not None and "repo-only" in reason
 
 
-def test_key_has_a_documented_row_and_the_upper_bound_is_the_stop_hook_timeout():
+def _gate_deadline_margin():
+    with open(os.path.join(context._ROOT, "hooks", "scripts", "verify-gate.sh"),  # pylint: disable=protected-access
+              encoding="utf-8") as handle:
+        found = re.search(r"^DEADLINE_MARGIN=(\d+)$", handle.read(), re.MULTILINE)
+    assert found, "verify-gate.sh no longer declares DEADLINE_MARGIN= on its own line"
+    return int(found.group(1))
+
+
+def test_key_has_a_documented_row_and_the_upper_bound_leaves_the_gates_margin():
     row = crew_keys.KEY_META[KEY]
-    assert row["since"] == "1.3.127" and row["kind"] == "type"
+    assert row["since"] == "1.3.157" and row["kind"] == "type"
     stop = [r for r in crew_hook.TABLE if r.script == "verify-gate.sh"]
     assert [r.event for r in stop] == ["Stop"]
-    assert crew_state.STOP_BUDGET_BOUNDS == (1, stop[0].timeout)
+    # A budget AT the hook timeout could be spent to the last second, leaving no time to defer the
+    # rest and write the markers before the hook is killed: the bound reserves the gate's margin.
+    assert crew_state.STOP_BUDGET_BOUNDS == (1, stop[0].timeout - _gate_deadline_margin())
+    assert crew_state.STOP_BUDGET_BOUNDS[1] < stop[0].timeout
 
 
-@pytest.mark.parametrize("value", [1, 30, 60, 300, 600])
+@pytest.mark.parametrize("value", [1, 30, 60, 300, 540])
 def test_repo_writer_accepts_a_whole_number_in_bounds(tmp_path, value):
     root = _repo(tmp_path)
     assert crew_config.value_allowed(KEY, "repo", value) is None
@@ -78,7 +90,7 @@ def test_null_is_accepted_and_means_unset():
 
 
 @pytest.mark.parametrize("value", [
-    0, -1, 601, 10 ** 9,      # outside 1..600
+    0, -1, 541, 600, 601, 10 ** 9,  # outside 1..540 (600 is the hook's own timeout)
     60.0, 59.5, float("nan"),  # not a whole number (60.0 == 60 in Python)
     "60", "", "unlimited",     # a string
     True, False,               # True == 1 in Python
@@ -94,7 +106,7 @@ def test_repo_writer_refuses_everything_else_and_names_the_range(tmp_path, value
     assert KEY in str(caught.value)
     assert _bytes(root) == before
     if not isinstance(value, dict):
-        assert "1 to 600" in reason
+        assert "1 to 540" in reason
 
 
 def test_an_unknown_sibling_is_still_refused(tmp_path):

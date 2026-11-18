@@ -97,7 +97,10 @@
   },
   "guards": {
     "profile": "off",
-    "overrides": {}
+    "overrides": {},
+    "git": {
+      "allow": null
+    }
   },
   "environments": {
     "prodUnattended": false

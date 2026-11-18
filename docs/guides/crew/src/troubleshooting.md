@@ -63,7 +63,7 @@ or behaves like an older release.
 Every hook crew runs, and the config key that turns its behaviour up or down. `plugin/crew/hooks/hooks.json`
 registers one bash launcher per event (`crew-hook.sh`; `crew-hook.ps1` is only Codex's `commandWindows`);
 the launcher starts one dispatcher, `crew_hook.py <Event>`, which runs that event's scripts below at once and
-combines what they print. On Windows the same bash launcher is the only registration and the dispatcher runs the hot guards' Python directly (set `CREW_HOOK_DIRECT=0` to go back to their `.sh` wrappers), so no event fires twice. When the
+combines what they print. On Windows the same bash launcher is the only registration and the dispatcher runs the hot guards' Python directly, and the `Stop` completion audit's too (set `CREW_HOOK_DIRECT=0` to go back to their `.sh` wrappers), so no event fires twice. A completion audit whose project directory is unknown (`CLAUDE_PROJECT_DIR` unset) or whose `TMPDIR` is set to something that is not a directory runs its wrapper from the start; so does one with `TMPDIR` unset (the ordinary case under Git Bash) when the launcher's `CREW_HOOK_POSIX_TMP` is missing or was not rewritten to a Windows directory (`MSYS_NO_PATHCONV=1` or `MSYS2_ENV_CONV_EXCL` in the environment), since crew 1.3.147. A direct completion audit that crashes runs its wrapper, and one that times out is `UNKNOWN (guard timeout)`, a block in an armed repo, never a pass. When the
 launcher or dispatcher itself fails in a repo crew governs, `PreToolUse`, `UserPromptSubmit` and `Stop` refuse
 with `crew-hook: ... failing closed (armed repo)` and the cause, rather than let the call through unjudged. Only the four stateless PreToolUse judges (`role-write-guard`, `cloud-guard`, `env-guard`, `scope-guard`) are run
 once more after a timeout, and only when the dispatch deadline leaves room for a second timeout's cleanup; at the
@@ -512,10 +512,10 @@ not errors, and neither blocks the turn:
 
 A rule that runs inside the budget and fails still exits 2, whatever was deferred beside it.
 
-**Tuning the budget (crew 1.3.127).** If a rule you want at Stop keeps landing in `deferred to CI`,
+**Tuning the budget (crew 1.3.157).** If a rule you want at Stop keeps landing in `deferred to CI`,
 raise the budget instead of editing code: `/crew:config verify.stopBudgetSeconds 120`. It takes a whole
-number from 1 to 600 (the Stop hook's own timeout is 600 s) and refuses anything else, naming the range.
-If a write is refused with "not a settable leaf" you are on a crew older than 1.3.127. A value you typed
+number from 1 to 540 (the Stop hook's timeout is 600 s; the gate keeps a 60 s margin) and refuses anything else, naming the range.
+If a write is refused with "not a settable leaf" you are on a crew older than 1.3.157. A value you typed
 into `.crew/config.json` by hand that the gate cannot use (a string, a boolean, a negative) is read as
 60, never as no limit.
 

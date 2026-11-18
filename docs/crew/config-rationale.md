@@ -440,7 +440,7 @@ author-family reviewer unless `--same-family "<reason>"` labels the round.
 
 ## Why some keys are repo-only
 
-Repo-only keys are refused in the global file by `plan_global_write`, and pruned out of it by `filter_global` if some other tool wrote one. Each is a fact about one repository or one checkout. `verify.stopBudgetSeconds` is read by the verify gate and, since crew 1.3.127, declared in the repo default only (not the global one); its default is `60`.
+Repo-only keys are refused in the global file by `plan_global_write`, and pruned out of it by `filter_global` if some other tool wrote one. Each is a fact about one repository or one checkout. `verify.stopBudgetSeconds` is read by the verify gate and, since crew 1.3.157, declared in the repo default only (not the global one); its default is `60`.
 
 
 `context.reserveTokens: null` means *off*, and survives as `null` — this is the
@@ -2277,15 +2277,17 @@ verified is NOT a config setting — it is per-rule fields inside
 machine-local record the gate keeps for itself. Documented here rather than
 invented as new config keys, because that is what it actually is.
 
-**`verify.stopBudgetSeconds` is settable (crew 1.3.127).** The gate always read it, but no template
+**`verify.stopBudgetSeconds` is settable (crew 1.3.157).** The gate always read it, but no template
 declared it, so `crew_config` refused every write as "not a settable leaf" and the budget could only
 be changed by editing the file by hand. It is now declared in the repo default (`60`, the number the
-gate already fell back to) and a write is bounded: a whole number from 1 to 600 (the Stop hook's own
-timeout, held to the `crew_hook.TABLE` row by a test), else refused with the range named. The reason
+gate already fell back to) and a write is bounded: a whole number from 1 to 540 (the Stop hook's 600 s
+timeout in `crew_hook.TABLE` less the gate's 60 s `DEADLINE_MARGIN`, both held by a test, so a budget spent to the
+last second still leaves the gate time to defer the rest and write its markers), else refused with the range named. The reason
 for refusing rather than clamping is the reader: `verify-gate.sh` turns a value it cannot use into
 60 without a word, so a stored `"unlimited"` or `0` would read as "tuned" while the gate kept running
 its 60 s. The writer is where the typo is visible. The reader is unchanged (a harness path) and still
-treats an unusable hand-edited value as 60, never as no limit; hardening that side is a separate,
+treats an unusable hand-edited value as 60, never as no limit. It is still wider than the writer (it
+accepts 0, decimals and numbers over 540); narrowing it to the writer's bounds is a separate,
 harness-only change.
 
 **The single marker used to mean "everything passed."** Before crew 0.19.93,

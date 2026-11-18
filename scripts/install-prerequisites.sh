@@ -34,6 +34,7 @@
 #   --team a,b            likewise for the team plugins (item 4)
 #   --community a,b       likewise for the community plugins (item 6)
 #   --plugins a,b         likewise for this repo's own plugins (item 19)
+#   --skillsets a,b       likewise for the AWS, Terraform/Packer and MSP skill sets (item 27)
 #                         every one of these accepts names, numbers, 'all' or 'none',
 #                         and selecting any of them implies its parent menu item
 #   --non-interactive     select the default set, no prompt (CI/unattended)
@@ -102,6 +103,7 @@ GROUP_SPEC_SKILL=""
 GROUP_SPEC_TEAM=""
 GROUP_SPEC_COMMUNITY=""
 GROUP_SPEC_PLUGIN=""
+GROUP_SPEC_SKILLSET=""
 SKILLUI_GUIDE=""       # "1"/"0" once answered; empty means "ask"
 NOTIFY_SETUP=""        # "1"/"0" once answered; empty means "ask"
 INSTALL_SCOPE="user"   # machine-wide by default, not per-project
@@ -122,6 +124,7 @@ while [ $# -gt 0 ]; do
     --team)            GROUP_SPEC_TEAM="${2:-}"; shift ;;
     --community)       GROUP_SPEC_COMMUNITY="${2:-}"; shift ;;
     --plugins)         GROUP_SPEC_PLUGIN="${2:-}"; shift ;;
+    --skillsets)       GROUP_SPEC_SKILLSET="${2:-}"; shift ;;
     --skillui-guide)   SKILLUI_GUIDE=1 ;;
     --notify-setup)    NOTIFY_SETUP=1 ;;
     --scope)           INSTALL_SCOPE="${2:-user}"; shift ;;
@@ -1241,9 +1244,9 @@ MENU_KEYS=(
   "supabase" "context7" "skillui" "strix" "obsidian"
   "repo-plugins" "graphify" "ms-mcp"
   "aws-docs-mcp" "aws-pricing-mcp" "ms-learn-mcp" "perplexity-mcp"
-  "lsp-plugins" "stack-tools"
+  "lsp-plugins" "stack-tools" "skill-sets"
 )
-MENU_DEFAULT=(1 1 1 1 1 1 1 1 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+MENU_DEFAULT=(1 1 1 1 1 1 1 1 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1)
 MENU_NAME=(
   "Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)"
   "Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check"
@@ -1271,6 +1274,7 @@ MENU_NAME=(
   "MCP server: Perplexity (web-grounded search for the web-research skill - needs an API key)"
   "LSP plugins: csharp, pyright, typescript (claude-plugins-official) + angular, bash, css, powershell, sql, terraform (this repo), with their language servers"
   "Stack tooling: tflint, ruff, sqlfluff (uv), shellcheck, PSScriptAnalyzer (Windows PowerShell 5.1 and 7; pwsh only on non-Windows)"
+  "Skill sets: AWS (5 plugins), Terraform + Packer (HashiCorp), Fortinet + Cisco Meraki (Servosity)"
 )
 
 SELECTED=""
@@ -1507,7 +1511,8 @@ unset _i
 # that were reviewed (marketplace add accepts owner/repo#ref, verified against a
 # throwaway config dir): Leonxlnx/taste-skill v2.1.4 = 6010f91a9935f1c167dfc500fb1a475681892e6b,
 # nextlevelbuilder/ui-ux-pro-max-skill v2.15.0 = a38d04c3d5c298c851dbe5e6ee1965ee3de42cb5.
-# A tag can move and a full SHA is not accepted as a ref, so both rows are OPT-IN
+# A tag can move and (on the CLI this was written against) a full SHA is not accepted as a
+# ref - CLI 2.1.325 does accept one, see the skill-sets note below - so both rows are OPT-IN
 # (unticked by default, see COMMUNITY_OPT_IN). Bump the tags deliberately after a fresh
 # review (reviewed 2026-10-23). The marketplace
 # probe matches on the last field (the local name), which is why the '#ref' in the
@@ -1556,30 +1561,85 @@ for _i in "${!COMMUNITY_KEYS[@]}"; do
 done
 unset _i
 
+# --- Skill sets (menu item 27) -------------------------------------------------
+# Third-party marketplaces, each a different publisher. Owner request 2026-11-14. The
+# last field of every spec is the name in that repo's own .claude-plugin/marketplace.json
+# and must be EXACT or the marketplace is re-added on every run (see the community
+# note above); each was read from the repo, not guessed:
+#   zxkane/aws-skills          -> 'aws-skills'  (plugins aws-common, aws-iac, aws-cost-ops,
+#                                 serverless-eda, aws-agentic-ai)
+#   hashicorp/agent-skills     -> 'hashicorp'   (plugins terraform, packer)
+#   Servosity/msp-skills       -> 'msp-skills'  (111 plugins; ONLY fortinet and
+#                                 cisco-meraki are listed here)
+# Every source is pinned with '#<full commit SHA>'. 'claude plugin marketplace add'
+# 2.1.325 accepts a full SHA there and checks that commit out (verified 2026-11-14 in a
+# throwaway CLAUDE_CONFIG_DIR: known_marketplaces.json recorded the SHA as the ref and the
+# clone's HEAD was that commit, and 'marketplace update' keeps it). An older CLI may
+# refuse it ("Remote branch <sha> not found", see the community note above); that fails
+# the marketplace step loudly, it never falls back to an unpinned add. Tags were not
+# usable: zxkane/aws-skills publishes none, hashicorp's only tag (v1.0.0) predates the
+# terraform/packer plugin layout, and Servosity's tags are per-plugin (zoom-phone-v*).
+# SHAs reviewed 2026-11-14 as the repos' HEAD; bump them deliberately after a fresh review.
+# aws-cost-ops and aws-agentic-ai declare MCP servers that start with an unpinned
+# 'uvx <awslabs package>@latest' when Claude Code loads the plugin.
+# Servosity's install.sh / install.ps1 (the fortinet-cli / cisco-meraki-cli binary
+# installers) are NEVER run here: the skills install without them.
+SKILLSET_KEYS=(
+  "aws-common" "aws-iac" "aws-cost-ops" "serverless-eda" "aws-agentic-ai"
+  "terraform" "packer" "fortinet" "cisco-meraki"
+)
+SKILLSET_NAME=(
+  "aws-common              - AWS shared skills (zxkane/aws-skills)"
+  "aws-iac                 - AWS infrastructure as code: CDK, CloudFormation"
+  "aws-cost-ops            - AWS cost and operations (starts unpinned uvx @latest MCP servers)"
+  "serverless-eda          - AWS serverless and event-driven architecture"
+  "aws-agentic-ai          - AWS agentic AI (starts an unpinned uvx @latest MCP server)"
+  "terraform               - HashiCorp Terraform skills (hashicorp/agent-skills)"
+  "packer                  - HashiCorp Packer skills (hashicorp/agent-skills)"
+  "fortinet                - Fortinet skill (Servosity/msp-skills, commit-pinned)"
+  "cisco-meraki            - Cisco Meraki skill (Servosity/msp-skills, commit-pinned)"
+)
+SKILLSET_SPEC=(
+  "aws-common@aws-skills|zxkane/aws-skills#68530c6f296ccd2f5e99c79782f3e0fbf962c51a|aws-skills"
+  "aws-iac@aws-skills|zxkane/aws-skills#68530c6f296ccd2f5e99c79782f3e0fbf962c51a|aws-skills"
+  "aws-cost-ops@aws-skills|zxkane/aws-skills#68530c6f296ccd2f5e99c79782f3e0fbf962c51a|aws-skills"
+  "serverless-eda@aws-skills|zxkane/aws-skills#68530c6f296ccd2f5e99c79782f3e0fbf962c51a|aws-skills"
+  "aws-agentic-ai@aws-skills|zxkane/aws-skills#68530c6f296ccd2f5e99c79782f3e0fbf962c51a|aws-skills"
+  "terraform@hashicorp|hashicorp/agent-skills#5e30fa5c867ba6777c37e4206babfd08049c396f|hashicorp"
+  "packer@hashicorp|hashicorp/agent-skills#5e30fa5c867ba6777c37e4206babfd08049c396f|hashicorp"
+  "fortinet@msp-skills|Servosity/msp-skills#cc3f873bde09ffa06cd2a7e8e70f46cde1f95e11|msp-skills"
+  "cisco-meraki@msp-skills|Servosity/msp-skills#cc3f873bde09ffa06cd2a7e8e70f46cde1f95e11|msp-skills"
+)
+SKILLSET_STATE=()
+for _i in "${!SKILLSET_KEYS[@]}"; do SKILLSET_STATE+=(1); done
+unset _i
+
 # --- Generic sub-picker groups ------------------------------------------------
 # Every menu row that installs more than one thing gets a sub-picker on -> , exactly
 # like the repo's own skills row always had. A group is the parallel arrays
 # <PREFIX>_KEYS / _NAME / _STATE (and _SPEC where the entries span marketplaces).
 # Parallel arrays plus eval indirection rather than associative arrays or namerefs,
 # because this has to keep running on bash 3.2.
-GROUP_MENU_KEYS=("own-skills" "team"   "community"   "repo-plugins")
-GROUP_PREFIXES=( "SKILL"      "TEAM"   "COMMUNITY"   "PLUGIN")
-GROUP_FLAGS=(    "--skills"   "--team" "--community" "--plugins")
-GROUP_NOUN=(     "skills"     "team plugins" "community plugins" "plugins")
+GROUP_MENU_KEYS=("own-skills" "team"   "community"   "repo-plugins" "skill-sets")
+GROUP_PREFIXES=( "SKILL"      "TEAM"   "COMMUNITY"   "PLUGIN"       "SKILLSET")
+GROUP_FLAGS=(    "--skills"   "--team" "--community" "--plugins"    "--skillsets")
+GROUP_NOUN=(     "skills"     "team plugins" "community plugins" "plugins" "skill sets")
 # Singular, for "ignoring unknown <thing> 'x'" warnings.
-GROUP_NOUN1=(    "skill"      "team plugin"  "community plugin"  "plugin")
+GROUP_NOUN1=(    "skill"      "team plugin"  "community plugin"  "plugin" "skill set")
 # printf template for the menu row: selected, total.
 GROUP_LABEL=(
   "This repo's marketplace + %s of %s skills  >"
   "Team plugins: %s of %s (superpowers, frontend-design, excalidraw, github)  >"
   "Community marketplaces + %s of %s plugins  >"
   "This repo's plugins: %s of %s (ai-connect, angular-lsp, bash-lsp, crew, css-lsp, gizmoduck, localgpu, obsidian-vault, powershell-lsp, pwsh-lsp, rule-of-two, sql-lsp, terraform-lsp)  >"
+  "Skill sets: %s of %s (AWS, Terraform + Packer, Fortinet + Cisco Meraki; MSP skills pinned to a commit)  >"
 )
 GROUP_TITLE=(
   "Pick individual skills from this repo"
   "Pick team plugins"
   "Pick community plugins"
   "Pick plugins from this repo"
+  "Pick skill sets"
 )
 
 group_index_for() {
@@ -2539,7 +2599,7 @@ if is_selected "cli"; then
 fi
 
 # Everything from here to the MCP servers needs the claude CLI on PATH.
-CLAUDE_ITEMS="own-skills team find-skills community claude-code-setup supabase repo-plugins"
+CLAUDE_ITEMS="own-skills team find-skills community claude-code-setup supabase repo-plugins skill-sets"
 NEEDS_CLAUDE=0
 for key in $CLAUDE_ITEMS; do
   is_selected "$key" && NEEDS_CLAUDE=1
@@ -3988,6 +4048,23 @@ if is_selected "stack-tools"; then
   run_step "sqlfluff (uv tool install sqlfluff)" install_sqlfluff
   run_step "shellcheck" install_shellcheck
   run_step "PSScriptAnalyzer (pwsh, if present)" install_psscriptanalyzer
+fi
+
+# --- 27. Skill sets: AWS, Terraform + Packer, Fortinet + Cisco Meraki ----------
+# The catalog is SKILLSET_KEYS/SKILLSET_SPEC next to the menu, so -> on the row (or
+# --skillsets) narrows it. Each source is pinned to a commit; see the note there.
+if is_selected "skill-sets"; then
+  if [ "$(group_selected_count SKILLSET)" -eq 0 ]; then
+    warn "no skill sets selected - nothing installed for this item, and no marketplace registered."
+  fi
+  install_group SKILLSET
+  if group_entry_selected SKILLSET fortinet || group_entry_selected SKILLSET cisco-meraki; then
+    # Printed, never acted on: the skill and the binary are separate installs.
+    warn "fortinet / cisco-meraki: only the skills were installed. Their fortinet-cli / cisco-meraki-cli binaries are a separate install this script never runs (it is Servosity's install.sh, a download-and-run installer from a third party). Read the script first, run it with DRY_RUN=1, and only then install it yourself."
+  fi
+  if group_entry_selected SKILLSET aws-cost-ops || group_entry_selected SKILLSET aws-agentic-ai; then
+    warn "aws-cost-ops / aws-agentic-ai declare MCP servers started with an unpinned 'uvx <package>@latest' when Claude Code loads the plugin (needs uv). Untick them in the Skill sets sub-picker (or leave them out of --skillsets) if that is not wanted."
+  fi
 fi
 
 # --- Summary -----------------------------------------------------------------
