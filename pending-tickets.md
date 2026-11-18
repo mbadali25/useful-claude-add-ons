@@ -9,6 +9,12 @@ Status values: `needs ticket`, `ready`, `in progress`, `in review (PR #n)`, `blo
 
 Last updated: 2026-10-05 (feature rush 1.2.0 section). Previously 2026-10-03. Tracks L-0618's follow-ups, this session's PRs (#337, #372, #374, #375) and the handed-over PRs #350-#373. Other open PRs (#376, #377, #378, #379, #380 and #274-#349 outside that range) belong to other sessions and appear here only where they block or are blocked by a tracked PR.
 
+## NEXT item (owner 2026-11-18, ahead of the priority-D tickets below)
+
+| ID | Title | Priority | Body | Status |
+|---|---|---|---|---|
+| _none yet_ | Remove the verify-map trust re-approval or let the owner opt out (machine layer only); make the `/crew:allow-run` route default-on | NEXT | [verify-trust-remove-or-opt-out.md](docs/tickets/pending/verify-trust-remove-or-opt-out.md) | needs ticket |
+
 ## Feature rush 1.2.0 (PRs #324-#508, cloud session `crew-rush-2`, started 2026-10-05)
 
 Owner instruction 2026-10-05. Every PR in #324-#508 is grouped by dependency and files touched, built
