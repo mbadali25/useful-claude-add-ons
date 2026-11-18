@@ -462,7 +462,7 @@ class Gate:  # pylint: disable=too-many-instance-attributes
         try:
             import crew_gitallow  # pylint: disable=import-outside-toplevel
             return crew_gitallow.promote_exempt(self.cmd, "bash", self.project)
-        except Exception:  # pylint: disable=broad-except
+        except Exception:  # pylint: disable=broad-except  # noqa: BLE001
             return False
 
     # -- the run ------------------------------------------------------------
