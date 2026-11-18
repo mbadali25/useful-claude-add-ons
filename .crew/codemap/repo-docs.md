@@ -206,9 +206,9 @@ guide HTML/DOCX/PDF are the generated parts; `scripts/check-crew-docs.py`/`build
   (L-0887 post-merge re-pin). The last commit touching either install script is `ffdff20b0` (2026-10-23), an ancestor of the pin
   (`git merge-base --is-ancestor`), and `git log c369bf985..HEAD -- scripts/install-prerequisites.{sh,ps1}` is empty. It goes stale the moment an
   install-script change merges; re-run that `git log` rather than trusting this line.
-  `docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json:18` pins `0a2d49b069bd...` and is **stale**: 23 commits touched
-  `scripts/install-prerequisites.sh` after it (`git log --oneline 0a2d49b06..HEAD -- scripts/install-prerequisites.sh | wc -l`). `docs/runbooks/rollback.md`
-  names this file as a site to re-pin; nothing re-pinned it (the pin in this json has not moved since `d97d2b1c1`, PR #215).
+  `docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json:18` was re-pinned to `34fa223570bc...` (the #778 merge) with its DOCX and PDF rebuilt;
+  it goes stale the same way as the README pin, so re-run `git log 34fa22357..HEAD -- scripts/install-prerequisites.{sh,ps1}` rather than trusting this line.
+  `docs/runbooks/rollback.md` names this file as a site to re-pin.
 - **`docs/runbooks/rollback.md:3` reads `last verified: 2026-09-05`**: 51 days before 2026-10-26. This note cannot refresh it.
 - **`docs/HANDOFF.md`**: newest entry `## 2026-08-23 ...` (`:9`), 64 days old at 2026-10-26. Re-measure each pass.
 - **`docs/runbooks/INDEX.md` still does not exist**: `docs/runbooks/` holds `rollback.md` alone. `plugin/crew/skills/crew-runbooks/SKILL.md:80` describes
