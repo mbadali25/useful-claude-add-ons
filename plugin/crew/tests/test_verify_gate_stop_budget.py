@@ -201,6 +201,92 @@ def test_an_unreadable_config_falls_back_to_the_default_not_to_unbounded(
     assert "echo RAN-big-90" not in _ran(result), result.stderr
 
 
+# `verify.stopBudgetSeconds` as the reader takes it must be exactly what the writer
+# (`crew_state.STOP_BUDGET_BOUNDS`, `crew_config.value_allowed`) stores: a whole number
+# from 1 to 540. Raw text, not json.dumps, so a decimal, an exponent, a duplicate key
+# and whitespace reach the gate byte for byte.
+_ACCEPTED = [("1", 1), ("10", 10), ("60", 60), ("120", 120), ("539", 539), ("540", 540)]
+_REJECTED = [
+    ("0", "zero"), ("-1", "negative"), ("-60", "negative"), ("10.5", "decimal"),
+    ("60.0", "whole decimal"), ("1e2", "exponent"), ("1E1", "exponent"),
+    ("541", "over the bound"), ("600", "the hook timeout"), ("5000", "far over"),
+    ("1000000000", "huge"), ("NaN", "nan"), ("Infinity", "infinity"),
+    ("-Infinity", "negative infinity"), ('"10"', "numeric string"),
+    ('""', "empty string"), ('" "', "whitespace string"), ('"  7  "', "padded string"),
+    ('"abc"', "non-numeric"), ("true", "boolean"), ("false", "boolean"),
+    ("null", "null"), ("[]", "array"), ("[10]", "array"), ("{}", "object"),
+]
+
+
+def _config_text(value_text):
+    return '{"verify": {"stopBudgetSeconds": %s}}' % value_text
+
+
+def _budget_line(result):
+    """The `stop budget Ns` the gate reports, as an int, or None."""
+    for line in result.stderr.splitlines():
+        if "stop budget " in line:
+            tail = line.split("stop budget ", 1)[1]
+            return int(tail.split("s", 1)[0])
+    return None
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+@pytest.mark.parametrize("text,expected", _ACCEPTED)
+def test_a_whole_number_the_writer_stores_is_the_budget(flavour, text, expected,
+                                                         tmp_path):
+    """MUST-ALLOW. Every integer in 1..540 is taken as written, ends included."""
+    root = _repo(tmp_path, config=_config_text(text))
+    assert _budget_line(_run(flavour, root)) == expected
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+@pytest.mark.parametrize("text,why", _REJECTED)
+def test_a_value_the_writer_would_refuse_is_the_default_not_the_budget(
+        flavour, text, why, tmp_path):
+    """MUST-REJECT. A value outside 1..540 integers (0, negatives, decimals,
+    over 540, non-numbers, empty or whitespace text) reads as the 60 s default:
+    never a budget nobody could have set, and never no limit."""
+    root = _repo(tmp_path, config=_config_text(text))
+    result = _run(flavour, root)
+    assert _budget_line(result) == 60, (why, result.stderr)
+    assert "echo RAN-big-90" not in _ran(result), (why, result.stderr)
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+@pytest.mark.parametrize("text", [
+    '{"verify": {"stopBudgetSeconds": 10, "stopBudgetSeconds": 20}}',
+    '{"verify": {"stopBudgetSeconds": 20, "stopBudgetSeconds": 10}}',
+    '{"verify": {"stopBudgetSeconds": 10}, "verify": {"stopBudgetSeconds": 20}}',
+    '{"verify": {"stopBudgetSeconds": 0, "stopBudgetSeconds": 10}}',
+], ids=["10-then-20", "20-then-10", "verify-twice", "0-then-10"])
+def test_a_key_written_twice_is_the_default(flavour, text, tmp_path):
+    """MUST-REJECT. JSON keeps the last of two equal keys, so a hand-edited
+    file could say two things and the gate would obey one silently: it is
+    ambiguous, so it is the default."""
+    root = _repo(tmp_path, config=text)
+    assert _budget_line(_run(flavour, root)) == 60
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_other_keys_may_repeat_and_the_budget_still_reads(flavour, tmp_path):
+    """MUST-ALLOW, the neighbour of the case above: only a repeat of the
+    budget's own path is ambiguous. A repeated unrelated key must not cost a
+    valid budget."""
+    root = _repo(tmp_path, config='{"x": 1, "x": 2, "verify": {"stopBudgetSeconds": 10}}')
+    assert _budget_line(_run(flavour, root)) == 10
+
+
+def test_the_readers_bound_is_the_writers():
+    """The 540 in `verify-gate.sh` and `crew_state.STOP_BUDGET_BOUNDS` move
+    together: the reader's literals are read off the gate, not assumed."""
+    import crew_state  # pylint: disable=import-outside-toplevel
+    with open(_SH, encoding="utf-8") as fh:
+        text = fh.read()
+    low, high = crew_state.STOP_BUDGET_BOUNDS
+    assert "1 <= _v <= 540" in text and (low, high) == (1, 540), (low, high)
+
+
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_a_deferral_alone_does_not_change_the_exit_code(flavour, tmp_path):
     root = _repo(tmp_path)

@@ -129,6 +129,14 @@ read entries under any `## [` heading.
 - crew 1.3.140: re-bump only - interim number on the guards.git.allow branch (PR #769, pushed, never on main); open PR #777 reached 1.3.141, so the branch was re-bumped above it; the change is recorded under crew 1.3.146
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Fixed — crew 1.3.159: the Stop budget reader agrees with the writer (harness-only)
+
+- **Summary.** `crew` 1.3.159: a hand-edited `verify.stopBudgetSeconds` that `/crew:config` would refuse (0, a negative, a decimal, a string, a boolean, null, a number over 540, or the key written twice) now reads as the 60 s default in `verify-gate.sh`, instead of being taken as written.
+- **Cause (verified, on origin/main 1.3.158).** The reader took any non-bool number `>= 0`, so `0`, `0.5` and `5000` were honoured while the writer (`crew_state.STOP_BUDGET_BOUNDS`, 1 to 540) refused them. A budget of 0 deferred every priced rule, and one over 540 let a rule run past the Stop hook's kill time less the gate's margin.
+- **Fix.** `verify-gate.sh` takes the value only when `type(_v) is int and 1 <= _v <= 540`, and parses the config with an `object_pairs_hook` that refuses a repeated `stopBudgetSeconds` or `verify` key (JSON keeps only the last of two, so the file would say two things). Anything else leaves the default 60, never no limit. This PR is the review-harness change alone (owner rule T-0087); no feature work rides along.
+- **Tests.** `test_verify_gate_stop_budget.py`: must-accept 1, 10, 60, 120, 539 and 540; must-reject 0, negatives, `10.5`, `60.0`, `1e2`, 541, 600, 5000, NaN, Infinity, numeric, empty, whitespace and non-numeric strings, booleans, null, array and object; a key written twice; a repeated unrelated key still reads; the literal 540 equals `crew_state.STOP_BUDGET_BOUNDS`. Three existing fixtures used values the writer refuses (0, 900, 5000) and now use 1, 120 and 540; `test_verify_gate_deadline.py`'s slow rule is priced 500 s instead of 900 s so it still fits the 540 s ceiling.
+- **Docs.** `CONFIG.md` row, the troubleshooting guide, `config-rationale.md`, the code map and the comment in `crew_state.py`; the HTML, DOCX and PDF of the changed guides were rebuilt.
+
 ### Added — crew 1.3.158: `verify.stopBudgetSeconds` is a settable, documented, bounded config key (thd-jobs 5a)
 
 - **Summary.** `crew` 1.3.158: the Stop gate's verify budget can now be tuned with `/crew:config verify.stopBudgetSeconds 120` instead of hand-editing the file; the default stays 60 and a value that is not a whole number from 1 to 540 is refused.
