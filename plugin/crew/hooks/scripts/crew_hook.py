@@ -486,8 +486,10 @@ _SKIP = "skip"
 
 
 def _approval_wanted(raw):
-    """approval-hook.sh's own pre-filter: the word `approve` in any case, or `crew:confirm-config`.
-    A prompt with neither exits 0 before any python is looked for."""
+    """approval-hook.sh's own pre-filter: the word `approve` in any case, `crew:confirm-config` or
+    `crew:allow-run` (crew 1.3.161). A prompt with none exits 0 before any python is looked for."""
+    if b"crew:allow-run" in raw:
+        return True
     return re.search(rb"approve", raw, re.IGNORECASE) is not None or b"crew:confirm-config" in raw
 
 
@@ -897,6 +899,7 @@ NO_PYTHON_REFUSALS = (
     "COMPLETION AUDIT: no usable python - the tree was not audited",       # completion-audit.sh
     "crew: /crew:approve was NOT recorded -- no usable python",            # approval-hook.sh
     "crew: /crew:confirm-config was NOT recorded -- no usable python",     # approval-hook.sh
+    "crew: /crew:allow-run gave NO receipt -- no usable python",           # approval-hook.sh
     "PROMOTION BLOCKED: no usable python",                                 # promote-gate.sh
     "role-write-guard: no usable python found",                            # role-write-guard.sh
 )

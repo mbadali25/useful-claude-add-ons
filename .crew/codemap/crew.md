@@ -968,6 +968,50 @@ calls `confirm`; both are harness (`scripts/check-tooling-pr.py` `HARNESS`:
 `plugin/crew/tests/humanonly_mutations.py` (16, run alone until PR 2 wires
 them into `sabotage.py`).
 
+## The owner-typed run approval (crew 1.3.161, harness half)
+
+DERIVED on `feat/approval-core` (cut from main `127df0155`); this section does
+not move the anchor. One module, `plugin/crew/hooks/scripts/crew_runapproval.py`,
+listed in `HARNESS` (`scripts/check-tooling-pr.py:74`). It holds two stores
+under `~/.claude/crew/run-approvals/` (`store_dir` `:158`, refused when the
+path lies inside the project, `_machine_path` `:110`): `requests/<id>.json`
+and `receipts/<id>.json`, plus `audit.log` (`audit` `:230`). Three callers and
+no other consumer: `scope_guard.decide` calls `store_refusal` (`:606`) and
+then, on a trust refusal, `guard_trust` (`:561`), both before `scope.mode` is
+read (`plugin/crew/hooks/scripts/scope_guard.py:895`, `:903`);
+`approval_hook._allow_run` (`plugin/crew/hooks/scripts/approval_hook.py:780`,
+reached from `_user_command` `:807`) calls `mint` (`:451`);
+`verify_trust._spend_receipt` (`plugin/crew/hooks/scripts/verify_trust.py:967`,
+from `_confirm` `:985` when `--receipt` is given, `_grant` `:959`) calls
+`spend` (`:531`). `settings` (`:123`) reads `approvals.run.classes`,
+`ttlSeconds` and `verbs.verifyTrust` from the machine config file only; the one
+class is `verify-trust` (`CLASSES` `:57`), the default is no class.
+`parse_trust_command` (`:295`) accepts one plain form; `trust_action` (`:267`)
+is the canonical action both the guard and the tool build; `trust_pin`
+(`:278`) is `verify_trust.digest` for `approve`. `request` (`:402`) coalesces
+and caps at `MAX_PENDING` (`:63`); `mint` takes the request by rename
+(`_claim` `:203`); `check` (`:512`) is the guard's read; `spend` takes the
+receipt by rename before judging it. The prompt reaches the hook through two
+pre-filters that now name `crew:allow-run`:
+`plugin/crew/hooks/scripts/crew_hook.py:485` (`_approval_wanted`) and
+`plugin/crew/hooks/scripts/approval-hook.sh:23`.
+JUDGEMENT: default off and not usable from a prompt yet. The keys are read
+raw from the machine file and are not in `crew_keys`; no `commands/allow-run.md`
+exists (a command file drags `crew_help.GROUPS`, the install scripts and three
+skill files, none of them harness or `ALONGSIDE`), so both wait for the
+non-harness half. The store protection and the session binding are tripwires:
+the stores and the hook payload belong to the same OS user. The store name is
+also read through globs and unexpanded variables beside it
+(`crew_runapproval._veiled_store`), a check that raises is a refusal in every
+mode (`scope_guard._store_held`), all of it only while a class is on
+(`store_refusal` reads `settings` first and returns None with none on, so a
+repo that never set the key sees no new refusal), and the binding does not stop a child that
+resumes the session (measured, claude 2.1.326: `claude -p --resume <sid>`
+hands the prompt hook `<sid>`), so with a class on the guard refuses that
+command (`_RESUME_RE`). Tests:
+`plugin/crew/tests/test_allow_run.py`; mutations
+`plugin/crew/tests/sabotage_runapproval.py`, appended to `sabotage.MUTATIONS`.
+
 ## Worktree root and `/crew:worktrees` (crew 1.3.19)
 
 DERIVED on `feat/worktrees-root` (cut from main `e65a067a4`); this section does
