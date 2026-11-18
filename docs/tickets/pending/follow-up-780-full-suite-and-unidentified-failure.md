@@ -6,7 +6,7 @@ Siblings: `follow-up-777-ci-timing-slow-suite.md`.
 
 ## Problem
 
-#780 makes `verify.stopBudgetSeconds` a settable, bounded (1..600) repo config key. Its verification is partial: the full `plugin/crew/tests` suite never completed on the author's host, and one of three failures seen in a targeted run was never identified.
+#780 makes `verify.stopBudgetSeconds` a settable, bounded (1..540 after the re-bump; 1..600 when this ticket was written) repo config key. Its verification is partial: the full `plugin/crew/tests` suite never completed on the author's host, and one of three failures seen in a targeted run was never identified.
 
 ## Evidence
 

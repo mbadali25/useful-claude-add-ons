@@ -239,8 +239,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.158**: `verify.stopBudgetSeconds` is a settable, documented, bounded config key (thd-jobs 5a). `crew` 1.3.158: the Stop gate's verify budget can now be tuned with `/crew:config verify.stopBudgetSeconds 120` instead of hand-editing the file; the default stays 60 and a value that is not a whole number from 1 to 540 is refused.
 - **crew 1.3.155**: The Pylint job no longer fails on the 3.12+ `isjunction` guard in `verify_trust.py`. `crew` 1.3.155: no behaviour change; a lint-only fix so the Pylint workflow passes again on main.
-- **crew 1.3.153**: `guards.git.allow`, one switch that lets git commands past crew's command guards. `crew` 1.3.153: a new machine-only switch, `guards.git.allow`, stops crew's command guards from blocking or asking on git commands (`"all"`, destructive ones included, or a list of subcommands); it is off by default and takes effect only after the owner types `/crew:confirm-config` twice.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
