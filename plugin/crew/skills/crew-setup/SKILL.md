@@ -200,7 +200,7 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
     ],
     "fallback": "claude-sonnet-5",
     "codex": {
-      "model": null,
+      "model": "gpt-6.2-sol",
       "reasoningEffort": null
     },
     "copilot": {
@@ -393,11 +393,13 @@ and hard-fail instead of falling back.
 `qa.order`: the candidate sequence `auto` walks. A provider that is not on `PATH`, or
 whose block is not configured, is skipped out loud — never silently.
 
-`qa.codex.model` / `qa.codex.reasoningEffort`: both `null` means "pass no flag", i.e.
-whatever the Codex CLI itself defaults to. This is deliberate — it keeps an upgraded
-repo behaving exactly as it did before. Set `reasoningEffort` to `"high"` for a
-materially harder review at higher latency and cost; set `model` only to pin a
-specific Codex model. Read at call time, never hardcoded in the command.
+`qa.codex.model` / `qa.codex.reasoningEffort`: `model` defaults to `gpt-6.2-sol` from
+crew 1.3.164 (owner decision); before that it was `null`. A repo whose config already
+spells `"model": null` keeps `null`, which means "pass no flag", i.e. whatever the Codex
+CLI itself defaults to, so an existing repo changes only when you edit that key.
+`reasoningEffort` stays `null`. Set it to `"high"` for a materially harder review at
+higher latency and cost; set `model` to pin a different Codex model. Read at call time,
+never hardcoded in the command.
 
 `qa.copilot.model`: **required before Copilot can run at all.** Copilot CLI defaults to
 `claude-sonnet-4.6`, the author's own family, which makes it a worse reviewer than the

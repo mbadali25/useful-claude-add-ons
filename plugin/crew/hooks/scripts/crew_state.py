@@ -977,6 +977,11 @@ PM_DEFAULTS = {
 # OFFER that table instead; see `skills/crew-setup/global-config.md`.
 FALLBACK_DEFAULT = "claude-sonnet-5"
 
+# The Codex model `qa.codex.model` pins from crew 1.3.164 on (owner decision, 2026-11-18).
+# Before that the default was null ("pass no flag"). `dev.codex.model` is still null, and the
+# per-role `gpt-6-astra` pins in crew-setup's table are separate, deliberate choices.
+CODEX_DEFAULT_MODEL = "gpt-6.2-sol"
+
 # `kimi` is second in `order` (T-0028): its family is known without a pin, so
 # unlike an unpinned `copilot` it can actually be reached. Its block has a
 # `model` only -- no `reasoningEffort`, because the Kimi Code CLI has no
@@ -986,7 +991,7 @@ QA_DEFAULTS = {
     "provider": "auto",
     "order": ["codex", "kimi", "copilot", "claude"],
     "fallback": FALLBACK_DEFAULT,
-    "codex": {"model": None, "reasoningEffort": None},
+    "codex": {"model": CODEX_DEFAULT_MODEL, "reasoningEffort": None},
     "copilot": {"model": None},
     "kimi": {"model": None},
     "roles": {},
