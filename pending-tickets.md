@@ -167,6 +167,28 @@ Open items from the owner's list, each with state read from `gh` on 2026-11-17. 
 | _none yet_ | Host hygiene: runaway bash and secrets-guard processes, leftover worktree directory | unassigned (owner to set) | [host-hygiene-processes-and-leftover-worktree.md](docs/tickets/pending/host-hygiene-processes-and-leftover-worktree.md) | needs ticket |
 | _none yet_ | Housekeeping: #679 breach note, vault entries, Configuration Guide refresh, stale dashboards | unassigned (owner to set) | [housekeeping-breach-note-vault-docs-dashboards.md](docs/tickets/pending/housekeeping-breach-note-vault-docs-dashboards.md) | needs ticket |
 
+### Night findings 2026-11-17 (recorded under owner authorization)
+
+Priorities are proposed by the recording agent (P1 correctness or safety, P2 reliability or hygiene, P3 docs or cleanup); the owner may change them. Each body labels VERIFIED versus INFERRED.
+
+| ID | Title | Priority | Body | Status |
+|---|---|---|---|---|
+| _none yet_ | hooks.json registers only bash, no powershell flavour (PLUGINS.md and landmine disagree) | P1 | [hooks-json-bash-only-no-powershell-flavour.md](docs/tickets/pending/hooks-json-bash-only-no-powershell-flavour.md) | needs ticket |
+| _none yet_ | verify-gate.sh trust codes 10-13 exit 0, only 14 exits 2 | P2 | [verify-gate-trust-codes-10-13-exit-0.md](docs/tickets/pending/verify-gate-trust-codes-10-13-exit-0.md) | needs ticket |
+| _none yet_ | crew_reaper: POSIX orphans under pid 1 read as live, never killed | P2 | [crew-reaper-posix-orphans-pid1-read-as-live.md](docs/tickets/pending/crew-reaper-posix-orphans-pid1-read-as-live.md) | needs ticket |
+| _none yet_ | crew_reaper: stale child pids killed after pid reuse (parent-only revalidation) | P1 | [crew-reaper-stale-child-pids-pid-reuse-kill.md](docs/tickets/pending/crew-reaper-stale-child-pids-pid-reuse-kill.md) | needs ticket |
+| _none yet_ | machine_config_path returns None when cwd is ~ or an ancestor | P2 | [machine-config-path-none-when-cwd-is-home.md](docs/tickets/pending/machine-config-path-none-when-cwd-is-home.md) | needs ticket |
+| _none yet_ | verify-gate.sh GATE_TRUST_BROKEN tested but never set | P3 | [verify-gate-gate-trust-broken-never-set.md](docs/tickets/pending/verify-gate-gate-trust-broken-never-set.md) | needs ticket |
+| _none yet_ | Review harness cleanup from #781 (checklist) | P3 | [review-harness-781-stale-citations-and-long-lines.md](docs/tickets/pending/review-harness-781-stale-citations-and-long-lines.md) | needs ticket |
+| _none yet_ | #780 STOP_BUDGET_BOUNDS includes 600 = hook timeout; reader/writer mismatch | P2 | [follow-up-780-stop-budget-bounds-and-reader-mismatch.md](docs/tickets/pending/follow-up-780-stop-budget-bounds-and-reader-mismatch.md) | needs ticket |
+| _none yet_ | Per-session worktree rule and session.worktree off/warn/require | P1 | [per-session-worktree-rule-session-worktree-config.md](docs/tickets/pending/per-session-worktree-rule-session-worktree-config.md) | needs ticket |
+| _none yet_ | tsslive dev-review waiver receipt chases main; one slot per rung | P2 | [tsslive-dev-review-waiver-receipt-chases-main.md](docs/tickets/pending/tsslive-dev-review-waiver-receipt-chases-main.md) | needs ticket |
+| _none yet_ | SNS alert-recipient subscribe: blocked on addresses and an AWS path | P2 | [sns-alert-recipient-subscribe-blockers.md](docs/tickets/pending/sns-alert-recipient-subscribe-blockers.md) | needs ticket |
+| _none yet_ | SQL deploy request missing repo, databases, environments, tool | P2 | [sql-deploy-request-missing-four-answers.md](docs/tickets/pending/sql-deploy-request-missing-four-answers.md) | needs ticket |
+| _none yet_ | Document PowerShell for gh/git (Git Bash hangs) | P2 | [document-powershell-for-gh-git-git-bash-hangs.md](docs/tickets/pending/document-powershell-for-gh-git-git-bash-hangs.md) | needs ticket |
+| _none yet_ | Standards export digest wrong in a CRLF checkout | P2 | [standards-export-digest-wrong-in-crlf-checkout.md](docs/tickets/pending/standards-export-digest-wrong-in-crlf-checkout.md) | needs ticket |
+| _none yet_ | Verify CREW_HOOK_POSIX_TMP with a live Stop trace | P2 | [verify-crew-hook-posix-tmp-with-live-stop-trace.md](docs/tickets/pending/verify-crew-hook-posix-tmp-with-live-stop-trace.md) | needs ticket |
+
 ## Summary
 
 | # | Ticket | Title | Status | Blocked by |
