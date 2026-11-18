@@ -18,6 +18,7 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.138: re-bump only - interim number on the L-0958 branch (commit 017a322e1, pushed) before review round 2 found `--only` narrowing the stale-backup refusal and pristine baseline to the selected targets; the change is recorded under crew 1.3.139
 - crew 1.3.137: re-bump only - interim number on the L-0958 branch; open PR #774 (guards master switch) already claims 1.3.137, so the change is recorded under crew 1.3.138
 - crew 1.3.136: re-bump only - interim number on the L-0958 branch before main and open PRs moved; the change is recorded under crew 1.3.138
 - crew 1.3.93: re-bump only - interim number on the L-0888 trust-store branch (commit 383d67d29, pushed) before CI showed the round-11 sabotage anchor and the opt-in inventory stale and a Windows-only failing control line in the new junction test; the change is recorded under crew 1.3.94
@@ -94,12 +95,12 @@ read entries under any `## [` heading.
 - crew 1.3.106: re-bump only - interim number on the L-0948 branch (pushed, never on main); main moved to 1.3.96 and the open PRs reached 1.3.132 (#777), so the branch was merged with main and re-bumped above the highest open PR; the change is recorded under crew 1.3.133
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
-### Fixed — crew 1.3.138: two sabotage entries that stayed green now go red, and `sabotage.py` can run one entry (L-0958)
+### Fixed — crew 1.3.139: two sabotage entries that stayed green now go red, and `sabotage.py` can run one entry (L-0958)
 
-- **Summary.** `crew` 1.3.138 makes the sabotage suite able to run a single entry (`--only`, `--list`, and a `--help` that no longer runs the suite and mutates the tree) and fixes two entries that reported STILL GREEN on a clean tree.
+- **Summary.** `crew` 1.3.139 makes the sabotage suite able to run a single entry (`--only`, `--list`, and a `--help` that no longer runs the suite and mutates the tree) and fixes two entries that reported STILL GREEN on a clean tree.
 - **What changed.** The promote-gate fail-closed entry now has a test that pins the sentence only the `VERDICT_STATUS` branch writes (the mutation still exited 2 through the generic message, so the old assertions could not tell). The declared-price entry now points at a new test that calls `verify_record._sync` alone, because the whole-gate test it named never needed the line: `progress` caches the same timing mid-run.
 - **Not changed.** No mutation was re-anchored; no gate, hook or production code changed. The promote-gate entry's label still says "stops failing closed", but the mutation only loses the specific message (the generic one still blocks).
-- **Tests.** `test_sabotage_harness.py` (select, `--help`, `--list`, unmatched `--only`), `test_verify_gate_stop_budget.py`, `test_promote_gate_fails_closed.py`.
+- **Tests.** `test_sabotage_harness.py` (select, `--help`, `--list`, unmatched `--only`, and that `--only` still refuses a stale `.bak` in an unselected target and baselines every target), `test_verify_gate_stop_budget.py`, `test_promote_gate_fails_closed.py`.
 
 ### Fixed — crew 1.3.133: a workflow dispatch's `environment` input selects the environment in the promote gate (L-0948)
 
