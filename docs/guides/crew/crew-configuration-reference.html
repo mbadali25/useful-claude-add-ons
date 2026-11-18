@@ -213,7 +213,7 @@ textual tripwire, not a sandbox: a session that sets out to forge a receipt
 (<code>python -c</code>, an encoded command, a variable holding the path) still can, and
 <code>scope.mode: off</code> has no tripwire at all. Treat <code>humanOnly</code> opt-outs as
 meaningful only with <code>scope.mode</code> <code>block</code>.</p>
-<h2 id="git-commands-guardsgitallow-crew-13125">Git Commands (<code>guards.git.allow</code>, Crew 1.3.125)</h2>
+<h2 id="git-commands-guardsgitallow-crew-13140">Git Commands (<code>guards.git.allow</code>, Crew 1.3.140)</h2>
 <p>The owner's switch that stops crew's command guards from blocking or asking on
 git commands, destructive ones included. Off by default (<code>null</code>, or <code>"off"</code>).</p>
 <table>
@@ -248,7 +248,7 @@ that merely mentions a declared deploy no longer trips it. A declared
 deploy that is itself a git command (<code>git push prod main</code>) stays gated: that
 is a deploy, not a git block. <code>gh</code> is not git: <code>gh pr merge --admin</code>
 (<code>guards.adminMerge</code>), workflow dispatches and <code>gh api</code> calls are untouched.</p>
-<p><strong>The line is ONE plain git command, fail-closed (crew 1.3.125).</strong> A command
+<p><strong>The line is ONE plain git command, fail-closed (crew 1.3.140).</strong> A command
 line is exempt only when it is a single simple command: exactly <code>git</code> - not a
 path (<code>/usr/bin/git</code>, <code>./git</code>, <code>git.exe</code>), not preceded by <code>command</code>, an
 assignment, <code>cd</code> or a function, alias or <code>shopt</code> that redefines git - followed
