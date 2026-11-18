@@ -197,3 +197,39 @@ to about thirty processes (18 bash, 6 python3, 3 git) because every `.sh` row st
 
 The golden corpus is still the oracle; `test_crew_hook_direct.py` holds zero `.sh` starts on the hot path,
 the fallback, the one-registration shape, and the same exit, stdout and stderr by either route.
+
+## Amendment, 2026-11-14 (crew 1.3.99): the Stop completion audit goes direct
+
+The Stop row `completion-audit.sh` was left out of `DIRECT` in 1.3.60 because its wrapper keeps a blocked-once
+marker. Measured on a loaded Windows host it cost 40-49 s through Git Bash (15-20 forks at 1.3-3 s each) against
+0.2-0.6 s for `completion_audit.py` run natively, which put a 60 s row limit within reach and read as
+`UNKNOWN (guard timeout)`. It now has a direct route (`accept` is `(0, 2)`) and the dispatcher reproduces the
+wrapper's bookkeeping (`_audit_marker`, `_audit_marker_clear`, a POSIX `cksum` in Python): the same marker file,
+cleared on a `stop_hook_active` continuation (python is not started) and on a verdict, untouched on a timeout.
+Where the marker cannot be named from the environment (`CLAUDE_PROJECT_DIR` unset or empty, or `TMPDIR` set to a
+missing directory, or unset or empty with no usable launcher `/tmp`: see the correction below) the wrapper keeps the whole sequence, so the two routes never split the blocked-once count.
+Fail-closed is unchanged: any other exit, a failed launch or a missing file runs the wrapper, a timeout is never
+rerun and stays `UNKNOWN`, and Linux and macOS keep the wrapper. `test_crew_hook_stop_native.py` holds the
+must-block and must-allow cases through the native route, the marker name against the real `cksum` and the real
+wrapper, the timing, and a hung child; its mutations are in `sabotage_crew_hook.py`. `verify-gate.sh` and
+`context-watch.sh` are the Stop rows that still start Git Bash, and are not changed here.
+
+### Correction, 2026-11-17 (crew 1.3.147): `TMPDIR` is unset on the ordinary path
+
+As first written the direct route deferred to the wrapper whenever `TMPDIR` was unset or empty, and the
+non-login Git Bash that runs the Stop hook never sets it (measured: `TMPDIR=[]`; a launcher run with the Stop
+table cut to this row took the wrapper branch). So the route was not taken on an ordinary Windows Stop. Python
+cannot derive bash's `/tmp`: Git Bash mounts it from a mount table its running processes share, fixed by
+whichever started first. It stayed at one directory while `TMP` and `TEMP` were pointed at two others, and on CI
+(bashes in parallel, each test with its own `TEMP`) a launcher and a wrapper started one after the other named
+two directories; a wrapper started under the launcher, as the dispatcher's is, shares the launcher's table.
+So `tempfile.gettempdir()` is a different answer. Only bash can
+say, so `crew-hook.sh` now starts the dispatcher with `CREW_HOOK_POSIX_TMP=/tmp`: the MSYS runtime rewrites the
+value to the Windows directory on the way into a native python, with no fork, and it stays `/tmp` on POSIX.
+`_audit_tmp` uses it only when `TMPDIR` is unset or empty, and only when it is an absolute directory with a
+drive on Windows; a missing value (another launcher), an unconverted one (`MSYS_NO_PATHCONV=1`,
+`MSYS2_ENV_CONV_EXCL`) or a `TMPDIR` that is not a directory still leaves the whole sequence to the wrapper.
+Rejected: setting `TMPDIR` in the launcher (it would change every hook's temp directory), and asking
+`cygpath` (a fork per Stop, the cost this amendment removes). Not distinguished: a wrapper run by a second MSYS
+install whose `/tmp` differs from the launcher's. The variable reaches every hook the dispatcher starts; none
+but the dispatcher reads it.
