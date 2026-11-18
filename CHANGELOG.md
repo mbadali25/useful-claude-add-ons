@@ -20,6 +20,7 @@ read entries under any `## [` heading.
 
 - crew 1.3.103: re-bump only - interim number on the stop-audit-native-python branch (commit 9a1e6d2d7, PR #777) before main (crew 1.3.96, #679) was merged in and open PRs reached 1.3.109; the change is recorded under crew 1.3.99
 - crew 1.3.140: re-bump only - number on the stop-audit-native-python branch (PR #777) after merging main (crew 1.3.133) and CI fixes (the NUL sabotage anchor, the Linux no-python PATH in the marker-name test); above every open PR head (highest #785 at 1.3.139); the change is recorded under crew 1.3.99
+- crew 1.3.135: re-bump only - interim number on the stop-audit-native-python branch (PR #777, commit 9d035c0e1) before the final re-bump above the open PR heads (crew 1.3.140); the change is recorded under crew 1.3.99
 - crew 1.3.131: re-bump only - interim number on the stop-audit-native-python branch (commit 79c56c6, PR #777) before the Codex review round; the change is recorded under crew 1.3.99
 - crew 1.3.132: re-bump only - number on the stop-audit-native-python branch (PR #777) after the Codex review round (TMPDIR unset or empty now defers to the wrapper; NUL bytes dropped as bash drops them; the parity tests' skip guard matches only the dispatcher's exact whole-line UNKNOWN labels, checks every stop and never skips a genuinely missing python); the change is recorded under crew 1.3.99
 - crew 1.3.110: re-bump only - number on the stop-audit-native-python branch (PR #777) after merging main (crew 1.3.96, #679); the Stop-audit change is recorded under crew 1.3.99
