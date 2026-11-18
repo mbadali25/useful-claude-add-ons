@@ -1943,7 +1943,7 @@ else:
             if _names.count("stopBudgetSeconds") > 1 or _names.count("verify") > 1:
                 raise ValueError("duplicate key")
             return dict(_pairs)
-        with open(os.environ["CREW_REPO_CONFIG"], encoding="utf-8") as _fh:
+        with open(os.environ["CREW_REPO_CONFIG"], encoding="utf-8-sig") as _fh:  # a BOM (Notepad) is not part of the JSON
             _cc = json.load(_fh, object_pairs_hook=_once)
         _v = (_cc.get("verify") or {}).get("stopBudgetSeconds")
         if type(_v) is int and 1 <= _v <= 540:  # pylint: disable=unidiomatic-typecheck

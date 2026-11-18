@@ -237,7 +237,14 @@ def test_a_whole_number_the_writer_stores_is_the_budget(flavour, text, expected,
                                                          tmp_path):
     """MUST-ALLOW. Every integer in 1..540 is taken as written, ends included."""
     root = _repo(tmp_path, config=_config_text(text))
-    assert _budget_line(_run(flavour, root)) == expected
+    result = _run(flavour, root)
+    if expected >= 135:
+        # 5 + 40 + 90 s of stated cost all fit, so nothing is deferred and the
+        # gate prints no `stop budget` line: the whole map ran instead.
+        assert "echo RAN-big-90" in _ran(result), result.stderr
+        assert "deferred" not in result.stderr, result.stderr
+    else:
+        assert _budget_line(result) == expected, result.stderr
 
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)
@@ -266,6 +273,15 @@ def test_a_key_written_twice_is_the_default(flavour, text, tmp_path):
     ambiguous, so it is the default."""
     root = _repo(tmp_path, config=text)
     assert _budget_line(_run(flavour, root)) == 60
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_utf8_bom_does_not_hide_a_valid_budget(flavour, tmp_path):
+    """MUST-ALLOW. Notepad saves a BOM; a valid 10 must still read as 10."""
+    root = _repo(tmp_path)
+    (root / ".crew" / "config.json").write_bytes(
+        b"\xef\xbb\xbf" + _config_text("10").encode("utf-8"))
+    assert _budget_line(_run(flavour, root)) == 10
 
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)
