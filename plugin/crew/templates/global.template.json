@@ -9,7 +9,7 @@
     ],
     "fallback": "claude-sonnet-5",
     "codex": {
-      "model": null,
+      "model": "gpt-6.2-sol",
       "reasoningEffort": null
     },
     "copilot": {
