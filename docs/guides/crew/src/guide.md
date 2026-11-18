@@ -537,7 +537,7 @@ records nothing and lists the pending proposals, each with its id and the
 exact change, or says that none is pending and why. The configuration reference's "The
 human-only opt-out" section has the rules and their limits.
 
-**Git commands (crew 1.3.142).** `guards.git.allow` is the owner's switch that
+**Git commands (crew 1.3.143).** `guards.git.allow` is the owner's switch that
 stops the command guards blocking or asking on git commands, destructive ones
 included: `"all"`, or a list of subcommands such as `["commit", "push"]`.
 A listed subcommand passes with every option it takes: listing `push` also
@@ -556,7 +556,7 @@ as before. A plain git command carrying `-c` or a command to run (`rebase
 that is not plainly a read, is never exempt.
 Plain lines - `git commit -m "fix: x"`, `git push --force-with-lease origin
 topic`, `git rebase -i HEAD~3`, `git log --format=%H` - stay exempt. A
-declared deploy that is itself a git command stays gated, and `gh`
+declared deploy that is itself a git command stays gated. A declared deploy that computes its ref with a read-only value (`-f ref=$(git rev-parse HEAD)`, also `--short[=N]` or `--abbrev-ref`, as the last part of a word) is not read as hiding git, so the switch still works in that repo; any other substitution, a backtick, a redirection, a second line or a code-running git option in a declared deploy still exempts nothing there. `gh`
 (`--admin` merges, branch protection, workflow dispatches) is untouched. It
 is off by default, lives in the machine file only, and takes effect only
 after you type `/crew:confirm-config <id>` twice for a proposal

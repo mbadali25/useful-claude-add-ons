@@ -62,6 +62,11 @@ wrong test (a must-allow case cannot go red under a loosening); re-pointed. The 
 the new force-push pattern has no row: it exists so the harness-anchored `-uf` line stays the only reader of
 letters-only bundles (otherwise `sabotage_cloud.py`'s row would go STILL GREEN). The total is 177.
 
+Review round 16 (PR #769, owner: "Narrow `_hides_git` now") added 7 red mutations for the narrowing of a read-only
+`=$(git rev-parse HEAD)` value in a declared deploy (the narrowing itself, its `=` anchor, its word end, the refusal
+of a backtick, redirection or second line beside it, the non-string refusal, and the two argument/subcommand
+widenings). The total is 184.
+
 NOT wired into `sabotage.py`'s MUTATIONS: `sabotage*.py` is review harness
 (`scripts/check-tooling-pr.py` `HARNESS`), and a harness change lands alone. Until
 a harness-only change registers this table, run it with sabotage.py's own
@@ -895,4 +900,32 @@ GITALLOW_MUTATIONS = (
      '        if re.match(r"^-[a-zA-Z]*f[a-zA-Z]*$", arg):\n',
      '        if False:\n',
      _T + 'test_round15_a_letters_only_bundle_is_still_read_by_the_original_pattern'),
+    ('gitAllow r16: a rev-parse value is not narrowed', GA,
+     '    narrowed = _REV_PARSE_VALUE_RE.sub("REF", declared)\n',
+     '    narrowed = declared\n',
+     _T + 'test_round16_a_read_only_rev_parse_value_in_a_declared_deploy_leaves_the_exemption'),
+    ('gitAllow r16: the value need not follow an =', GA,
+     '_REV_PARSE_VALUE_RE = re.compile(\n    r"""(?<==)',
+     '_REV_PARSE_VALUE_RE = re.compile(\n    r"""',
+     _T + 'test_round16_every_other_hiding_vector_still_exempts_nothing'),
+    ('gitAllow r16: the value need not end its word', GA,
+     '\\)\\1(?=[ \\t]|$)"""',
+     '\\)\\1"""',
+     _T + 'test_round16_every_other_hiding_vector_still_exempts_nothing'),
+    ('gitAllow r16: a backtick, redirection or second line beside the value is not refused', GA,
+     '    if narrowed != declared and re.search(',
+     '    if False and re.search(',
+     _T + 'test_round16_every_other_hiding_vector_still_exempts_nothing'),
+    ('gitAllow r16: a non-string deploy is not refused by _hides_git', GA,
+     '    if not isinstance(declared, str):\n        return True\n',
+     '',
+     _T + 'test_round16_a_malformed_declared_deploy_with_a_rev_parse_value_fails_closed'),
+    ('gitAllow r16: any rev-parse argument is narrowed', GA,
+     '(?: +(?:--short(?:=[0-9]{1,2})?|--abbrev-ref))? +HEAD',
+     '(?: +[^ )]+)? +HEAD',
+     _T + 'test_round16_every_other_hiding_vector_still_exempts_nothing'),
+    ('gitAllow r16: any git subcommand is narrowed', GA,
+     'git +rev-parse(?:',
+     'git +[a-z-]+(?:',
+     _T + 'test_round16_every_other_hiding_vector_still_exempts_nothing'),
 )

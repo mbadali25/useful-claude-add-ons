@@ -2537,3 +2537,121 @@ def test_the_switch_is_documented_in_config_md():
     text = (pathlib.Path(__file__).resolve().parents[1] / "CONFIG.md").read_text(encoding="utf-8")
     assert f"`{KEY}`" in text
     assert os.path.isfile(_SCRIPTS / "crew_gitallow.py")
+
+
+# --- review round 16 (PR #769: `_hides_git` narrowed for a read-only rev-parse value) ----------
+
+_REV_PARSE_DEPLOYS = [
+    "gh workflow run deploy.yml -f environment=dev -f ref=$(git rev-parse HEAD)",
+    'gh workflow run deploy.yml -f ref="$(git rev-parse HEAD)"',
+    "gh workflow run deploy.yml -f ref=$(git rev-parse --short HEAD)",
+    "gh workflow run deploy.yml -f ref=$(git rev-parse --short=8 HEAD) -f environment=dev",
+    "gh workflow run deploy.yml -f ref=$(git rev-parse --abbrev-ref HEAD)",
+    "VERSION=$(git rev-parse HEAD) deploy-prod"]
+
+
+@pytest.mark.parametrize("deploy", _REV_PARSE_DEPLOYS)
+def test_round16_a_read_only_rev_parse_value_in_a_declared_deploy_leaves_the_exemption(
+        tmp_path, machine, monkeypatch, deploy):
+    """MUST-ALLOW: the L-0948 dev deploy computes its ref with `$(git rev-parse HEAD)`.
+    That read-only substitution no longer makes the switch inert in the repo."""
+    root = _gate_repo(tmp_path)
+    monkeypatch.chdir(root)
+    monkeypatch.setenv("CREW_HEAD_MAP", "")
+    monkeypatch.setenv("CREW_MAP_DIRTY", "")
+    _arm(machine, "all")
+    _declare(root, deploy)
+    assert not crew_gitallow._hides_git(deploy), deploy  # pylint: disable=protected-access
+    for shell in ("bash", "powershell"):
+        assert crew_gitallow.promote_exempt(
+            "git commit -m 'notes: run deploy-prod'", shell, str(root)) is True, deploy
+        assert crew_gitallow.promote_exempt("git status", shell, str(root)) is True, deploy
+    # a gh dispatch line is never exempt, whatever is declared
+    for line in ("gh workflow run deploy.yml -f environment=prod",
+                 "gh workflow run deploy.yml -f environment=dev -f ref=abc"):
+        assert crew_gitallow.promote_exempt(line, "bash", str(root)) is False, line
+    # the switch OFF behaves as before
+    _arm(machine, "off", confirmed=False)
+    assert crew_gitallow.promote_exempt("git status", "bash", str(root)) is False
+
+
+@pytest.mark.parametrize("deploy", [
+    # anything but the one recognised shape still hides git (the exemption is dropped)
+    "gh workflow run d.yml -f ref=$(git -c core.pager=x rev-parse HEAD)",
+    "gh workflow run d.yml -f ref=$(git -c alias.x='!sh' x)",
+    "gh workflow run d.yml -f ref=$(git --exec-path=/tmp rev-parse HEAD)",
+    "gh workflow run d.yml -f ref=$(git -C /tmp rev-parse HEAD)",
+    "gh workflow run d.yml -f ref=$(git credential fill)",
+    "gh workflow run d.yml -f ref=$(git x)",
+    "gh workflow run d.yml -f ref=$(git push prod main)",
+    "gh workflow run d.yml -f ref=$(git rev-parse HEAD; git push)",
+    "gh workflow run d.yml -f ref=$(git rev-parse HEAD && git push)",
+    "gh workflow run d.yml -f ref=$(git rev-parse --git-dir HEAD)",
+    "gh workflow run d.yml -f ref=$(git rev-parse HEAD) $(git push prod main)",
+    "gh workflow run d.yml -f ref=$(git rev-parse $(git push) HEAD)",
+    "gh workflow run d.yml -f ref=$(git rev-parse HEAD)$(git push prod main)",
+    "gh workflow run d.yml -f ref=$(git rev-parse HEAD)x",
+    "gh workflow run d.yml -f ref=$(git rev-parse HEAD) `git status`",
+    "gh workflow run d.yml -f ref=$(git rev-parse HEAD) <(git status)",
+    "gh workflow run d.yml -f ref=$(git rev-parse HEAD) >(git status)",
+    "gh workflow run d.yml -f ref=$(git rev-parse HEAD) > out",
+    "gh workflow run d.yml -f ref=$(git rev-parse HEAD)>out",
+    "gh workflow run d.yml -f ref=$(git rev-parse HEAD) && ${x}it push prod main",
+    "gh workflow run d.yml -f ref=$(git rev-parse HEAD) && \"git\" push prod main",
+    "$(git rev-parse HEAD) push prod main",
+    "gh workflow run d.yml -f ref=$(git  rev-parse\tHEAD)",
+    "gh workflow run d.yml -f ref=$(git rev-parse HEAD)\ngit push prod main",
+    "git push prod $(git rev-parse HEAD)",
+    "gh workflow run d.yml -f ref=$(git push HEAD)",
+    "gh workflow run d.yml -f ref=$(git rev-parse HEAD) -f x=$(git status)"])
+def test_round16_every_other_hiding_vector_still_exempts_nothing(
+        tmp_path, machine, monkeypatch, deploy):
+    """MUST-BLOCK: only a bare read-only rev-parse value is narrowed; each vector the
+    old check refused (code-running git options, any other substitution, nesting,
+    chaining, backticks, process substitution, redirection) still disables the exemption."""
+    root = _gate_repo(tmp_path)
+    monkeypatch.chdir(root)
+    monkeypatch.setenv("CREW_HEAD_MAP", "")
+    monkeypatch.setenv("CREW_MAP_DIRTY", "")
+    _arm(machine, "all")
+    _declare(root, deploy)
+    assert crew_gitallow._hides_git(deploy), deploy  # pylint: disable=protected-access
+    for shell in ("bash", "powershell"):
+        assert crew_gitallow.promote_exempt("git status", shell, str(root)) is False, deploy
+
+
+@pytest.mark.parametrize("shell,line", [
+    ("bash", "git commit -m $(git rev-parse HEAD)"),
+    ("bash", 'git commit -m "$(git rev-parse HEAD)"'),
+    ("bash", "git status $(git rev-parse HEAD)"),
+    ("bash", "git status `git rev-parse HEAD`"),
+    ("bash", "git status; git commit -m $(git rev-parse HEAD)"),
+    ("powershell", "git commit -m $(git rev-parse HEAD)")])
+def test_round16_a_substitution_in_the_candidate_line_is_never_exempt(
+        tmp_path, machine, monkeypatch, shell, line):
+    """MUST-BLOCK: the narrowing reads the DECLARED deploy only; a user-typed line with
+    `$(git ...)` is refused by the plain-command reader, with or without a deploy."""
+    root = _gate_repo(tmp_path)
+    monkeypatch.chdir(root)
+    monkeypatch.setenv("CREW_HEAD_MAP", "")
+    monkeypatch.setenv("CREW_MAP_DIRTY", "")
+    _arm(machine, "all")
+    for deploy in ("deploy-prod --x", _REV_PARSE_DEPLOYS[0]):
+        _declare(root, deploy)
+        assert crew_gitallow.promote_exempt(line, shell, str(root)) is False, (deploy, line)
+
+
+def test_round16_a_malformed_declared_deploy_with_a_rev_parse_value_fails_closed(
+        tmp_path, machine, monkeypatch):
+    root = _gate_repo(tmp_path)
+    monkeypatch.chdir(root)
+    monkeypatch.setenv("CREW_HEAD_MAP", "")
+    monkeypatch.setenv("CREW_MAP_DIRTY", "")
+    _arm(machine, "all")
+    for bad in ([_REV_PARSE_DEPLOYS[0], 7], {"cmd": _REV_PARSE_DEPLOYS[0]}, 5):
+        _declare(root, bad)
+        assert crew_gitallow.promote_exempt("git status", "bash", str(root)) is False, bad
+    (root / ".crew" / "verify.json").write_text("{not json", encoding="utf-8")
+    assert crew_gitallow.promote_exempt("git status", "bash", str(root)) is False
+    assert crew_gitallow._hides_git(None) is True  # pylint: disable=protected-access
+    assert crew_gitallow._hides_git(b"x") is True  # pylint: disable=protected-access

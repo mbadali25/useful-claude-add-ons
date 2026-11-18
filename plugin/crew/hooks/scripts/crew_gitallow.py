@@ -1261,11 +1261,31 @@ def _command_words(declared):
                 break
 
 
+# `=$(git rev-parse HEAD)` and its two read-only spellings, as a whole word's value: the
+# quote, if any, is closed, and a space or the end follows (no `;`, `>`, `)` or more text).
+_REV_PARSE_VALUE_RE = re.compile(
+    r"""(?<==)(["']?)\$\( *git +rev-parse(?: +(?:--short(?:=[0-9]{1,2})?|--abbrev-ref))? +HEAD *\)\1(?=[ \t]|$)""")
+
+
 def _hides_git(declared):
     """True when a declared deploy may run `git` through quoting, an escape or an
     expansion that `_GIT_IN_DEPLOY_RE` does not read as the word: the spelling is
     unknowable, so the caller exempts nothing. Independent of whether the pattern
-    matches the raw text (round 15, finding 1: `"git"` and `$'git'` match it)."""
+    matches the raw text (round 15, finding 1: `"git"` and `$'git'` match it).
+
+    One shape is read as not hiding git: a value `NAME=$(git rev-parse [--short[=N]|--abbrev-ref] HEAD)`
+    (optionally double-quoted) that ends its word, the way a declared dispatch computes a ref
+    (`-f ref=$(git rev-parse HEAD)`). It is replaced by a placeholder first; anything else in the
+    deploy, including a second substitution, is judged as before (PR #769, owner's "narrow
+    `_hides_git` now"). Not a string: cannot tell, so True."""
+    if not isinstance(declared, str):
+        return True
+    narrowed = _REV_PARSE_VALUE_RE.sub("REF", declared)
+    if narrowed != declared and re.search(r"[`<>\n\r]", narrowed):
+        # A backtick, a redirection, a process substitution or a second line beside the
+        # narrowed value: judged as before (the `$(git` always hid it), so refused.
+        return True
+    declared = narrowed
     if _SHELL_ESCAPE_RE.search(declared) or _EXPANDS_RE.search(declared):
         stripped = _EXPANDS_RE.sub("", _SHELL_ESCAPE_RE.sub("", declared))
         if _GIT_IN_DEPLOY_RE.search(stripped):
