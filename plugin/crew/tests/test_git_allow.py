@@ -2655,3 +2655,190 @@ def test_round16_a_malformed_declared_deploy_with_a_rev_parse_value_fails_closed
     assert crew_gitallow.promote_exempt("git status", "bash", str(root)) is False
     assert crew_gitallow._hides_git(None) is True  # pylint: disable=protected-access
     assert crew_gitallow._hides_git(b"x") is True  # pylint: disable=protected-access
+
+
+# --- review round 17 (Opus 5.5): merge-index, and a sweep of every git command ----------------
+#
+# The sweep read `git <cmd> -h` for every command `git --list-cmds=main,others` names on git
+# 2.56.1 and ran each candidate in a throwaway repo with a planted program on PATH.
+
+MERGE_INDEX = [
+    ["merge-index", "./deploy-prod.sh", "-a"], ["merge-index", "deploy-prod", "-a"],
+    ["merge-index", "-o", "deploy-prod", "-a"], ["merge-index", "-q", "deploy-prod", "-a"],
+    ["merge-index", "-o", "-q", "deploy-prod", "-a"], ["merge-index", "cmd.exe", "-a"],
+    ["merge-index", "deploy-prod", "--", "f.txt"], ["merge-index", "deploy-prod", "f.txt"],
+    ["merge-index", "git-merge-one-file", "-a"], ["-C", ".", "merge-index", "deploy-prod", "-a"],
+    ["--no-pager", "merge-index", "deploy-prod", "-a"], ["merge-index"]]
+
+
+@pytest.mark.parametrize("args", MERGE_INDEX)
+def test_round17_merge_index_is_held(args):
+    """MUST-BLOCK. Measured in a conflicted merge: `git merge-index deploy-prod.sh -a`, with
+    `-o -q`, with `-- f.txt` and with a named file each ran the planted program."""
+    assert crew_gitallow.hold(args)
+    line = "git " + " ".join(args)
+    for shell in ("bash", "powershell"):
+        assert crew_gitallow.line_git_commands(line, shell) is None, line
+        assert crew_gitallow.line_exempt(line, shell, "all") is False
+        assert crew_gitallow.line_exempt(line, shell, frozenset(["merge-index"])) is False
+
+
+@pytest.mark.parametrize("shell,line", [
+    ("bash", "git merge-index './deploy-prod.sh' -a"),
+    ("bash", 'git merge-index "./deploy-prod.sh" -a'),
+    ("bash", "git 'merge-index' ./deploy-prod.sh -a"),
+    ("bash", 'git "merge-index" ./deploy-prod.sh "-a"'),
+    ("bash", "git merge\\-index deploy-prod -a"),
+    ("bash", "git merge'-'index deploy-prod -a"),
+    ("bash", "git  merge-index\t-o  -q deploy-prod -a"),
+    ("bash", "git -C 'some dir' merge-index deploy-prod -a"),
+    ("powershell", "git merge-index '.\\deploy-prod.ps1' -a"),
+    ("powershell", 'git merge-index ".\\deploy-prod.ps1" -a'),
+    ("powershell", "git 'merge-index' deploy-prod -a"),
+    ("powershell", "git merge`-index deploy-prod -a"),
+    ("powershell", "git merge-index -o -q deploy-prod '-a'")])
+def test_round17_a_quoted_or_escaped_merge_index_is_held(shell, line):
+    """MUST-BLOCK: every spelling the plain-command reader accepts reads as `merge-index`."""
+    words = crew_gitallow.plain_commands(line, shell)
+    assert words and "merge-index" in words[0], line  # the reader does read the line
+    assert crew_gitallow.line_git_commands(line, shell) is None, line
+    assert crew_gitallow.line_exempt(line, shell, "all") is False
+
+
+@pytest.mark.parametrize("args", [
+    ["merge-base", "a", "b"], ["merge-file", "a", "b", "c"], ["merge-tree", "a", "b"],
+    ["merge", "other"], ["commit", "-m", "merge-index fix"], ["log", "--grep", "merge-index"]])
+def test_round17_a_neighbour_of_merge_index_is_not_held(args):
+    """MUST-ALLOW: only the subcommand `merge-index` is held, not its neighbours or a word."""
+    assert crew_gitallow.hold(args) is None
+    assert crew_gitallow.line_exempt("git " + " ".join(f"'{a}'" for a in args), "bash", "all") is True
+
+
+@pytest.mark.parametrize("args", [
+    ["init-db", "--template=/tmp/t", "repo"], ["init-db", "--template", "/tmp/t"],
+    ["init-db", "--templ=/tmp/t"], ["-C", ".", "init-db", "--template=/tmp/t"]])
+def test_round17_init_db_template_is_held_as_init_is(args):
+    """MUST-BLOCK. Measured: `git init-db --template=<dir> repo` copied the directory's hook
+    into `repo/.git/hooks`, exactly as `git init --template` does."""
+    assert crew_gitallow.hold(args)
+    for shell in ("bash", "powershell"):
+        assert crew_gitallow.line_exempt("git " + " ".join(args), shell, "all") is False
+    assert crew_gitallow.hold(["init-db", "repo"]) is None
+    assert crew_gitallow.hold(["init-db", "--bare", "repo"]) is None
+
+
+@pytest.mark.parametrize("args", [
+    ["cherry-pick", "--strategy=zzz", "other"], ["cherry-pick", "--strategy", "zzz", "other"],
+    ["cherry-pick", "--strat=zzz", "other"], ["-C", ".", "cherry-pick", "--strategy=zzz", "x"]])
+def test_round17_a_cherry_pick_strategy_is_held(args):
+    """MUST-BLOCK. Measured with a `git-merge-zzz` on PATH: `git cherry-pick --strategy=zzz
+    other` ran it."""
+    assert crew_gitallow.hold(args)
+    for shell in ("bash", "powershell"):
+        assert crew_gitallow.line_exempt("git " + " ".join(args), shell, "all") is False
+
+
+@pytest.mark.parametrize("args", [
+    ["revert", "--strategy=zzz", "HEAD"], ["revert", "--strategy", "zzz", "HEAD"]])
+def test_round17_a_revert_strategy_is_held(args):
+    """MUST-BLOCK, by caution: `git revert --strategy zzz` did NOT run git-merge-zzz on git
+    2.56 when measured. It is the same option on the same sequencer, so it is held too."""
+    assert crew_gitallow.hold(args)
+    for shell in ("bash", "powershell"):
+        assert crew_gitallow.line_exempt("git " + " ".join(args), shell, "all") is False
+
+
+@pytest.mark.parametrize("args", [
+    ["cherry-pick", "x"], ["cherry-pick", "-s", "x"], ["cherry-pick", "-x", "x"],
+    ["cherry-pick", "-sx", "x"], ["cherry-pick", "--signoff", "x"], ["cherry-pick", "-X", "ours", "x"],
+    ["cherry-pick", "--strategy-option=ours", "x"], ["cherry-pick", "--skip"],
+    ["cherry-pick", "--", "--strategy=zzz"], ["revert", "--no-edit", "HEAD"],
+    ["revert", "-s", "HEAD"], ["revert", "-X", "ours", "HEAD"], ["notes", "merge", "-s", "ours", "x"]])
+def test_round17_an_ordinary_cherry_pick_or_revert_is_not_held(args):
+    """MUST-ALLOW: their `-s` is `--signoff` and `-X` only passes a string to a built-in
+    strategy. Measured: `git notes merge -s zzz` refuses an unknown strategy, running nothing."""
+    assert crew_gitallow.hold(args) is None
+    assert crew_gitallow.line_exempt("git " + " ".join(args), "bash", "all") is True
+
+
+@pytest.mark.parametrize("args", [
+    ["bisect", "visualize"], ["bisect", "visualize", "--stat"], ["-C", ".", "bisect", "visualize"]])
+def test_round17_bisect_visualize_is_held(args):
+    """MUST-BLOCK. Measured: `git bisect visualize` started gitk (sh and wish.exe) and waited
+    on its window."""
+    assert crew_gitallow.hold(args)
+    for shell in ("bash", "powershell"):
+        assert crew_gitallow.line_exempt("git " + " ".join(args), shell, "all") is False
+
+
+@pytest.mark.parametrize("args", [["bisect", "view"], ["-C", ".", "bisect", "view", "--stat"]])
+def test_round17_bisect_view_is_held(args):
+    """MUST-BLOCK: `view` is git's other name for `bisect visualize`."""
+    assert crew_gitallow.hold(args)
+    assert crew_gitallow.line_exempt("git " + " ".join(args), "bash", "all") is False
+
+
+@pytest.mark.parametrize("args", [
+    ["maintenance", "start"], ["maintenance", "stop"],
+    ["maintenance", "start", "--scheduler=schtasks"]])
+def test_round17_maintenance_start_and_stop_are_held(args):
+    """MUST-BLOCK. `git maintenance start` / `stop` runs schtasks, crontab, launchctl or
+    systemctl (git-maintenance's own documentation). NOT measured: running it registers a
+    real scheduled task."""
+    assert crew_gitallow.hold(args)
+    for shell in ("bash", "powershell"):
+        assert crew_gitallow.line_exempt("git " + " ".join(args), shell, "all") is False
+
+
+@pytest.mark.parametrize("args", [
+    ["bisect", "start"], ["bisect", "good"], ["bisect", "bad", "HEAD"], ["bisect", "reset"],
+    ["bisect", "log"], ["bisect", "skip"], ["maintenance", "run"],
+    ["maintenance", "run", "--task=gc"], ["log", "view"], ["branch", "start"]])
+def test_round17_an_ordinary_bisect_or_maintenance_is_not_held(args):
+    assert crew_gitallow.hold(args) is None
+    assert crew_gitallow.line_exempt("git " + " ".join(args), "bash", "all") is True
+
+
+SCHEME_URLS = [
+    ["ls-remote", "zzz://host/x"], ["fetch", "zzz://host/x"], ["clone", "zzz://host/x", "d"],
+    ["push", "zzz://host/x", "main"], ["fetch", "--", "zzz://host/x"],
+    ["remote", "add", "r", "zzz://host/x"], ["clone", "ftp://host/x"],
+    ["ls-remote", "s3://bucket/x"], ["submodule", "add", "zzz://host/x"]]
+
+
+@pytest.mark.parametrize("args", SCHEME_URLS)
+def test_round17_a_url_git_hands_to_a_remote_helper_program_is_held(args):
+    """MUST-BLOCK. Measured with a `git-remote-zzz` on PATH: `git ls-remote|fetch|clone|push
+    zzz://host/x` each ran it."""
+    assert crew_gitallow.hold(args)
+    for shell in ("bash", "powershell"):
+        assert crew_gitallow.line_exempt("git " + " ".join(args), shell, "all") is False
+
+
+@pytest.mark.parametrize("args", [
+    ["archive", "--remote=zzz://host/x", "HEAD"], ["ls-remote", "--repo=zzz://host/x"]])
+def test_round17_a_helper_url_behind_an_option_is_held(args):
+    """MUST-BLOCK. Measured: `git archive --remote=zzz://host/x HEAD` ran git-remote-zzz."""
+    assert crew_gitallow.hold(args)
+    assert crew_gitallow.line_exempt("git " + " ".join(args), "bash", "all") is False
+
+
+@pytest.mark.parametrize("args", [["fetch", "HTTPS://host/x"], ["clone", "Ssh://host/x"]])
+def test_round17_a_scheme_in_another_case_is_another_scheme(args):
+    """MUST-BLOCK: git compares the scheme as written, so `HTTPS` is not its own `https`."""
+    assert crew_gitallow.hold(args)
+    assert crew_gitallow.line_exempt("git " + " ".join(args), "bash", "all") is False
+
+
+@pytest.mark.parametrize("args", [
+    ["clone", "https://example.invalid/x.git"], ["fetch", "http://example.invalid/x.git"],
+    ["fetch", "ssh://git@example.invalid/x.git"], ["clone", "git://example.invalid/x.git"],
+    ["clone", "file:///srv/x.git"], ["fetch", "git+ssh://example.invalid/x"],
+    ["fetch", "ssh+git://example.invalid/x"], ["fetch", "git@example.invalid:x/y.git"],
+    ["ls-remote", "--repo=https://example.invalid/x.git"], ["fetch", "origin"],
+    ["commit", "-m", "see https://example.invalid/issue/1"],
+    ["push", "-o", "ci.variable=zzz://x", "origin", "main"]])
+def test_round17_a_url_git_reads_itself_is_not_held(args):
+    """MUST-ALLOW: git's own transports, an scp-style remote and a push option's value."""
+    assert crew_gitallow.hold(args) is None
+    assert crew_gitallow.line_exempt("git " + " ".join(f"'{a}'" for a in args), "bash", "all") is True

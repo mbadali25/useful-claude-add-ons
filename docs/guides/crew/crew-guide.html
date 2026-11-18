@@ -594,7 +594,7 @@ read by no hook. Since crew 1.3.69, <code>/crew:confirm-config</code> typed with
 records nothing and lists the pending proposals, each with its id and the
 exact change, or says that none is pending and why. The configuration reference's "The
 human-only opt-out" section has the rules and their limits.</p>
-<p><strong>Git commands (crew 1.3.143).</strong> <code>guards.git.allow</code> is the owner's switch that
+<p><strong>Git commands (crew 1.3.146).</strong> <code>guards.git.allow</code> is the owner's switch that
 stops the command guards blocking or asking on git commands, destructive ones
 included: <code>"all"</code>, or a list of subcommands such as <code>["commit", "push"]</code>.
 A listed subcommand passes with every option it takes: listing <code>push</code> also
@@ -609,7 +609,7 @@ separator, redirection, heredoc, here-string, continuation or comment at all
 commit message is judged as before). Anything it cannot read whole is judged
 as before. A plain git command carrying <code>-c</code> or a command to run (<code>rebase
 --exec</code> or its abbreviation <code>--exe</code>, <code>push --receive-pack</code>, <code>init
---template</code>), a word that is not a git built-in (<code>git zzz</code>, <code>git svn</code>, an alias), a remote-helper URL (<code>ext::&lt;command&gt;</code>, <code>fd::3</code>), or a <code>git config</code>
+--template</code>, <code>merge-index &lt;program&gt;</code>), a word that is not a git built-in (<code>git zzz</code>, <code>git svn</code>, an alias), a remote-helper URL (<code>ext::&lt;command&gt;</code>, <code>fd::3</code>, <code>zzz://host/x</code>), or a <code>git config</code>
 that is not plainly a read, is never exempt.
 Plain lines - <code>git commit -m "fix: x"</code>, <code>git push --force-with-lease origin
 topic</code>, <code>git rebase -i HEAD~3</code>, <code>git log --format=%H</code> - stay exempt. A

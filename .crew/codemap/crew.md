@@ -1035,7 +1035,10 @@ next to a possible fd prefix is `_Unsure` (`_continuation_in_fd_prefix` `:1562`)
 heredoc delimiter ending in a dangling backslash (`_dangling_backslash` `:1554`).
 `line_git_commands` (`:920`) needs every command to be exactly `git` and `hold` (`:292`:
 `-c`, `--config-env`, `--exec-path`, an option that runs a command in any prefix git takes
-`_option_hit` `:277`, a `git config` that is not plainly a read `_config_is_read` `:241`) to
+`_option_hit` `:277`, a `git config` that is not plainly a read `_config_is_read` `:241`; since
+crew 1.3.146 also a built-in whose job is to run a handed program, `_RUNS_PROGRAM` = `merge-index`,
+a subcommand word that starts a helper, `_HELPER_WORDS`, and a URL scheme git hands to a
+`git-remote-<scheme>` program, `_helper_scheme`; re-find each by name) to
 say nothing; `line_exempt` (`:950`) adds the setting. The cloud guard: `_classify`
 (`cloud_guard.py:2168`) tags a `git` finding with its subcommand only (none for an `xargs`
 finding); `evaluate` (`cloud_guard.py:3181`) asks `line_plan` (`:964`, the setting read for

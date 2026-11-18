@@ -45,7 +45,9 @@ carries config or a command line of its own -- a global `-c`, `--config-env`
 or `--exec-path`, an option or subcommand that runs a command it is handed
 (`rebase --exec`, `submodule foreach`, `bisect run`, `push --receive-pack`,
 `send-pack --exec`, `fetch --upload-pack`, `fetch-pack --exec`, `grep -O`,
-`difftool --extcmd`, `init --template`, `filter-branch`, ...), in any
+`difftool --extcmd`, `init --template`, `filter-branch`, `merge-index`,
+`cherry-pick --strategy`, a URL whose scheme git hands to a `git-remote-<scheme>`
+program, ...), in any
 abbreviation git accepts (`--exe`, `--receive=`), and a `git config` that is
 not plainly a read (it may set `alias.*` or a program-valued key such as
 `core.sshCommand` that a later git command on the line runs). A git command
@@ -218,6 +220,9 @@ _RUNS = {
     # `git init --template=<dir>` copies that directory's hooks into the repo,
     # and a later git command on the same line runs them (round 4).
     "init": ("--template",),
+    # `init-db` is the same command under its old name (round 17, measured: the
+    # template's hook was copied in).
+    "init-db": ("--template",),
     "ls-remote": ("--upload-pack", "--exec"),
     "archive": ("--exec",),
     # `cat-file --filters` runs the path's configured smudge/clean filter
@@ -233,8 +238,19 @@ _RUNS = {
 # `-c alias.x=!cmd x` after `--` runs that command (round 9); `web--browse`
 # runs a browser program.
 _RUNS_ALWAYS = frozenset(("filter-branch", "instaweb", "for-each-repo", "web--browse"))
+# `git merge-index [-o] [-q] <program> (-a | [--] <file>...)` runs <program> once
+# per unmerged path: its whole job is to run the program it is handed, so it is
+# held whatever its words are (round 17, measured in a conflicted merge with `-a`,
+# `-o -q`, `--` and a named file). A built-in, so the unknown-subcommand hold
+# below does not catch it.
+_RUNS_PROGRAM = frozenset(("merge-index",))
 # (subcommand, word) pairs: `git submodule foreach <cmd>`, `git bisect run <cmd>`.
 _RUNS_WORD = {"submodule": "foreach", "bisect": "run"}
+# (subcommand, words) that start a program of their own: `git bisect visualize` /
+# `view` runs gitk (measured: sh and wish.exe started and git waited on the window),
+# `git maintenance start` / `stop` runs the scheduler program (schtasks, crontab,
+# launchctl, systemctl: git-maintenance's own documentation; not run here).
+_HELPER_WORDS = {"bisect": ("visualize", "view"), "maintenance": ("start", "stop")}
 
 # Helper programs git launches for an option that is not a command line:
 # `-p` / `--paginate` (the pager), `--ext-diff` (the external diff driver),
@@ -253,6 +269,11 @@ _HELPER_SUBS = frozenset(("help", "difftool", "mergetool", "credential"))
 # PATH (round 11, measured with a git-merge-zzz on PATH). `-X` / `--strategy-option`
 # only passes a string to a built-in strategy and is not held.
 _STRATEGY_SUBS = frozenset(("merge", "pull", "rebase"))
+# `git cherry-pick --strategy <x>` runs `git-merge-<x>` from PATH too (round 17,
+# measured). Only the long option: their `-s` is `--signoff`. `revert` takes the
+# same option; git 2.56 ignored it when measured, and it is held all the same
+# (which merge a revert uses is the sequencer's choice, not the line's).
+_LONG_STRATEGY_SUBS = frozenset(("cherry-pick", "revert"))
 _SHORT_VALUE_LETTERS = "XmFSCx"
 
 # The subcommands git itself implements (`git --list-cmds=builtins`, 2.56, plus
@@ -388,6 +409,23 @@ def _option_hit(word, option):
 
 
 _HELPER_URL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+.-]*::")
+# `<scheme>://...`: git reads `file`, `git`, `ssh` and the two `git+ssh` spellings
+# itself and runs its own git-remote-http for `http` and `https`; ANY other scheme
+# is handed to a `git-remote-<scheme>` program found on PATH (round 17, measured:
+# `git ls-remote|fetch|clone|push zzz://h/x` and `archive --remote=zzz://h/x` each
+# ran a planted git-remote-zzz). Case counts: `HTTPS://` is another scheme to git.
+_SCHEME_URL_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9+.-]*)://")
+_OWN_SCHEMES = frozenset(("file", "git", "ssh", "git+ssh", "ssh+git", "http", "https"))
+
+
+def _helper_scheme(word):
+    """The scheme of `word` (or of the value behind its `=`) when git would hand
+    it to a `git-remote-<scheme>` program, else None."""
+    for text in (word, word.split("=", 1)[-1]):
+        match = _SCHEME_URL_RE.match(text)
+        if match and match.group(1) not in _OWN_SCHEMES:
+            return match.group(1)
+    return None
 
 
 def _without_push_option_values(sub, rest):
@@ -454,8 +492,13 @@ def hold(args):
                 f"`git-{named}` program found on PATH")
     if sub in _RUNS_ALWAYS:
         return f"`git {sub}` runs a command it is handed"
+    if sub in _RUNS_PROGRAM:
+        return f"`git {sub}` runs the program it is handed"
     if sub in _RUNS_WORD and _RUNS_WORD[sub] in rest:
         return f"`git {sub} {_RUNS_WORD[sub]}` runs a command it is handed"
+    started = next((w for w in _HELPER_WORDS.get(sub, ()) if w in rest), None)
+    if started:
+        return f"`git {sub} {started}` launches a helper program"
     if sub == "config" and not _config_is_read(rest):
         return ("`git config` that is not plainly a read may set an alias or a program "
                 "a later git command runs")
@@ -466,10 +509,15 @@ def hold(args):
         # and behind `--opt=` too (review round 13, finding 1).
         if _HELPER_URL_RE.match(word) or _HELPER_URL_RE.match(word.split("=", 1)[-1]):
             return f"`{word.split('::', 1)[0]}::` is a remote-helper URL that runs a program"
+        scheme = _helper_scheme(word)
+        if scheme:
+            return f"`{scheme}://` is a URL git hands to a git-remote-{scheme} program"
     for word in rest:
         if word == "--":
             break
         if sub in _STRATEGY_SUBS and _strategy_hit(word):
+            return f"`git {sub} {word}` runs git-merge-<strategy> from PATH"
+        if sub in _LONG_STRATEGY_SUBS and word.startswith("--") and _strategy_hit(word):
             return f"`git {sub} {word}` runs git-merge-<strategy> from PATH"
         helper = next((o for o in _HELPER_OPTS if _option_hit(word, o)), None)
         if helper:

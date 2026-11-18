@@ -537,7 +537,7 @@ records nothing and lists the pending proposals, each with its id and the
 exact change, or says that none is pending and why. The configuration reference's "The
 human-only opt-out" section has the rules and their limits.
 
-**Git commands (crew 1.3.143).** `guards.git.allow` is the owner's switch that
+**Git commands (crew 1.3.146).** `guards.git.allow` is the owner's switch that
 stops the command guards blocking or asking on git commands, destructive ones
 included: `"all"`, or a list of subcommands such as `["commit", "push"]`.
 A listed subcommand passes with every option it takes: listing `push` also
@@ -552,7 +552,7 @@ separator, redirection, heredoc, here-string, continuation or comment at all
 commit message is judged as before). Anything it cannot read whole is judged
 as before. A plain git command carrying `-c` or a command to run (`rebase
 --exec` or its abbreviation `--exe`, `push --receive-pack`, `init
---template`), a word that is not a git built-in (`git zzz`, `git svn`, an alias), a remote-helper URL (`ext::<command>`, `fd::3`), or a `git config`
+--template`, `merge-index <program>`), a word that is not a git built-in (`git zzz`, `git svn`, an alias), a remote-helper URL (`ext::<command>`, `fd::3`, `zzz://host/x`), or a `git config`
 that is not plainly a read, is never exempt.
 Plain lines - `git commit -m "fix: x"`, `git push --force-with-lease origin
 topic`, `git rebase -i HEAD~3`, `git log --format=%H` - stay exempt. A

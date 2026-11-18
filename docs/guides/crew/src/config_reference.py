@@ -248,7 +248,7 @@ textual tripwire, not a sandbox: a session that sets out to forge a receipt
 `scope.mode: off` has no tripwire at all. Treat `humanOnly` opt-outs as
 meaningful only with `scope.mode` `block`.
 
-## Git commands (`guards.git.allow`, crew 1.3.143)
+## Git commands (`guards.git.allow`, crew 1.3.146)
 
 The owner's switch that stops crew's command guards from blocking or asking on
 git commands, destructive ones included. Off by default (`null`, or `"off"`).
@@ -271,7 +271,7 @@ deploy that is itself a git command (`git push prod main`) stays gated: that
 is a deploy, not a git block. A declared deploy that computes its ref with a read-only value (`-f ref=$(git rev-parse HEAD)`, also `--short[=N]` or `--abbrev-ref`, as the last part of a word) is not read as hiding git, so the switch still works in that repo; any other substitution, a backtick, a redirection, a second line or a code-running git option in a declared deploy still exempts nothing there. `gh` is not git: `gh pr merge --admin`
 (`guards.adminMerge`), workflow dispatches and `gh api` calls are untouched.
 
-**The line is ONE plain git command, fail-closed (crew 1.3.143).** A command
+**The line is ONE plain git command, fail-closed (crew 1.3.146).** A command
 line is exempt only when it is a single simple command: exactly `git` - not a
 path (`/usr/bin/git`, `./git`, `git.exe`), not preceded by `command`, an
 assignment, `cd` or a function, alias or `shopt` that redefines git - followed
@@ -319,12 +319,13 @@ config or a command of its own - a global `-c` (an alias `!cmd`,
 subcommand that runs a command it is given (`rebase --exec`/`-x`,
 `submodule foreach`, `bisect run`, `push`/`send-pack --receive-pack`/`--exec`,
 `fetch-pack --upload-pack`/`--exec`, `fetch`/`pull`/`clone`/`ls-remote
---upload-pack`, `clone -u`/`-c`/`--template`, `init --template`, `grep -O`,
+--upload-pack`, `clone -u`/`-c`/`--template`, `init`/`init-db --template`, `grep -O`,
 `difftool --extcmd`, `filter-branch`, `instaweb`, `for-each-repo`,
-`web--browse`, `send-email --*-cmd`, `daemon --access-hook`), in any abbreviation git accepts (`--exe`,
+`web--browse`, `merge-index` (it runs the program it is handed, once per unmerged path), `send-email --*-cmd`, `daemon --access-hook`), in any abbreviation git accepts (`--exe`,
 `--receive=...`); an option that launches a helper program (`--paginate` and a leading `-p`, `--ext-diff`,
-`--textconv`, `--help`, `--open-files-in-pager`), `git help`, `git difftool`, `git mergetool`
-and `git credential` and `git cat-file --filters` (each runs a configured program), a remote-helper URL wherever it sits (`ext::<command>`, `fd::3`, `foo::bar`, which runs `git-remote-foo` from PATH; also after `--` and behind `--opt=`), and `merge`/`pull`/`rebase` `-s`/`--strategy`
+`--textconv`, `--help`, `--open-files-in-pager`), `git help`, `git difftool`, `git mergetool`,
+`git bisect visualize`/`view` (gitk), `git maintenance start`/`stop` (the scheduler program)
+and `git credential` and `git cat-file --filters` (each runs a configured program), a remote-helper URL wherever it sits (`ext::<command>`, `fd::3`, `foo::bar`, which runs `git-remote-foo` from PATH; also after `--` and behind `--opt=`), a URL of any scheme but `file`, `git`, `ssh`, `git+ssh`, `ssh+git`, `http` and `https` (`zzz://host/x` runs `git-remote-zzz` from PATH), and `merge`/`pull`/`rebase` `-s`/`--strategy` and `cherry-pick`/`revert --strategy`
 (git runs `git-merge-<strategy>` from PATH; `-X`/`--strategy-option` only passes a string and is not held);
 and a `git config` that is not plainly a read (`--get*`,
 `-l`/`--list`, `get`, `list`, or one key alone, with only read options): a
