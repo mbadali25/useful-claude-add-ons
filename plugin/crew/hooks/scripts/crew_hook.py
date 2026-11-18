@@ -77,6 +77,9 @@ DIRECT = {
     "approval-hook.sh": Direct("approval_hook.py", (), (0, 2), _UTF8),
     "promote-gate.sh": Direct("_promote_gate.py", (), (0, 2), {"PYTHONIOENCODING": "utf-8"}),
     "crew-context.sh": Direct("crew_context.py", ("--flavour", "sh"), (0,), {}),
+    # The Stop completion audit (crew 1.3.99): Git Bash's 15-20 forks cost 40-50 s on a loaded Windows host for a
+    # decision python reaches in 0.2-0.6 s. The wrapper's blocked-once marker is kept by `_audit_marker_clear`.
+    "completion-audit.sh": Direct("completion_audit.py", (), (0, 2), _UTF8),
 }
 GIT_PROBE_SECONDS = 5
 
@@ -700,8 +703,14 @@ def direct_plan(argv, payload, raw, env, scripts, executable=None):
     if not os.path.isfile(module):
         return None
     cwd, extra, stdin = None, {}, raw
+    if argv[0] == "completion-audit.sh":
+        stdin = raw.replace(b"\x00", b"")  # `INPUT=$(cat)` drops NULs, so python is handed what the wrapper hands it
     if argv[0] == "approval-hook.sh" and not _approval_wanted(raw):
         return _SKIP
+    if argv[0] == "completion-audit.sh" and _audit_scope_unknown(env):
+        return None  # the wrapper keeps the whole sequence (marker, crash handling) where its scope is unknowable
+    if argv[0] == "completion-audit.sh" and _STOP_ACTIVE.search(_flat(raw)):
+        return _SKIP  # a continuation is never audited or blocked again; `work` ends the blocked-once count
     if argv[0] == "promote-gate.sh":
         got = _promote_plan(tool_name(payload), env)
         if got in (None, _SKIP):
@@ -710,6 +719,97 @@ def direct_plan(argv, payload, raw, env, scripts, executable=None):
         stdin = raw + suffix
     command = [executable, module, *spec.args, *argv[1:]]
     return command, dict(env, **spec.env, **extra), cwd, stdin, spec.accept
+
+
+# completion-audit.sh's own bookkeeping, reproduced so the direct route and the wrapper agree on one marker file.
+# `_STOP_ACTIVE` is the wrapper's grep (run after it deletes CR and LF); `_SESSION_ID` its sed, whose greedy `.*`
+# takes the LAST session_id in the payload.
+_WS = rb"[ \t\n\v\f\r]*"
+_STOP_ACTIVE = re.compile(rb'"stop_hook_active"' + _WS + rb":" + _WS + rb"true")
+_SESSION_ID = re.compile(rb'.*"session_id"' + _WS + rb":" + _WS + rb'"([A-Za-z0-9._-]{1,128})"')
+
+
+def _flat(raw):
+    """`tr -d '\\r\\n'` on what bash's `INPUT=$(cat)` kept: the payload on one line, as the wrapper's greps and sed
+    see it. Command substitution drops NUL bytes, so they go first: `stop_hook_ac<NUL>tive` is the key
+    `stop_hook_active` to the wrapper."""
+    return raw.replace(b"\x00", b"").replace(b"\r", b"").replace(b"\n", b"")
+
+
+def _posix_cksum(data):
+    """POSIX `cksum` of `data` (CRC-32/0x04C11DB7, MSB first, the length folded in), as the wrapper's
+    `printf | cksum | cut -d' ' -f1` gives it."""
+    crc = 0
+    tail = bytearray()
+    size = len(data)
+    while size:
+        tail.append(size & 0xFF)
+        size >>= 8
+    for byte in bytes(data) + bytes(tail):
+        crc ^= byte << 24
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x04C11DB7 if crc & 0x80000000 else crc << 1) & 0xFFFFFFFF
+    return ~crc & 0xFFFFFFFF
+
+
+POSIX_TMP = "CREW_HOOK_POSIX_TMP"
+
+
+def _audit_tmp(env):
+    """The directory the wrapper's `${TMPDIR:-/tmp}` names, as this process can open it, or "" when that cannot
+    be told. TMPDIR set: that directory (one that does not exist is "": the wrapper fails open there, "no marker
+    could be written", where a python fallback to the system temp directory would block). TMPDIR unset or empty
+    is the ordinary case (MEASURED: a non-login Git Bash, which is what runs the Stop hook, has no TMPDIR), and
+    there the wrapper names `/tmp`. Python cannot derive that directory: Git Bash mounts `/tmp` from a mount
+    table its running processes share, fixed by whichever started first (MEASURED: it stayed at one directory
+    while TMP and TEMP were pointed at two others, and on CI it was another test's TEMP), so
+    tempfile.gettempdir() is a different answer. Only bash can say, and crew-hook.sh does: it starts this
+    process with CREW_HOOK_POSIX_TMP=/tmp, which the MSYS runtime rewrites to the Windows directory on the way
+    into a native python, and which stays `/tmp` on POSIX. The launcher's bash is this process's parent and
+    outlives it, so a wrapper started from here shares its table. A value that is missing (another launcher), not
+    absolute, or still drive-less on Windows (conversion switched off by MSYS_NO_PATHCONV or
+    MSYS2_ENV_CONV_EXCL) is "", and so is one that is not a directory. An unknown is not the safe-looking
+    value: a clear in the wrong directory would leave the wrapper's marker, and the next wrapper failure would
+    read it as "already blocked" and fail open. Not distinguished: a wrapper run by a second MSYS install whose
+    `/tmp` differs from the launcher's."""
+    tmp = env.get("TMPDIR") or ""
+    if tmp:
+        return tmp if os.path.isdir(tmp) else ""
+    tmp = env.get(POSIX_TMP) or ""
+    if not os.path.isabs(tmp) or (os.name == "nt" and not os.path.splitdrive(tmp)[0]):
+        return ""
+    return tmp if os.path.isdir(tmp) else ""
+
+
+def _audit_scope_unknown(env):
+    """True when the wrapper's marker cannot be named from `env` alone, so the direct route must not guess:
+    the wrapper hashes `${CLAUDE_PROJECT_DIR:-$PWD}` (a POSIX path python cannot reproduce from os.getcwd()), and
+    its temp directory is one only `_audit_tmp` can name."""
+    if not env.get("CLAUDE_PROJECT_DIR"):
+        return True
+    return not _audit_tmp(env)
+
+
+def _audit_marker(raw, env):
+    """The path completion-audit.sh's `_marker` names: one per session and project in the temp directory.
+    Only called where `_audit_scope_unknown` is False, so CLAUDE_PROJECT_DIR is set. The project is hashed as
+    its UTF-8 bytes, which is what bash holds (the wrapper itself is the oracle in the tests, with a non-ASCII
+    path too); a path python cannot encode (a lone surrogate) raises ValueError, so nothing is cleared."""
+    found = _SESSION_ID.match(_flat(raw))
+    sid = found.group(1).decode("ascii") if found else "nosession"
+    project = env.get("CLAUDE_PROJECT_DIR") or ""
+    tmp = _audit_tmp(env)
+    if not tmp:
+        raise ValueError("the wrapper's temp directory cannot be told")  # never a path relative to the cwd
+    return os.path.join(tmp, f"crew-completion-audit.{sid}-{_posix_cksum(project.encode('utf-8'))}")
+
+
+def _audit_marker_clear(raw, env):
+    """`rm -f "$(_marker)" 2>/dev/null`: a refusal to delete changes nothing, as in the wrapper."""
+    try:
+        os.remove(_audit_marker(raw, env))
+    except (OSError, ValueError):
+        pass
 
 
 def _argv_for(argv, scripts, bash, pwsh):
@@ -887,6 +987,8 @@ def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_
         if plan == _SKIP:
             res = {"exit": 0, "stdout": b"", "stderr": b"", "timed_out": False, "error": "", "pid": 0,
                    "attempts": 1}
+            if argv[0] == "completion-audit.sh":
+                _audit_marker_clear(raw, env)
         elif plan is not None:
             command, child_env, cwd, stdin, accept = plan
             res = attempt(row, command, dict(child_env, CREW_HOOK_FLAVOUR="bash"), stdin, cwd, own)
@@ -900,6 +1002,8 @@ def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_
                 else:
                     res = run_wrapper(row, argv, own)
                 res["fell_back"] = said
+            elif argv[0] == "completion-audit.sh" and not res["timed_out"]:
+                _audit_marker_clear(raw, env)  # python reached a verdict: the next failure to run starts afresh
         else:
             res = run_wrapper(row, argv, own)
         res["start_ms"], res["end_ms"] = started, now_ms()
