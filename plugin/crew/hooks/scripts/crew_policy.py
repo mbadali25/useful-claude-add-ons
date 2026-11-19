@@ -936,7 +936,10 @@ def _main(argv: list) -> int:
         # not rounded down to it (the decide answer never prints a number).
         request = json.loads(raw, parse_float=_json_fraction,
                              parse_int=_json_integer)
-    except ValueError as exc:
+    except (ValueError, RecursionError) as exc:
+        # RecursionError is not a ValueError: JSON nested deeper than the
+        # reader's stack is unreadable too, and must not leave a traceback
+        # and exit 1 where the caller expects 2 and an empty stdout.
         print(f"crew_policy: request is not JSON ({exc}); no decision",
               file=sys.stderr)
         return 2

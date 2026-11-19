@@ -303,6 +303,19 @@ def check_effects_never_swap_the_account(m):
                     if done["outcome"] == "allow":
                         bad.append(f"{op} {tier} account {account}: {key}={value!r} "
                                    f"allowed ({done['serious']})")
+    # The deliberate dead end: a prod cloud read with a money effect needs the
+    # read account (the row's own rule) and the write account (the class's)
+    # at once, so no account answer passes rule 2, with a covering plan too.
+    # The hint classified_as money is different on purpose: it replaces the
+    # row's class, so the write account alone reaches rule 5.
+    read = dict(covered, operation="cloud-read", tier="prod")
+    for account in P.ACCOUNTS:
+        done = brief(m.decide(dict(read, account=account, effects=fx(spends=True))))
+        if done != ("ask-owner", "2", None):
+            bad.append(f"prod cloud-read, money effect, account {account}: {done}")
+    done = brief(m.decide(dict(read, account="read-verified", effects=BENIGN)))
+    if done[:2] != ("allow", "6"):
+        bad.append(f"prod cloud-read, benign effects, read account: {done}")
     return bad
 
 
@@ -412,9 +425,32 @@ def _main_out(m, body, verb="classify"):
     try:
         with contextlib.redirect_stdout(out):
             code = m._main(["crew_policy.py", verb, body])  # pylint: disable=protected-access
-    except (ArithmeticError, ValueError, TypeError) as exc:   # decimal.InvalidOperation
-        return None, repr(exc)
+    except (ArithmeticError, ValueError, TypeError, RecursionError) as exc:
+        return None, repr(exc)   # ArithmeticError: decimal.InvalidOperation
     return code, out.getvalue()
+
+
+# JSON nested deeper than any reader's stack: valid text, and not, as input.
+DEEP = 100000
+TOO_DEEP = (("a valid array", "[" * DEEP + "]" * DEEP),
+            ("an invalid array", "[" * DEEP + "x" + "]" * DEEP),
+            ("a valid object in effects",
+             '{"operation": "commit", "tier": "dev", "effects": '
+             + '{"a": ' * DEEP + "1" + "}" * DEEP + "}"))
+
+
+def check_cli_refuses_json_nested_too_deeply(m):
+    """A request the reader cannot read gets no verdict: exit 2, nothing on
+    stdout, one line on stderr. RecursionError is not a ValueError."""
+    bad = []
+    for label, body in TOO_DEEP:
+        for verb in ("classify", "decide", "explain"):
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                code, out = _main_out(m, body, verb)
+            if (code, out) != (2, "") or "no decision" not in err.getvalue():
+                bad.append(f"{verb} CLI, {label} {DEEP} deep: {code} {out.strip()[:80]}")
+    return bad
 
 
 def check_cli_reads_the_tier(m):
@@ -679,6 +715,7 @@ CHECKS = (check_serious_cases, check_admin_and_empty_paths, check_must_allow,
           check_union_with_own_class, check_effects_never_swap_the_account,
           check_d9, check_threshold,
           check_presence_not_value, check_cli_reads_the_tier,
+          check_cli_refuses_json_nested_too_deeply,
           check_cli_reads_fractions_exactly, check_cost_values,
           check_mixed_number_types, check_a_threshold_too_long_to_print,
           check_unplaced_wording, check_r01_parity)
@@ -868,8 +905,12 @@ def test_the_cli_classifies_a_request_without_effects_as_unplaced(body):
     assert got["cost"] == "cannot-estimate"
 
 
-@pytest.mark.parametrize("args,stdin", [(("classify", "{not json"), None),
-                                        (("classify", "-"), "nope"), (("classify",), None)])
+@pytest.mark.parametrize("args,stdin", [
+    (("classify", "{not json"), None), (("classify", "-"), "nope"), (("classify",), None),
+    (("classify", "-"), TOO_DEEP[0][1]), (("classify", "-"), TOO_DEEP[1][1]),
+    (("decide", "-"), TOO_DEEP[2][1]), (("explain", "-"), TOO_DEEP[0][1])],
+    ids=["not json", "stdin not json", "no request", "deep valid array",
+         "deep invalid array", "decide deep effects", "explain deep array"])
 def test_the_cli_prints_no_verdict_for_a_request_it_cannot_read(args, stdin):
     done = _cli(*args, stdin=stdin)
     assert done.returncode == 2 and done.stdout == "" and done.stderr.strip()
@@ -1020,6 +1061,11 @@ MUTATIONS = (
      "    except ValueError:\n"),
     ("46 a positive amount too small for a Decimal is read as the largest",
      'return 0.0 if exponent.startswith("-") else _LARGEST', "return _LARGEST"),
+    ("47 only a ValueError from the JSON reader is caught (deep nesting is a traceback)",
+     "    except (ValueError, RecursionError) as exc:\n", "    except ValueError as exc:\n"),
+    ("48 a money effect on a prod cloud read swaps the read account for the write one",
+     "(base, classes) if classes != base else (classes,)",
+     "(base, classes) if classes != base and MONEY not in classes else (classes,)"),
 )
 
 
