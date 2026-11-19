@@ -390,7 +390,10 @@ The `tracker` setting says where tickets live: `files` (the default:
 vault), `jira` or `sdp` (ServiceDesk Plus). `crew_tracker.py` resolves it,
 and answers `could not tell` when two config files disagree, never a guess.
 `/crew:obsidian-sync`, `/crew:jira-sync` and `/crew:sdp-sync` push ticket
-state to the board.
+state to the board. Each tracker kind has a status map: a Jira push names its
+Jira status (`jira: target: In Progress`) and checks the issue's last seen
+status first, and every tracker comment carries a durable event id, so a post
+that timed out is searched for before it is ever posted again.
 
 Deeper: [Memory and Obsidian](memory-and-obsidian.md).
 

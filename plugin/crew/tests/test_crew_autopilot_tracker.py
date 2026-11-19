@@ -229,6 +229,27 @@ def test_cli_tracker_crash_is_a_stop(tmp_path, monkeypatch, capsys):
     assert (code, capsys.readouterr().out.startswith("tracker=stop stop=1 ")) == (0, True)
 
 
+# Pinned from a run on main (fa68b4f4c, crew 1.3.182) before R-72's edit.
+_JIRA_TRACKER_OUT = (
+    f"tracker=delegated stop=0 status=in-progress command=/crew:jira-sync {T} --push --to in-progress "
+    f"reason=run /crew:jira-sync {T} --push --to in-progress\n"
+    f"jira: delegated: run /crew:jira-sync {T} --push --to in-progress\n")
+
+
+def test_cli_tracker_on_jira_prints_no_target_line(tmp_path, capsys):
+    """R-72: the Jira target line is crew_tracker's own CLI output; autopilot,
+    which prints `_line`, is byte-identical to before. In-process first, so an
+    in-test mutant of `_line` reaches it, then the real CLI."""
+    root = _repo(tmp_path, tracker={"kind": "jira"}, started=True)
+
+    code = crew_autopilot.main(["tracker", "--root", str(root), "--ticket", T])
+    in_process = capsys.readouterr().out
+    done = _cli(root)
+
+    assert (code, in_process) == (0, _JIRA_TRACKER_OUT)
+    assert (done.returncode, done.stdout, "target:" in done.stdout) == (0, _JIRA_TRACKER_OUT, False)
+
+
 # --- a tracker move after the receipt keeps the bundle --------------------------------
 
 def _bundle(root, base):
