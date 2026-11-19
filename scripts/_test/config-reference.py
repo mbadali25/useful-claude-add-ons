@@ -142,7 +142,7 @@ def _import_raises(tmp):
 
 
 _NONPROD_SINCE = '"open-table", since="1.1.10", source=_S + "crew_unattended.py",'
-_NONPROD_TYPE = ('\n        type_="object: environment name -> {profile, identity, region?}"),')
+_NONPROD_TYPE = '\n        type_="object: environment name -> {profile, identity, region?}"),'
 
 
 def _row_without_since(tmp):

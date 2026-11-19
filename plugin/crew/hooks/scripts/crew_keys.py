@@ -386,7 +386,8 @@ KEY_META = {
         "The AWS region the unattended run gets; null is `us-east-1`. Machine file only.",
         "type", since="1.1.10", source=_S + "crew_unattended.py", type_="region, or null"),
     "unattendedCloud.aws.nonProd": _row(
-        "Environment name -> `{profile, identity, region?}` (region optional, default `us-east-1`) for `launch --environment NAME`; "
+        "Environment name -> `{profile, identity, region?}` (region optional, default `us-east-1`) "
+        "for `launch --environment NAME`; "
         "usable only where the repo's `environments.nonProd` agrees. Machine file only.",
         "open-table", since="1.1.10", source=_S + "crew_unattended.py",
         type_="object: environment name -> {profile, identity, region?}"),

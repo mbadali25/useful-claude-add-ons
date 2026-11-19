@@ -18,6 +18,7 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.175: re-bump only - interim number on the registry-completeness branch (PR #795, commit aa15361e2, pushed, never on main) before a pylint line-length fix changed plugin/crew again; the change is recorded under crew 1.3.176
 - crew 1.3.173: re-bump only - interim number on the crew_policy branch (PR #794, pushed, never on main) before review fixes changed plugin/crew again; the change is recorded under crew 1.3.174
 - crew 1.3.172: re-bump only - interim number on the crew_policy branch (PR #794, pushed, never on main) before review fixes changed plugin/crew again; the change is recorded under crew 1.3.173
 - crew 1.3.171: re-bump only - interim number on the crew_policy branch (PR #794, pushed, never on main) before review fixes changed plugin/crew again; the change is recorded under crew 1.3.172
@@ -143,9 +144,9 @@ read entries under any `## [` heading.
 - crew 1.3.159: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); the accepted-value test changed plugin/crew after the number was set, so the branch moved to 1.3.160; the change is recorded under crew 1.3.160
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
-### Added — crew 1.3.175: every config key must carry its four facts (R-C1)
+### Added — crew 1.3.176: every config key must carry its four facts (R-C1)
 
-- **Summary.** `crew` 1.3.175: the key registry check now fails when a config key has no plain-language line, no allowed values, no layer class or no arrival version, so the Configuration Guide cannot ship a key it cannot explain.
+- **Summary.** `crew` 1.3.176: the key registry check now fails when a config key has no plain-language line, no allowed values, no layer class or no arrival version, so the Configuration Guide cannot ship a key it cannot explain.
 - **What.** `crew_keys.problems()` checks each `KEY_META` row for a non-blank `summary`; the allowed-values field its kind renders (a value list for tuple/ratchet/prose, the `type` text for type/open-table/unvalidated, either for a branch); a `layer_of` result inside the new `LAYERS` tuple; and a `since` that is `FIRST` or `N.N.N`. A `summary`, `type` or `since` of the wrong type is reported, not crashed on. `config_reference.py` refuses a blank or missing layer definition and holds `LAYER_TERMS` to `crew_keys.LAYERS`.
 - **Fixed on the way.** `unattendedCloud.aws.nonProd` had no allowed values; it now states `object: environment name -> {profile, identity, region?}`, region optional (default `us-east-1`), in `CONFIG.md` and the configuration reference (HTML, DOCX and PDF rebuilt), with the code map and `verify-rationale.md` updated to match.
 - **Tests.** `test_crew_keys.py`: the committed table is complete; a blank summary, a missing or malformed arrival version, a row with neither values nor type, a value-list kind with no values, an open table with values but no type, wrong field types, and a blank or `None` layer definition each fail. `scripts/_test/config-reference.py` adds two must-block rows: a row without its arrival version and an open-table row without allowed values stop the generator and the gate.
