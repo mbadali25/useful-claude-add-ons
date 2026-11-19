@@ -54,9 +54,13 @@ def good_facts(spec):
     facts = dict(spec.facts)
     if spec.lane == P.GRANT:
         facts.update(permanence="temporary", profile="listed",
-                     expiry_provable=True, within_ceiling=True)
+                     makes_admin=False)
+        facts.update(P.GRANT_FACTS)
     if spec.lane == P.DESTRUCTIVE:
         facts.update(ownership="own", backup="provable")
+    if spec.serious in P.IRREVERSIBLE_CLASSES:
+        facts.update(irreversible_listed=True, cap_set=True,
+                     preflight_ok=True)
     return facts
 
 
@@ -93,6 +97,14 @@ def planned(op, tier="dev", **top):
     top.setdefault("attested", True)
     top.setdefault("prodcheck", "pass")
     return req(op, tier, **top)
+
+
+def emergency(action="merge-pr", **over):
+    """An emergency the owner declared for one action."""
+    out = {"declared_by": "owner", "incident": "INC-1", "target": "repo",
+           "action": action, "expired": False, "uses_left": 1}
+    out.update(over)
+    return out
 
 
 def outcome(request, module=P):
@@ -145,6 +157,14 @@ def _cases():
                 add(f"{op}: {cond} is the string 'yes'",
                     req(op, facts={cond: "yes"}), "ask-routine")
         if lane == P.SERIOUS_ALWAYS:
+            for tier in ("dev", "prod"):
+                add(f"{op}: {tier}, unattended and not attested",
+                    planned(op, tier, presence="unattended", attested=False),
+                    "needs-plan")
+                add(f"{op}: {tier}, attended and not attested",
+                    planned(op, tier, attested=False), "allow")
+                add(f"{op}: {tier}, plan of record, unattended",
+                    planned(op, tier, presence="unattended"), "allow")
             for presence in ("attended", "unattended"):
                 add(f"{op}: plan of record, {presence}",
                     planned(op, presence=presence), "allow")
@@ -169,8 +189,9 @@ def _cases():
                     "ask-owner")
         if spec.admin:
             for need in ("none", "other", GONE):
-                add(f"{op}: admin need {need!r}",
-                    planned(op, admin_need=need), "deny")
+                for tier in ("dev", "prod"):
+                    add(f"{op}: {tier}, admin need {need!r}",
+                        planned(op, tier, admin_need=need), "deny")
             add(f"{op}: an open need alone", req(op), "needs-plan")
         if spec.prod_serious:
             for prov, covers, want in (
@@ -199,16 +220,58 @@ def _cases():
     for ownership in ("other", "unknown", GONE, None, ""):
         add(f"delete-data: ownership {ownership!r} is not the ticket's own",
             req("delete-data", facts={"ownership": ownership}), "needs-plan")
-    for backup in ("none", "unknown", GONE, None, True, "failed"):
+    for backup in ("none", "unknown", GONE, None, True, "not-needed"):
         add(f"delete-data: backup {backup!r} is not provable",
             req("delete-data", facts={"backup": backup}), "needs-plan")
-    for backup in ("provable", "not-needed"):
+    for backup in ("provable",):
         add(f"delete-data: backup {backup}",
             req("delete-data", facts={"backup": backup}), "allow")
-    add("delete-data: a plan covers an unprovable backup",
-        planned("delete-data", facts={"backup": "none"}), "allow")
-    add("push-own-branch: protection unknown is not a block",
-        req("push-own-branch", facts={"protection": "unknown"}), "allow")
+    unlisted = {"irreversible_listed": True, "cap_set": True}
+    add("delete-data: a plan that lists the unbacked action unlocks it",
+        planned("delete-data", facts=dict(unlisted, backup="none",
+                                          preflight_ok=True)), "allow")
+    add("delete-data: no irreversible listing",
+        planned("delete-data", facts={"backup": "none"}), "needs-plan")
+    add("delete-data: listing without a cap",
+        planned("delete-data", facts={"backup": "none",
+                                      "irreversible_listed": True,
+                                      "preflight_ok": True}), "needs-plan")
+    for pre in (False, GONE, "yes"):
+        add(f"delete-data: preflight {pre!r} refuses",
+            planned("delete-data", facts=dict(unlisted, backup="none",
+                                              preflight_ok=pre)), "deny")
+    add("delete-data: a failed backup refuses even with a listing",
+        planned("delete-data", facts=dict(unlisted, backup="failed",
+                                          preflight_ok=True)), "deny")
+    add("irreversible-outside-effect: no listing",
+        planned("irreversible-outside-effect",
+                facts={"irreversible_listed": GONE}), "needs-plan")
+    add("irreversible-outside-effect: no preflight",
+        planned("irreversible-outside-effect",
+                facts={"preflight_ok": False}), "deny")
+    add("payment: a failed backup refuses",
+        planned("payment", facts={"backup": "failed"}), "deny")
+    for protection, want in (("unprotected", "allow"),
+                             ("unknown", "ask-routine"),
+                             (GONE, "ask-routine"), (False, "ask-routine")):
+        add(f"push-own-branch: protection {protection!r}",
+            req("push-own-branch", facts={"protection": protection}), want)
+    for op in ("read-file", "read-log", "read-plan", "read-ticket"):
+        add(f"{op}: a credential store is denied",
+            planned(op, facts={"credential_store": True}), "deny")
+    add("land-next-tier: prod, plan covers but the prior tier did not land",
+        planned("land-next-tier", "prod", facts={"prior_tier_landed": False}),
+        "deny")
+    add("land-next-tier: prod, plan covers but smoke is unknown",
+        planned("land-next-tier", "prod", facts={"smoke_pass": GONE}),
+        "ask-owner")
+    add("land-next-tier: prod, standing plan is not enough",
+        planned("land-next-tier", "prod", provenance="standing-plan"),
+        "needs-plan")
+    add("remove-worktree: published but not verified",
+        req("remove-worktree", facts={"results_verified": False}), "deny")
+    add("remove-worktree: verified but not published",
+        req("remove-worktree", facts={"results_published": False}), "deny")
     for facts, want in (
             ({}, "allow"),
             ({"permanence": "permanent"}, "needs-plan"),
@@ -216,24 +279,51 @@ def _cases():
             ({"permanence": GONE}, "needs-plan"),
             ({"profile": "unlisted"}, "needs-plan"),
             ({"profile": GONE}, "needs-plan"),
+            ({"makes_admin": True}, "deny"),
+            ({"makes_admin": GONE}, "ask-owner"),
+            ({"makes_admin": "no"}, "ask-owner"),
             ({"expiry_provable": GONE}, "ask-routine"),
             ({"expiry_provable": False}, "deny"),
             ({"within_ceiling": GONE}, "ask-routine"),
-            ({"within_ceiling": False}, "deny")):
+            ({"within_ceiling": False}, "deny"),
+            ({"crew_account_exists": False}, "deny"),
+            ({"crew_account_exists": GONE}, "ask-routine"),
+            ({"provider_ticket": False}, "deny"),
+            ({"provider_ticket": GONE}, "ask-routine"),
+            ({"ownership": GONE}, "ask-routine"),
+            ({"ownership": "other"}, "deny")):
         add(f"grant-permission: {facts!r}",
             req("grant-permission", facts=facts), want)
+        if want == "ask-routine":
+            add(f"grant-permission: unattended, {facts!r}",
+                req("grant-permission", presence="unattended", facts=facts),
+                "deny")
     add("grant-permission: production", req("grant-permission", "prod"),
         "needs-plan")
-    for who, want in (("owner-declared", "allow"), ("agent", "deny"),
-                      (True, "deny"), ("yes", "deny"), (GONE, "deny")):
+    add("grant-permission: a plan cannot grant admin rights",
+        planned("grant-permission", "prod", facts={"makes_admin": True}),
+        "deny")
+    add("grant-permission: a covered production grant",
+        planned("grant-permission", "prod"), "allow")
+    for who, want in ((emergency(), "allow"),
+                      (emergency(action="payment"), "deny"),
+                      (emergency(declared_by="agent"), "deny"),
+                      (emergency(expired=True), "deny"),
+                      (emergency(expired=GONE), "deny"),
+                      (emergency(uses_left=0), "deny"),
+                      (emergency(uses_left=True), "deny"),
+                      (emergency(incident=""), "deny"),
+                      (emergency(target=None), "deny"),
+                      ("owner-declared", "deny"), (True, "deny"),
+                      ("yes", "deny"), (GONE, "deny")):
         add(f"merge-pr: emergency {who!r} waives the review",
             req("merge-pr", facts={"review_clean": False}, emergency=who),
             want)
     add("merge-pr: an emergency does not waive the gate",
         req("merge-pr", facts={"gate_pass_same_sha": False},
-            emergency="owner-declared"), "deny")
+            emergency=emergency()), "deny")
     add("payment: an emergency does not unlock it",
-        req("payment", emergency="owner-declared"), "needs-plan")
+        req("payment", emergency=emergency("payment")), "needs-plan")
     for presence in (GONE, None, "away", 1):
         add(f"start-deploy: presence {presence!r} is unattended",
             req("start-deploy", tier="staging", presence=presence), "deny")
@@ -333,18 +423,24 @@ def test_destroying_data_not_shown_to_be_the_tickets_own_needs_a_plan(
 
 
 @pytest.mark.parametrize("backup", ["none", "unknown", "", GONE, None, True,
-                                    "failed"])
+                                    "not-needed"])
 def test_destroying_data_without_a_provable_backup_needs_a_plan(backup):
     result = P.decide(req("delete-data", facts={"backup": backup}))
     assert (result["outcome"], result["serious"]) == (
         "needs-plan", "no-provable-backup")
 
 
-@pytest.mark.parametrize("backup", ["provable", "not-needed"])
-def test_own_data_with_a_provable_backup_is_free_in_dev_and_qa(backup):
+def test_own_data_with_a_provable_backup_is_free_in_dev_and_qa():
     for tier in ("dev", "qa"):
         assert outcome(req("delete-data", tier,
-                           facts={"backup": backup})) == "allow"
+                           facts={"backup": "provable"})) == "allow"
+
+
+def test_a_failed_backup_refuses_whatever_a_plan_says():
+    for presence in ("attended", "unattended"):
+        assert outcome(planned("delete-data", presence=presence, facts={
+            "backup": "failed", "irreversible_listed": True,
+            "cap_set": True, "preflight_ok": True})) == "deny"
 
 
 @pytest.mark.parametrize("protection,want", [
@@ -366,10 +462,11 @@ def test_a_protected_branch_is_a_human_only_push_whatever_was_asked():
             assert result["rule"] == "human"
 
 
-def test_a_plain_push_does_not_need_protection_to_be_known():
-    for protection in ("unprotected", "unknown", GONE):
+def test_a_plain_push_needs_protection_to_be_known_to_be_absent():
+    assert outcome(req("push-own-branch")) == "allow"
+    for protection in ("unknown", GONE, False, None):
         assert outcome(req("push-own-branch",
-                           facts={"protection": protection})) == "allow"
+                           facts={"protection": protection})) == "ask-routine"
 
 
 @pytest.mark.parametrize("tier", [GONE, None, "", "staging", "conflict",
@@ -396,7 +493,7 @@ def test_the_never_lane_beats_every_later_rule():
                        if v.lane == P.NEVER):
                 result = P.decide(planned(op, presence=presence,
                                           provenance=prov,
-                                          emergency="owner-declared"))
+                                          emergency=emergency(op)))
                 assert (result["outcome"], result["rule"]) == ("deny", "1")
 
 
@@ -534,8 +631,7 @@ def test_a_production_write_needs_a_plan_but_dev_and_qa_do_not(op):
     assert outcome(planned(op, "prod")) == "allow"
 
 
-@pytest.mark.parametrize("op", ["start-deploy", "terraform-apply",
-                                "land-next-tier"])
+@pytest.mark.parametrize("op", ["start-deploy", "terraform-apply"])
 def test_a_standing_plan_unlocks_an_envelope_kind_in_production(op):
     assert outcome(planned(op, "prod", provenance="standing-plan")) == "allow"
     assert outcome(planned(op, "prod", provenance="standing-plan",
@@ -573,13 +669,16 @@ def test_any_grant_in_production_is_serious():
         "needs-plan", "permission-change")
 
 
-def test_a_dev_grant_needs_a_provable_expiry_inside_the_ceiling():
+def test_a_dev_grant_needs_every_grant_condition():
     assert outcome(req("grant-permission")) == "allow"
-    for fact in ("expiry_provable", "within_ceiling"):
+    for fact, _ in P.GRANT_FACTS:
+        assert outcome(req("grant-permission", presence="unattended",
+                           facts={fact: GONE})) == "deny", fact
         assert outcome(req("grant-permission",
-                           facts={fact: GONE})) == "ask-routine"
+                           facts={fact: GONE})) == "ask-routine", fact
+        broken = "other" if fact == "ownership" else False
         assert outcome(req("grant-permission",
-                           facts={fact: False})) == "deny"
+                           facts={fact: broken})) == "deny", fact
 
 
 def test_serious_classes_cover_the_closed_list():
@@ -605,7 +704,7 @@ def test_a_one_way_operation_is_always_the_owners_and_never_allowed(op):
                  "record", "none"):
         for presence in ("attended", "unattended"):
             result = P.decide(planned(op, presence=presence, provenance=prov,
-                                      emergency="owner-declared"))
+                                      emergency=emergency(op)))
             assert result["outcome"] == "ask-owner", (op, prov, presence)
             assert result["rule"] == "human"
 
@@ -629,9 +728,10 @@ COND_BOOL = [(op, name) for op, spec in P.OPERATIONS.items()
 
 @pytest.mark.parametrize("op,name", COND_BOOL)
 def test_a_condition_must_be_the_boolean_true_to_count(op, name):
+    wanted = dict(P.OPERATIONS[op].facts)[name]
     for junk in ("yes", "true", 1, "", None):
         assert outcome(req(op, facts={name: junk})) == "ask-routine", junk
-    assert outcome(req(op, facts={name: False})) == "deny"
+    assert outcome(req(op, facts={name: not wanted})) == "deny"
     assert outcome(req(op)) == "allow"
 
 
@@ -648,19 +748,23 @@ def test_a_terraform_apply_outside_production_is_allowed_and_logged():
     assert outcome(req("terraform-apply", "prod")) == "needs-plan"
 
 
-def test_an_emergency_waives_only_the_review_loop_and_only_when_owner_declared():
+def test_an_emergency_waives_only_the_review_loop_and_only_when_scoped():
     waived = req("merge-pr", facts={"review_clean": False},
-                 emergency="owner-declared")
+                 emergency=emergency())
     assert outcome(waived) == "allow"
-    for who in ("agent", "model", True, "yes", "", None, "owner"):
+    for who in ("agent", "model", True, "yes", "", None, "owner",
+                "owner-declared", emergency(declared_by="model")):
         assert outcome(req("merge-pr", facts={"review_clean": False},
                            emergency=who)) == "deny", who
     gate = req("merge-pr", facts={"gate_pass_same_sha": False},
-               emergency="owner-declared")
+               emergency=emergency())
     assert outcome(gate) == "deny"
-    assert outcome(req("payment", emergency="owner-declared")) == "needs-plan"
-    assert outcome(req("invent-status", emergency="owner-declared")) == "deny"
-    assert outcome(req("skip-gate", emergency="owner-declared")) == "ask-owner"
+    assert outcome(req("payment", emergency=emergency("payment"))) == \
+        "needs-plan"
+    assert outcome(req("invent-status",
+                       emergency=emergency("invent-status"))) == "deny"
+    assert outcome(req("skip-gate",
+                       emergency=emergency("skip-gate"))) == "ask-owner"
 
 
 # --- mode is not an input ---------------------------------------------------------------
@@ -748,7 +852,7 @@ def test_explain_says_why_a_request_stopped_early():
 def _cli(*args, stdin=None):
     return subprocess.run([sys.executable, MODULE] + list(args), input=stdin,
                           capture_output=True, text=True, check=False,
-                          timeout=60)
+                          encoding="utf-8", errors="replace", timeout=60)
 
 
 def test_the_cli_decides_and_explains_and_lists():
@@ -816,7 +920,7 @@ def test_the_module_does_nothing_when_imported():
     done = subprocess.run([sys.executable, "-c",
                            "import crew_policy"], cwd=SCRIPTS,
                           capture_output=True, text=True, check=False,
-                          timeout=60)
+                          encoding="utf-8", errors="replace", timeout=60)
     assert done.returncode == 0 and done.stdout == "" and done.stderr == ""
 
 
@@ -863,19 +967,49 @@ MUTATIONS = (
      "        if False:\n"),
     ("a destroy without a provable backup is not serious",
      '        if not (isinstance(backup, str)\n'
-     '                and backup.strip().lower() in ("provable", "not-needed")):\n',
+     '                and backup.strip().lower() == "provable"):\n',
      "        if False:\n"),
     ("a grant in production is not serious",
      '        if tier == "prod" or permanence != "met" or profile != "met":\n',
      '        if permanence != "met" or profile != "met":\n'),
-    ("a condition that cannot be shown is allowed", "    if unknown:\n",
-     "    if False:\n"),
-    ("a condition that is false is allowed", "    if bad:\n", "    if False:\n"),
+    ("a condition that cannot be shown is allowed",
+     "    if unknown:\n        return done(\"8\", ASK_ROUTINE,",
+     "    if False:\n        return done(\"8\", ASK_ROUTINE,"),
+    ("a condition that is false is allowed",
+     "    if bad:\n        return done(\"8\", DENY,",
+     "    if False:\n        return done(\"8\", DENY,"),
     ("the one-way list is allowed", '    if spec.lane == HUMAN:\n',
      '    if False:\n'),
     ("any emergency waives the review",
-     '_pick(req.get("emergency"), ("owner-declared",)) == "owner-declared"',
-     'bool(req.get("emergency"))'),
+     'if name == "merge-pr" and _emergency(req, name):',
+     'if name == "merge-pr" and req.get("emergency"):'),
+    ("an emergency for another action waives the review",
+     '            and emerg.get("action") == name\n', ''),
+    ("a grant that makes an admin account is allowed",
+     '        if admin == "violated":\n', '        if False:\n'),
+    ("a failed backup is excused by a plan",
+     '    if isinstance(backup, str) and backup.strip().lower() == "failed":\n',
+     '    if False:\n'),
+    ("an irreversible action runs with no listing",
+     '        if listed != ("met", "met"):\n', '        if False:\n'),
+    ("a failed preflight does not refuse",
+     '        if _fact(facts, "preflight_ok", True) != "met":\n',
+     '        if False:\n'),
+    ("the lane's own conditions are dropped under a plan",
+     '    if spec.facts:\n        verdicts, bad, unknown = _verdicts(list(spec.facts), facts)',
+     '    if False:\n        verdicts, bad, unknown = _verdicts(list(spec.facts), facts)'),
+    ("an unattended grant that cannot be proved only asks",
+     '    if unknown and spec.lane == GRANT and not attended:\n',
+     '    if False:\n'),
+    ("the tier landing may use a standing plan",
+     'ENVELOPE_OPS = frozenset({"start-deploy", "terraform-apply"})',
+     'ENVELOPE_OPS = frozenset({"start-deploy", "terraform-apply", "land-next-tier"})'),
+    ("a credential store may be read",
+     '_NOT_A_SECRET_STORE = (("credential_store", False),)',
+     '_NOT_A_SECRET_STORE = ()'),
+    ("creating an account needs no admin need",
+     '    "create-account": Op(SERIOUS_ALWAYS, tiered=True, admin=True,',
+     '    "create-account": Op(SERIOUS_ALWAYS, tiered=True, admin=False,'),
     ("a truthy fact counts as met", "        if isinstance(seen, bool):\n",
      "        if True:\n"),
     ("unknown presence is attended",

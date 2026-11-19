@@ -23,7 +23,8 @@ Input: one request, a dict.
     plan_covers, attested     True only if shown (see rule 5)
     prodcheck   pass | fail | unknown (the 4.5 checks, production only)
     admin_need  covers | other | none (rule 4)
-    emergency   owner-declared | anything else (waives the review loop only)
+    emergency   a dict naming the owner, incident, target, action, expiry
+                and uses left (see below); anything else is no emergency
     facts       per-operation facts (ownership, protection, backup, ...)
 
 Every field is read the same way: a value that is missing, of the wrong
@@ -40,16 +41,31 @@ trace as text.
 Readings this file chooses where the plan is silent (each is a test):
   * A condition that is definitely false is `deny`; one that cannot be shown
     is `ask-routine` (rule 8 names only the second).
-  * Unknown ownership of a branch cannot make a push Free; unknown
-    protection stops a force-push; a branch known to be protected is on the
-    human-only list.
+  * Unknown ownership of a branch cannot make a push Free, and neither can
+    unknown protection (a push, plain or forced, needs facts.protection
+    "unprotected"); a branch known to be protected is on the human-only
+    list, always (the plan says "outside a plan" but the serious list is
+    closed and has no such class).
+  * Reads of files, logs, plans and tickets need facts.credential_store
+    False (credential stores stay denied to reads); True is a deny.
   * Destroying data needs the ticket's own data (ownership "own") and a
-    provable backup (or "not-needed"); anything else is serious.
+    provable backup; anything else is serious. A backup that failed
+    (facts.backup "failed") refuses whatever a plan says; an irreversible,
+    unbacked or not-owned destruction also needs facts.irreversible_listed,
+    cap_set and preflight_ok to be True.
+  * A grant needs a provable expiry inside the ceiling, an existing crew
+    account, a provider ticket and proven ownership; unattended and not
+    proved is refused. A grant that would make the account an admin account
+    (facts.makes_admin) is denied, with or without a plan.
+  * A tier landing is exact-only (no standing plan), and its own conditions
+    still hold when a plan covers it.
   * A reading with an unknown tier is refused by rule 3 like any other
     operation that names a target (the plan lists "read, any tier" at rule 6,
     after rule 3 has run).
-  * An emergency counts only when "owner-declared", and waives only the
-    merge review condition; it never lifts a deny, a needs-plan or a backup.
+  * An emergency is a dict (declared_by "owner", incident, target, action
+    equal to the operation, expired False, uses_left >= 1); it waives only
+    the merge review condition (the timing waiver is not modelled) and never
+    lifts a deny, a needs-plan or a backup.
 
 CLI (report-only, always exits 0 for a decision):
     crew_policy.py explain '<json>'     or  ... explain -   (stdin)
@@ -105,12 +121,17 @@ NO_PROVABLE_BACKUP = "no-provable-backup"
 UNPLACED = "unplaced"
 
 # Only these may be unlocked by a standing plan (an envelope, 4.4: workflow
-# dispatch and terraform apply). Every other serious kind is exact-only:
-# money, permission grants, account creation, admin operations, anything
-# irreversible or with no provable backup, data destruction. A positive list,
-# so a new operation is exact-only until someone adds it here.
-ENVELOPE_OPS = frozenset({"start-deploy", "terraform-apply",
-                          "land-next-tier"})
+# dispatch and terraform apply, and no other kind). Every other serious kind
+# is exact-only: money, permission grants, account creation, admin operations,
+# anything irreversible or with no provable backup, data destruction, a tier
+# landing. A positive list, so a new operation is exact-only until someone
+# adds it here.
+ENVELOPE_OPS = frozenset({"start-deploy", "terraform-apply"})
+
+# Serious classes that run only when the plan lists the exact action as
+# irreversible with a cap, and a preflight passes (4.5, "Checks").
+IRREVERSIBLE_CLASSES = frozenset({NO_PROVABLE_BACKUP, IRREVERSIBLE,
+                                  DESTROY_NOT_OWNED})
 
 
 class Op(NamedTuple):
@@ -126,6 +147,7 @@ class Op(NamedTuple):
 
 
 _OWN = (("ownership", "own"),)
+_NOT_A_SECRET_STORE = (("credential_store", False),)
 
 OPERATIONS = {
     # Free: no condition beyond what the row lists.
@@ -135,13 +157,14 @@ OPERATIONS = {
     "branch": Op(FREE),
     "worktree": Op(FREE),
     "commit": Op(FREE),
-    "push-own-branch": Op(FREE, facts=_OWN),
+    "push-own-branch": Op(FREE, facts=_OWN + (("protection",
+                                               "unprotected"),)),
     "open-pr": Op(FREE),
     "update-pr": Op(FREE),
-    "read-file": Op(FREE),
-    "read-log": Op(FREE),
-    "read-plan": Op(FREE),
-    "read-ticket": Op(FREE),
+    "read-file": Op(FREE, facts=_NOT_A_SECRET_STORE),
+    "read-log": Op(FREE, facts=_NOT_A_SECRET_STORE),
+    "read-plan": Op(FREE, facts=_NOT_A_SECRET_STORE),
+    "read-ticket": Op(FREE, facts=_NOT_A_SECRET_STORE),
     "comment": Op(FREE),
     "attach-evidence": Op(FREE),
     "fast-check": Op(FREE),
@@ -170,11 +193,12 @@ OPERATIONS = {
     "grant-permission": Op(GRANT, tiered=True,
                            note="serious unless a temporary grant of a listed "
                                 "profile in dev or QA (4.4)"),
-    "remove-worktree": Op(CONDITIONAL, facts=(("results_verified", True),)),
+    "remove-worktree": Op(CONDITIONAL, facts=(("results_published", True),
+                                              ("results_verified", True))),
     "change-ticket-status": Op(CONDITIONAL, facts=(("status_on_map", True),)),
     # Serious whatever the tier (4.13).
     "payment": Op(SERIOUS_ALWAYS, tiered=True, serious=MONEY),
-    "create-account": Op(SERIOUS_ALWAYS, tiered=True,
+    "create-account": Op(SERIOUS_ALWAYS, tiered=True, admin=True,
                          serious=ACCOUNT_CREATION),
     "admin-identity-op": Op(SERIOUS_ALWAYS, tiered=True, admin=True,
                             serious=ADMIN_USE),
@@ -243,7 +267,7 @@ def _serious_class(spec: Op, tier: str, facts: dict) -> Optional[str]:
             return DESTROY_NOT_OWNED
         backup = facts.get("backup")
         if not (isinstance(backup, str)
-                and backup.strip().lower() in ("provable", "not-needed")):
+                and backup.strip().lower() == "provable"):
             return NO_PROVABLE_BACKUP
     if spec.lane == GRANT:
         permanence = _fact(facts, "permanence", "temporary")
@@ -251,6 +275,34 @@ def _serious_class(spec: Op, tier: str, facts: dict) -> Optional[str]:
         if tier == "prod" or permanence != "met" or profile != "met":
             return PERMISSION_CHANGE
     return None
+
+
+GRANT_FACTS = (("expiry_provable", True), ("within_ceiling", True),
+               ("crew_account_exists", True), ("provider_ticket", True),
+               ("ownership", "own"))
+
+
+def _verdicts(needed: list, facts: dict) -> tuple:
+    """(verdicts, names of false conditions, names that cannot be shown)."""
+    verdicts = [(n, _fact(facts, n, want)) for n, want in needed]
+    return (verdicts, [n for n, v in verdicts if v == "violated"],
+            [n for n, v in verdicts if v == UNKNOWN])
+
+
+def _emergency(req: dict, name: str) -> bool:
+    """True only for an emergency the owner declared for this very action
+    (4.5): incident, target, action, expiry not passed, a use left."""
+    emerg = req.get("emergency")
+    if not isinstance(emerg, dict):
+        return False
+    uses = emerg.get("uses_left")
+    return (emerg.get("declared_by") == "owner"
+            and all(isinstance(emerg.get(k), str) and emerg.get(k).strip()
+                    for k in ("incident", "target"))
+            and emerg.get("action") == name
+            and emerg.get("expired") is False
+            and isinstance(uses, int) and not isinstance(uses, bool)
+            and uses >= 1)
 
 
 class _Walk:
@@ -341,31 +393,49 @@ def decide(request: Any) -> dict:
             return done("4", DENY, "admin operation with no open need that "
                                    "covers exactly this operation")
 
+    if spec.lane == GRANT:
+        admin = _fact(facts, "makes_admin", False)
+        walk.look("4a", f"grant would make the account an admin account: "
+                        f"{admin}")
+        if admin == "violated":
+            return done("4a", DENY, "a grant may never give identity-"
+                                    "management rights or * on *; that is "
+                                    "an admin account (4.4)")
+        if admin != "met":
+            return done("4a", stop_outcome,
+                        "cannot show the grant is not an admin grant "
+                        f"({stop_word})")
+
+    backup = facts.get("backup")
+    if isinstance(backup, str) and backup.strip().lower() == "failed":
+        walk.look("5a", "a required backup whose probe failed")
+        return done("5a", DENY, "a backup that was required and whose probe "
+                                "failed always refuses; no plan excuses it")
+
     serious = _serious_class(spec, tier, facts)
     walk.look("5", f"serious class {serious or 'none'}")
     if serious:
-        return _serious(req, walk, name, serious, attended, stop_outcome,
-                        stop_word)
+        return _serious(req, walk, (name, spec, facts), serious, attended,
+                        (stop_outcome, stop_word))
 
     if spec.lane == READ:
         return done("6", ALLOW, "read with a verified read account")
     if spec.lane == DESTRUCTIVE:
         return done("7", ALLOW, "own data with a provable backup")
-    needed = list(spec.facts)
-    if spec.lane == GRANT:
-        needed = [("expiry_provable", True), ("within_ceiling", True)]
-    if (_pick(req.get("emergency"), ("owner-declared",)) == "owner-declared"
-            and name == "merge-pr"):
+    needed = list(GRANT_FACTS if spec.lane == GRANT else spec.facts)
+    if name == "merge-pr" and _emergency(req, name):
         needed = [f for f in needed if f[0] != "review_clean"]
-        walk.look("8", "owner-declared emergency waives the review condition")
-    verdicts = [(n, _fact(facts, n, want)) for n, want in needed]
+        walk.look("8", "an owner-declared emergency for this action waives "
+                       "the review condition")
+    verdicts, bad, unknown = _verdicts(needed, facts)
     if needed:
         walk.look("8", "conditions: " + ", ".join(
             f"{n}={v}" for n, v in verdicts))
-    bad = [n for n, v in verdicts if v == "violated"]
     if bad:
         return done("8", DENY, "condition is false: " + ", ".join(bad))
-    unknown = [n for n, v in verdicts if v == UNKNOWN]
+    if unknown and spec.lane == GRANT and not attended:
+        return done("8", DENY, "unattended and cannot be proved, so refused "
+                               "(4.4): " + ", ".join(unknown))
     if unknown:
         return done("8", ASK_ROUTINE,
                     "condition cannot be shown: " + ", ".join(unknown))
@@ -374,9 +444,12 @@ def decide(request: Any) -> dict:
     return done("8", ALLOW, "every condition met")
 
 
-def _serious(req: dict, walk: _Walk, name: str, serious: str,
-             attended: bool, stop_outcome: str, stop_word: str) -> dict:
-    """Rule 5 for a serious request."""
+def _serious(req: dict, walk: _Walk, subject: tuple, serious: str,
+             attended: bool, stop: tuple) -> dict:
+    """Rule 5 for a serious request. `subject` is (name, spec, facts) and
+    `stop` is (outcome, wording) for a stop that depends on presence."""
+    name, spec, facts = subject
+    stop_outcome, stop_word = stop
     if serious == UNPLACED:
         return walk.done(
             "5", NEEDS_PLAN,
@@ -404,6 +477,18 @@ def _serious(req: dict, walk: _Walk, name: str, serious: str,
             "5", NEEDS_PLAN,
             f"serious ({serious}): unattended work needs an attested plan "
             "approval; without one it can only run attended", serious)
+    if serious in IRREVERSIBLE_CLASSES:
+        listed = (_fact(facts, "irreversible_listed", True),
+                  _fact(facts, "cap_set", True))
+        walk.look("5", f"irreversible listing and cap {listed}")
+        if listed != ("met", "met"):
+            return walk.done(
+                "5", NEEDS_PLAN,
+                f"serious ({serious}) runs only when the plan lists this "
+                "exact action as irreversible with a cap (4.5)", serious)
+        if _fact(facts, "preflight_ok", True) != "met":
+            return walk.done("5", DENY, "the preflight is missing or "
+                                        "failed, so it refuses (4.5)", serious)
     if walk.tier == "prod":
         check = _pick(req.get("prodcheck"), PRODCHECK)
         walk.look("5", f"production checks {check}")
@@ -411,6 +496,18 @@ def _serious(req: dict, walk: _Walk, name: str, serious: str,
             return walk.done(
                 "5", stop_outcome,
                 f"production checks are {check} ({stop_word})", serious)
+    if spec.facts:
+        verdicts, bad, unknown = _verdicts(list(spec.facts), facts)
+        walk.look("5", "the lane's own conditions still hold: " + ", ".join(
+            f"{n}={v}" for n, v in verdicts))
+        if bad:
+            return walk.done("5", DENY, "condition is false: " + ", ".join(bad),
+                             serious)
+        if unknown:
+            return walk.done(
+                "5", stop_outcome,
+                f"condition cannot be shown: {', '.join(unknown)} "
+                f"({stop_word})", serious)
     return walk.done("5", ALLOW,
                      f"covered by a plan of record ({serious})", serious)
 
