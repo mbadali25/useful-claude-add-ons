@@ -146,6 +146,12 @@ read entries under any `## [` heading.
 - crew 1.3.159: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); the accepted-value test changed plugin/crew after the number was set, so the branch moved to 1.3.160; the change is recorded under crew 1.3.160
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Changed — crew 1.3.182: review provider registry; one probe per attempt (R-10)
+
+- **Summary.** `crew` 1.3.182 moves each review provider's command, parser, limit text and probe kind into one registry row, so `review_run.py` no longer branches on `codex` by name; the default `/crew:review` path is unchanged.
+- **What.** `plugin/crew/hooks/scripts/review_providers.py` holds one frozen row per provider (command, final-message parser, limit text, probe kind, events file); `review_run.py` reads `command_for`, `LAUNCHED`, `PROVIDERS` and `RETRY_KEPT` from it. `--probe` takes any launched provider: copilot makes one opt-in call (never `limited`), kimi answers `PROBE=deferred` with no call because it probes inside its own launch, claude is a usage error. The family guard answers before any probe answer, deferred included; a limit marker answers only for the provider that wrote it, and no limit or probe outcome is an input to the family guard. `--resolve-run` takes `--provider codex|copilot` and reads codex when none is given.
+- **Tests.** `test_review_providers.py` (T1-T9, must-block MB1-MB6, must-allow MA1-MA7); `sabotage_review.py` gains `R10_MUTATIONS` (S1-S11); the review goldens replay unchanged.
+
 ### Added — crew 1.3.181: `crew_protected.py`, the protected-policy comparator, report-only (R-32)
 
 - **Summary.** `crew` 1.3.181 adds `crew_protected.py`, which compares the protected policy crew actually enforces before and after a change and says whether each protected key stays the same, narrows, widens or cannot be told; nothing calls it yet, so no guard or command changes.
