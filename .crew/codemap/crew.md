@@ -1018,16 +1018,16 @@ DERIVED on `feat/worktrees-root` (cut from main `e65a067a4`); this section does
 not move the anchor. One leaf, `worktrees.root`, default `null` in both templates
 (`plugin/crew/hooks/scripts/crew_config.py` `default_config` and
 `default_global_config`; `crew_state.WORKTREES_DEFAULTS`). The reader is
-`plugin/crew/hooks/scripts/crew_worktrees.py:129` (`resolve`): a value that is
+`plugin/crew/hooks/scripts/crew_worktrees.py:130` (`resolve`): a value that is
 not a non-empty string, not absolute after `~` expansion, or inside the main
 checkout is a `problem` and `dir` stays `None` (never the default); the
 directory is `<base>/<repo>-<digest>` from `crew_state._repo_digest` of the main
 checkout (first `git worktree list` record). `crew_state.py --worktree-path`
-answers through it and exits 2 on a problem. `classify` (`:202`) marks a
+answers through it and exits 2 on a problem. `classify` (`:208`) marks a
 worktree removable only when status, unpushed (`rev-list HEAD --not --remotes`),
 merge into the default ref, lock and age all prove it, every failed probe being
-`could not tell`; `remove` (`:280`) needs `--yes` and runs `git worktree remove`
-without `--force`. `hook_create` (`:348`) and `hook_remove` are the entry points
+`could not tell`; `remove` (`:287`) needs `--yes` and runs `git worktree remove`
+without `--force`. `hook_create` (`:355`) and `hook_remove` are the entry points
 of Claude Code's `WorktreeCreate` / `WorktreeRemove` hooks (replacing git's
 creation; documented behaviour, not run against the live CLI);
 `crew_wave._init_refusal` admits a lane under the same directory. JUDGEMENT:
@@ -1037,6 +1037,32 @@ replaces creation for every user is the owner's to opt into, so
 `plugin/crew/tests/test_crew_worktrees.py`; mutations
 `plugin/crew/tests/worktrees_mutations.py` (17, run alone: `sabotage*.py` is
 harness).
+
+## Machine-owned run folders and the safe delete (`crew_paths.py`, R-04)
+
+DERIVED on `feat/r-04-crew-paths` (cut from main `fa68b4f4c`); this section and
+the `crew_worktrees.py` line numbers above (`:130`, `:208`, `:287`, `:355`,
+re-measured after the `_leaf` extract) do not move the anchor: the rest of this
+map was not re-derived. `crew_worktrees._leaf` (`crew_worktrees.py:162`) holds
+the `<leaf>` expression once; `resolve` calls it at `:158` and
+`crew_paths.repo_key` (`plugin/crew/hooks/scripts/crew_paths.py:311`) calls it
+too, so a worktree, review and scratch folder share one `<leaf>-<digest>`.
+`crew_paths.layout` (`:233`) reads the MACHINE layer only
+(`crew_config.read_global_config`); `explain` (`:982`) reports a repo
+`worktrees.root` as ignored. `test_root_problem` (`:283`) gates
+`$CREW_TEST_ROOT`. `make_run_dir` (`:934`) creates a run folder exclusively and
+writes `.crew-owner.json` through a temp file and `os.replace`.
+`delete_run_dir` (`:848`) never raises: `string_problem` (`:399`, run on the
+path and its realpath), `_anchor_problem` (`:456`), `_component_problem`
+(`:463`), `_read_record` (`:479`), the root identity capture, `_prescan`
+(`:596`, with `_mount_problem` `:568` reading `/proc/self/mountinfo`), then
+`_walk_posix` (`:799`, `dir_fd` and `O_NOFOLLOW` throughout, `fchmod` through a
+verified fd) or `_walk_windows` (`:735`, identity re-checked per entry;
+`_win_readonly` `:706` clears READONLY through a verified handle and deletes a
+multi-link read-only file by name with `FileDispositionInfoEx`). JUDGEMENT:
+nothing calls it yet (R-50 to R-53, R-60 will); it is not a hook, so it ships
+inert. Tests `plugin/crew/tests/test_crew_paths.py`; mutations
+`plugin/crew/tests/paths_mutations.py` (split by OS, run alone).
 
 **1.3.33 (PR 2 of 3, harness only).** DERIVED: `crew_ticket.cli_approval_allowed`
 (`plugin/crew/hooks/scripts/crew_ticket.py`) returns True when
@@ -1151,6 +1177,28 @@ anchor for this section: ae759c9e2
 - DERIVED unknown never takes the cheaper branch: `plugin/crew/hooks/scripts/crew_triage.py:91` `_factor` scores a missing or invalid factor 2, `:98` `_flag` (called at `:152`-`:154`) counts a missing `legacy` or `money` as true and a missing `docs_only` as false, and each is named in `unknown`.
 - DERIVED nothing reaches it: `plugin/crew/tests/test_crew_triage.py:848` `test_nothing_under_plugin_mentions_the_module` fails if any other file under `plugin/` mentions `crew_triage`; `:785` `_plugin_files` lists tracked and untracked-not-ignored files with `git ls-files` under an environment stripped of `GIT_*`, else walks the tree, and `:815` `_own_bytecode` skips only the compiled copies of the module and its test. Its scan root is the repo root, held by `:841` `test_the_scan_root_is_the_repo_root`; `:578` `MUTATIONS` holds 37 weakened copies of the module's source that each must fail a table.
 - JUDGEMENT it is inert on purpose (plan section 6): role defaults and escalation (R-71), the phase machine (R-73) and posting to Jira (R-72) are later tickets, and R-71 must reconcile Fable 5.2 as an output with `crew_wave.py` "crew never selects it" (decision D1) when it wires dispatch. `crew_triage.py` is not in `HARNESS`, so it lands as feature work.
+
+## The protected-policy comparator, report-only (R-32)
+
+anchor for this section: e2af2af52
+
+- DERIVED `plugin/crew/hooks/scripts/crew_protected.py:101` `READERS` maps each protected leaf (`:91` `LEAVES`; the twelve guards share the `guards.<name>` row) to the reader that enforces it, with its `path:line` and the layers it reads; `:134` `DIRECTIONS` gives each row one kind (`rank`, `derived`, `allow-set`, `restrict-set`, `strict-bool`, `git-allow`, `enum-order`, `sleep-tier`, `pinned`). `:523` `compare` answers `unchanged`, `narrowing`, `widening` or `unknown` for one leaf; a leaf with no row is unknown on any change.
+- DERIVED `:191` `read_layer` reads each config layer strictly first (unreadable, not UTF-8 JSON, a repeated key, not an object, or a resolved target other than the one the baseline recorded is `unknown`); `:478` `effective_protected` then calls the readers with the machine path patched in (`:270` `_machine_at`) and turns every leaf that reads an unknown layer into `Unknown`.
+- DERIVED two entry points, one comparator (`:587` `_judge`): `:688` `judge_change` reads both sides in throwaway roots with an empty receipt store, so it never confirms; `:781` `judge_drift` reads the real paths against `<machine config dir>/protected-policy/baseline.json` and advances it only when the result is free; `:816` `init_baseline` refuses to absorb a widening or an unknown. `:662` `classify` returns `free`, `widen-policy` (route `writer`) or `change-guard-config-directly`.
+- DERIVED for `humanOnly.*` and `guards.git.allow` `:636` `_raw_rows` compares the raw per-layer value too (absent read as the reader's silent default) and keeps the wider outcome; on the real paths a raw widening the reader honoured is confirmed, any other is `would refuse: hand edit not honoured`. `:628` `_follows_opt_out` confirms a `scope.allowCliApproval` widening that comes only from an honoured `humanOnly.approve` opt-out. `:564` `_policy_receipt` returns no receipt until R-23, so every other widening is unconfirmed.
+- DERIVED the reader rows for `environments.nonProd|workflows|preProduction`, `production.*` and `cloud.*` are the repo-only readers (`cloud_guard.environments_config`, `crew_config.production_declaration`, `cloud_guard.cloud_pins`), not `resolve_config`: grepping their consumers at dd0a106ef found none that enforces them through `resolve_config`.
+- DERIVED nothing reaches it: `plugin/crew/tests/test_crew_protected.py:766` `test_nothing_in_the_plugin_reaches_the_comparator_yet` fails if any other plugin source mentions `crew_protected`; `:651` `_direct` and `:687` `case_differential` compare every leaf with its reader called by name; `:731` `case_coverage` checks the five-way key union; `:816` `MUTATIONS` holds 21 weakened copies that each must turn a named case red with an `AssertionError`.
+- JUDGEMENT it is report-only on purpose (plan section 6). Refusing needs a hook or a HARNESS reader change, so R-32b (harness-only: store refusal, hook wiring, the `crew_ticket` `scope.*` clamp) and R-32c (the other readers and crew's writers) carry it, and the switch-on waits for R-23's `widen-policy` receipt.
+
+## The Never-lane command tripwire and shared redactor, report-only (R-33)
+
+anchor for this section: 95298500d
+
+- DERIVED `plugin/crew/hooks/scripts/crew_never.py:462` `judge(command, shell, env)` and `:474` `judge_payload` (Bash -> bash, PowerShell -> powershell, any other tool `not-a-command`) return `verdict` (`hit` beats `could-not-tell` beats `clear`, `:204` `_overall`), `operations` and `findings`; a finding names its rule, operation and place (pass, command, word), never the matched value. The two names it emits, `skip-hooks-or-signing` and `write-secret-plaintext`, are strings: the module never imports the policy table.
+- DERIVED hook skipping: `:435` `_hook_findings` takes the plain pass (`:377`, authoritative) when `crew_gitallow.plain_commands` reads the text, else the quote-blind raw pass (`:411`, cut at `&&` `||` `;` `|` `&` newline). Both go through `:356` `_command_head` (leading `NAME=VALUE` split off, `HEAD_PREFIXES` `:160` skipped) and `:315` `_judge_git`, which skips option values (`SUBCOMMANDS` `:127`), reads long options with `crew_gitallow._option_hit` (`LONG_SHAPES` `:106`), reads `commit -n` with its own bundle reader (`:220` `_short_letters`, because `_option_hit('-mno','-n')` is True) and checks `-c`/`--config-env` and `git config` writes. `:236` `_judge_env` holds `ENV_SHAPES` (`:150`) and `GIT_CONFIG_KEY_<n>`. The closed list is `SHAPES` (`:78`); `crew_never.py shapes` prints it.
+- DERIVED secrets: `:442` `_secret_findings` scans `crew_reference.SECRET_PATTERNS` (imported, not copied), `BEARER_RE` (`:177`, a bearer token outside an `Authorization` key) and the literal value (8+ chars) of each `env_guard.is_secret_name` variable. `:488` `redact` replaces them with `[redacted:<rule>]` / `[redacted:env:<NAME>]`; idempotent, called by nothing yet (R-A6 wires it). `crew_notify.redact` and `kimi_probe.redact` are unchanged.
+- DERIVED nothing reaches it: `plugin/crew/tests/test_crew_never.py:374` fails if any other plugin source mentions `crew_never`; `:440` imports it in a subprocess with cwd and HOME on throwaway dirs and asserts no `crew_policy`/`crew_hook`/`crew_coord` load and no file written; `:403` takes crew's real coordination argv (`Channel.push_argv`, `_commit` with `run_git` faked) and asserts each is a `hit`, so the push is unaffected only because it is never a model-run payload; `:350` binds both names to Never rows denied at rule 1; `:220` pins the raw pass's known false positive; `:560` `MUTATIONS` holds 17 weakened copies that each must turn a named case red.
+- JUDGEMENT report-only on purpose (plan section 6). Wiring into `crew_hook.py` is HARNESS, so R-33b (harness-only) registers it as a guard.log finding and lands the `tests/sabotage*.py` companion; R-35 maps a `hit` to the Never-lane deny. It is a tripwire, not a boundary: wrappers (`bash -c`, `xargs`, `eval` in a plain command), scripts, aliases and repo config files written by a tool are not seen.
 
 ## The Actions schema, report-only (R-30)
 
@@ -2008,13 +2056,13 @@ Obsidian vault). A CLI the commands call, not a hook.
   not know, is `could not update` unless `--reopen`.
 - DERIVED (L-0530; measured on this tree, anchors not moved): a word outside
   the table is named, never mapped. `RETIRED_STATUSES`
-  (`plugin/crew/hooks/scripts/crew_tracker.py:119`: approved -> spec,
+  (`plugin/crew/hooks/scripts/crew_tracker.py:138`: approved -> spec,
   merged -> done, closed -> done, new -> direction, parked -> needs-owner)
-  feeds `_crew_word_hint` (`plugin/crew/hooks/scripts/crew_tracker.py:151`),
+  feeds `_crew_word_hint` (`plugin/crew/hooks/scripts/crew_tracker.py:170`),
   a text-only `; the crew word is <w>` appended to `move`'s `maps to no lane`
-  refusal (`plugin/crew/hooks/scripts/crew_tracker.py:1604`) and to
+  refusal (`plugin/crew/hooks/scripts/crew_tracker.py:1692`) and to
   `_backwards`' unknown-current refusal. `_obsidian_read`
-  (`plugin/crew/hooks/scripts/crew_tracker.py:1534`) reports an INDEX status
+  (`plugin/crew/hooks/scripts/crew_tracker.py:1622`) reports an INDEX status
   outside `LANE_FOR_STATUS` as `disagree: "could not tell"` with the note
   `INDEX status <s> is not a status crew knows (<KNOWN_STATUSES>)`, and a
   missing INDEX status as `could not tell` too; only a known status can
@@ -2023,18 +2071,18 @@ Obsidian vault). A CLI the commands call, not a hook.
   from `LANE_FOR_STATUS`.
 - DERIVED (T-0037; measured on this tree, anchors not moved):
   the ticket status vocabulary's one owner is this table. `OWNER_STATUSES`
-  (`plugin/crew/hooks/scripts/crew_tracker.py:119`, `needs-owner`: open,
+  (`plugin/crew/hooks/scripts/crew_tracker.py:138`, `needs-owner`: open,
   Backlog lane) and `CLOSED_STATUSES`
-  (`plugin/crew/hooks/scripts/crew_tracker.py:120`, `cancelled`,
+  (`plugin/crew/hooks/scripts/crew_tracker.py:139`, `cancelled`,
   `superseded`: Done lane, checked) sit beside `STATUS_ORDER`
-  (`plugin/crew/hooks/scripts/crew_tracker.py:100`) as rows of
-  `LANE_FOR_STATUS` (`plugin/crew/hooks/scripts/crew_tracker.py:121`).
-  `_backwards` (`plugin/crew/hooks/scripts/crew_tracker.py:734`) refuses any
+  (`plugin/crew/hooks/scripts/crew_tracker.py:119`) as rows of
+  `LANE_FOR_STATUS` (`plugin/crew/hooks/scripts/crew_tracker.py:140`).
+  `_backwards` (`plugin/crew/hooks/scripts/crew_tracker.py:822`) refuses any
   move out of a closed word, and `done` to a closed word or `needs-owner`,
   without `--reopen`; `needs-owner` to or from an open word is never
-  backwards; `_PUSH_AT` (`plugin/crew/hooks/scripts/crew_tracker.py:163`) is
+  backwards; `_PUSH_AT` (`plugin/crew/hooks/scripts/crew_tracker.py:251`) is
   unchanged, so Jira/SDP push none of the three (`_push`,
-  `plugin/crew/hooks/scripts/crew_tracker.py:1477`). The closed words also sit
+  `plugin/crew/hooks/scripts/crew_tracker.py:1565`). The closed words also sit
   in `crew_state._DONE_RE` and `_TABLE_DONE_WORDS`
   (`plugin/crew/hooks/scripts/crew_state.py:237`, `:257`), which
   `crew_ticket._index_closed` (`plugin/crew/hooks/scripts/crew_ticket.py:1015`)
@@ -2144,102 +2192,126 @@ Obsidian vault). A CLI the commands call, not a hook.
   `MUTATIONS`), each on the test its label names;
   `plugin/crew/tests/test_ticket_state.py` pins that set and its anchors.
 - Files backend: the `.work/INDEX.md` row whose id cell matches exactly
-  (`_files_create` `crew_tracker.py:752`, `_files_move` `crew_tracker.py:778`, `_files_read` `crew_tracker.py:806`); a row
+  (`_files_create` `crew_tracker.py:840`, `_files_move` `crew_tracker.py:866`, `_files_read` `crew_tracker.py:894`); a row
   with no status cell is `could not update` / `could not read`; `create` on
   any id INDEX holds, the same title included, is refused with a reason
-  beginning `id taken` (`_held`, `crew_tracker.py:722`; `TAKEN`, `crew_tracker.py:108`). `title_ok`
-  (`:632`) refuses `|` and every break `str.splitlines` honours. Obsidian =
-  files + the board (`_obsidian_create` `crew_tracker.py:1572`, `_obsidian_move` `crew_tracker.py:1622`,
-  `_obsidian_read` `crew_tracker.py:1707`); a move whose INDEX half refuses writes no board
-  (`:1422`), and a move's board half re-reads INDEX inside the board's
+  beginning `id taken` (`_held`, `crew_tracker.py:810`; `TAKEN`, `crew_tracker.py:127`). `title_ok`
+  (`:720`) refuses `|` and every break `str.splitlines` honours. Obsidian =
+  files + the board (`_obsidian_create` `crew_tracker.py:1660`, `_obsidian_move` `crew_tracker.py:1710`,
+  `_obsidian_read` `crew_tracker.py:1795`); a move whose INDEX half refuses writes no board
+  (`:1510`), and a move's board half re-reads INDEX inside the board's
   atomic update and places the card in the lane for the status INDEX holds
   then (T-0071 #3, `_obsidian_move` `edit`), refusing with `could not tell
   where INDEX has` when the row is gone or unknown, and reads INDEX again
   after the write, placing the card again while INDEX moved on
   (`_board_following_index`, at most `WRITE_TRIES`), as a create whose INDEX half refuses writes no card.
   Jira/SDP answer `delegated` with `<sync> <KEY> --push --to <status>` at
-  `_PUSH_AT` (`crew_tracker.py:163`: `in-progress`, `done`) and `nothing to push` otherwise
-  (`_push` `:2141`, `_delegated` `crew_tracker.py:2136`); CLI exit codes 0/1/3/2
-  (`exit_code` `:311`, `main` `:2232`).
+  `_PUSH_AT` (`crew_tracker.py:251`: `in-progress`, `done`) and `nothing to push` otherwise
+  (`_push` `:2235`, `_delegated` `crew_tracker.py:2224`); CLI exit codes 0/1/3/2
+  (`exit_code` `:399`, `main` `:2410`).
+- DERIVED (R-72, against the branch tree before commit; every `crew_tracker.py`
+  cite in this section was re-pointed by line mapping from origin/main
+  `fa68b4f4c`, and the file's `anchor:` was not moved - re-checked at land):
+  status maps. `JIRA_STATUSES` (`crew_tracker.py:185`) is the owner's 13 Jira
+  statuses in workflow order; `STATUS_MAP` (`:190`) maps each crew word per
+  kind (identity for files, obsidian, sdp; Jira's names, no row for
+  `cancelled`/`superseded`); `JIRA_TO_CREW` (`:208`) is the only reverse map
+  (verbatim match, else `could not tell`, `jira_crew_word` `:230`);
+  `map_status` (`:235`) backs the `map` verb. `_delegated` (`:2224`) adds a
+  `target` key on a Jira push (`:2231`) and `main` prints it as a second line
+  `jira: target: <name>` (`:2480`); `_line` is unchanged, so autopilot,
+  `crew_split` and `crew_ticket` print what they printed. `transition`
+  (`:2355`): `_gate`, then `_jira_only` (`:2311`, exit 2 for files, obsidian,
+  sdp), then `_folder_refusal`, then `transition_answer` (`:2332`): native
+  compare (`_unchanged` `:2316`), `Complete` closed, same-word order by
+  `JIRA_STATUSES` (`_past_in_word` `:2322`), then `_backwards`. Events
+  (`event`, `events`, `_event_cli` `:2373`) live in
+  `plugin/crew/hooks/scripts/crew_tracker_events.py`: `event_id` (`:74`,
+  sha256 over repo id, ticket, kind, discriminator), the ledger under the git
+  common dir (`ledger_dir` `:85`), `begin` (`:186`: `_claim` `:155` with
+  `_CLAIM_FLAGS` `:50`, O_EXCL; `_answer` `:143`), `record_outcome` (`:204`),
+  `post_local` (`:222`, files/obsidian) and `list_events` (`:236`, read-only).
+  Callers: `commands/jira-sync.md` (`transition`, "Posting once") and
+  `commands/sdp-sync.md` (points at "Posting once"; never `transition`).
 - Obsidian `create`'s order (review round 4): INDEX first (`_index_holds`
-  `:1317`, called at `:1345`, before `_vault_paths`), so a vault failure never
+  `:1405`, called at `:1433`, before `_vault_paths`), so a vault failure never
   hides a held id; then vault, identity, board and owner check; then the
-  claim, the note's exclusive create (`:1370`), before the INDEX row and the
+  claim, the note's exclusive create (`:1458`), before the INDEX row and the
   card. A note that appeared after the owner check makes that create fail,
-  and `create` answers `id taken` (`:1371`, reason from `_lost_claim`
-  `:1562`) with nothing written after it. A note that was already this repo's
+  and `create` answers `id taken` (`:1459`, reason from `_lost_claim`
+  `:1650`) with nothing written after it. A note that was already this repo's
   is not re-created, and the INDEX row decides under its atomic update.
-- Every write goes through `_atomic_update` (`crew_tracker.py:494`): the temp is created by
-  `_write_temp` (`:481`) via `_write_new` (`:468`) with `_TEMP_FLAGS` (`crew_tracker.py:336`,
+- Every write goes through `_atomic_update` (`crew_tracker.py:582`): the temp is created by
+  `_write_temp` (`:569`) via `_write_new` (`:556`) with `_TEMP_FLAGS` (`crew_tracker.py:424`,
   `O_EXCL|O_NOFOLLOW`) under a random name, so a planted link is never
-  followed; `_carry` (`crew_tracker.py:452`) gives it the target's owner and mode from
-  `_ownership` (`crew_tracker.py:436`) - a new file takes its directory's owner only as root;
-  then re-read the target (`:475`), `os.replace`, at most `WRITE_TRIES`
-  (`:157`) recomputes.
-- Vault confinement is `_vault_paths` (`crew_tracker.py:1105`): realpath, `.obsidian/`
+  followed; `_carry` (`crew_tracker.py:540`) gives it the target's owner and mode from
+  `_ownership` (`crew_tracker.py:524`) - a new file takes its directory's owner only as root;
+  then re-read the target (`:563`), `os.replace`, at most `WRITE_TRIES`
+  (`:245`) recomputes.
+- Vault confinement is `_vault_paths` (`crew_tracker.py:1193`): realpath, `.obsidian/`
   required, relative `boardDir` without `..`, a string bare `board`,
   `commonpath` inside the vault, the vault's device and inode
-  recorded (`:1012`), and each board or note file inside the worktree only when
-  `git check-ignore` says ignored (`:1031`, per file, so a vault that contains
+  recorded (`:1100`), and each board or note file inside the worktree only when
+  `git check-ignore` says ignored (`:1119`, per file, so a vault that contains
   the repo is covered). It runs before either half writes. The write then
-  pins its directory (`_pinned` `:1370`): where `_DIR_FD` (`crew_tracker.py:343`) holds,
-  `_open_pinned` (`crew_tracker.py:1288`) opens the checked vault (inode matched) and walks the
-  real path's components with `_DIR_FLAGS` (`:338`, `O_DIRECTORY|O_NOFOLLOW`),
+  pins its directory (`_pinned` `:1458`): where `_DIR_FD` (`crew_tracker.py:431`) holds,
+  `_open_pinned` (`crew_tracker.py:1376`) opens the checked vault (inode matched) and walks the
+  real path's components with `_DIR_FLAGS` (`:426`, `O_DIRECTORY|O_NOFOLLOW`),
   every read, temp, replace and note create is relative to that fd, and
-  `_pinned_check` (`crew_tracker.py:1320`) repeats the walk and matches device and inode
+  `_pinned_check` (`crew_tracker.py:1408`) repeats the walk and matches device and inode
   before the temp, before the replace and after it, because the fd follows its
   directory if it is renamed out of the vault; a note written into a directory
-  that left is unlinked through the fd (`_create_note_once` `crew_tracker.py:1422`).
+  that left is unlinked through the fd (`_create_note_once` `crew_tracker.py:1510`).
   On Windows (T-0077), where `_DIR_FD` does not hold, `_pinned` instead holds
   a handle on the vault and on every real component down to the directory
-  (`_hold_dirs` `crew_tracker.py:1245`, each opened by `_win_open_dir` `crew_tracker.py:378` with
-  `_PIN_ACCESS` `crew_tracker.py:358` and no `FILE_SHARE_DELETE`, so the OS refuses to rename
+  (`_hold_dirs` `crew_tracker.py:1333`, each opened by `_win_open_dir` `crew_tracker.py:466` with
+  `_PIN_ACCESS` `crew_tracker.py:446` and no `FILE_SHARE_DELETE`, so the OS refuses to rename
   any of them while held; a reparse point, a non-directory, no file id or
-  the wrong vault refuses), and `_held_check` (`crew_tracker.py:1349`) re-stats the
+  the wrong vault refuses), and `_held_check` (`crew_tracker.py:1437`) re-stats the
   directory's device and file id at the same three points. A platform with
-  neither (`_WIN_PIN` `crew_tracker.py:375` false) refuses the write.
+  neither (`_WIN_PIN` `crew_tracker.py:463` false) refuses the write.
   T-0081 (lines at `43cb9c8b`): `_vault_paths` also
   records `<label>DirIds`, each real component's `(st_dev, st_ino)`
-  from `os.lstat`, or None, built by `_component_ids` (`crew_tracker.py:1195`) over the same
+  from `os.lstat`, or None, built by `_component_ids` (`crew_tracker.py:1283`) over the same
   `_components`. Both walks match each component through `_match_component`
-  (`:1234`; `_open_pinned` `crew_tracker.py:1288`, `_hold_dirs` `crew_tracker.py:1245`): a different identity
+  (`:1322`; `_open_pinned` `crew_tracker.py:1376`, `_hold_dirs` `crew_tracker.py:1333`): a different identity
   is ESTALE (`_moved`'s "changed after the vault checks"); a None, an inode or
-  file id of 0 on either side (`_could_not_tell` `:1211`, also run on the POSIX
-  vault) or a list that does not line up (`_recorded_ids` `crew_tracker.py:1224`) is EIO
+  file id of 0 on either side (`_could_not_tell` `:1299`, also run on the POSIX
+  vault) or a list that does not line up (`_recorded_ids` `crew_tracker.py:1312`) is EIO
   "could not tell", naming the directory. `_pinned_check` gains it through its re-walk;
   its own held comparison is kept as defence in depth.
 - Card ownership on a shared board (`boardDir` unset): the ticket note's
-  `repo-id:` (`_NOTE_REPO_ID` `crew_tracker.py:1467`, trailing `\r` excluded so a CRLF note
+  `repo-id:` (`_NOTE_REPO_ID` `crew_tracker.py:1555`, trailing `\r` excluded so a CRLF note
   reads as written, a quote stripped only as a matched pair, T-0071 #4;
-  `_card_owner` `crew_tracker.py:1471` -> ours / foreign / unknown). The id
-  is `repo_id` (`crew_tracker.py:674`): the origin URL through `normal_url` (`crew_tracker.py:601`,
+  `_card_owner` `crew_tracker.py:1559` -> ours / foreign / unknown). The id
+  is `repo_id` (`crew_tracker.py:762`): the origin URL through `normal_url` (`crew_tracker.py:689`,
   scheme and host with port case-folded, user and path kept as written
   (T-0071 #1), `.git` stripped; an ssh origin - scp-style or a scheme in
-  `_SSH_SCHEMES` `crew_tracker.py:598` - keeps its username and drops a password, every other
-  scheme drops the whole userinfo); for a local origin (`_local_path` `:634`,
-  a `file://` path through the pure `_file_url_path(url, windows)` `:621`:
+  `_SSH_SCHEMES` `crew_tracker.py:686` - keeps its username and drops a password, every other
+  scheme drops the whole userinfo); for a local origin (`_local_path` `:722`,
+  a `file://` path through the pure `_file_url_path(url, windows)` `:709`:
   the authority dropped on POSIX, an empty or `localhost` one and the `/`
   before a drive letter dropped on Windows, then percent-decoded as git
   decodes it), an absolute path's
   realpath, and for a relative one - `../origin/app.git` names a different
   repository from each checkout - the git common dir's realpath, as with no
-  origin; `None` (git could not say) refuses via `_no_identity` (`crew_tracker.py:1541`).
-  `_foreign` (`crew_tracker.py:1525`) refuses create, move and read, and names the
+  origin; `None` (git could not say) refuses via `_no_identity` (`crew_tracker.py:1629`).
+  `_foreign` (`crew_tracker.py:1613`) refuses create, move and read, and names the
   `repo-id:` line to write when the note's id is this repo's case-folded
   (an older crew's lowercased id, never accepted); unknown refuses create
-  and move with the `repo-id:` fix (`_unclaimed` `crew_tracker.py:1536`) and is a caveat on
+  and move with the `repo-id:` fix (`_unclaimed` `crew_tracker.py:1624`) and is a caveat on
   read. There is no claim by title: a card's text matching this repo's INDEX
-  title is not an owner. `repo_name` (`:700`) is a human label only.
-- The board is edited, never regenerated: `parse_board` (`crew_tracker.py:890`, lines split
-  on LF alone by `_board_lines` `crew_tracker.py:849`; the done lane must carry exactly one
-  `**Complete**`, `_complete_markers` `crew_tracker.py:929`), `find_card` (`crew_tracker.py:953`; a card is
-  the first id on its first line), `move_card` (`crew_tracker.py:1017`; a card already in its
-  lane is repaired in place by `_checkbox` `crew_tracker.py:1002`, which also gives a card
-  with no box one (`_BOX` `crew_tracker.py:998`, a marker only when a space, tab or line end
+  title is not an owner. `repo_name` (`:788`) is a human label only.
+- The board is edited, never regenerated: `parse_board` (`crew_tracker.py:978`, lines split
+  on LF alone by `_board_lines` `crew_tracker.py:937`; the done lane must carry exactly one
+  `**Complete**`, `_complete_markers` `crew_tracker.py:1017`), `find_card` (`crew_tracker.py:1041`; a card is
+  the first id on its first line), `move_card` (`crew_tracker.py:1105`; a card already in its
+  lane is repaired in place by `_checkbox` `crew_tracker.py:1090`, which also gives a card
+  with no box one (`_BOX` `crew_tracker.py:1086`, a marker only when a space, tab or line end
   follows; a glued `- [ ]T-0042` is repaired, T-0071 #6), and one above `**Complete**` in Done is
-  moved below it), `add_card` (`crew_tracker.py:1071`), written by `_board_write` (`crew_tracker.py:1394`).
-  The ticket note (`_note_text` `:1413`) is an exclusive create
-  (`_create_note_once` `crew_tracker.py:1422`, `_NOTE_FLAGS` `crew_tracker.py:337`).
+  moved below it), `add_card` (`crew_tracker.py:1159`), written by `_board_write` (`crew_tracker.py:1482`).
+  The ticket note (`_note_text` `:1501`) is an exclusive create
+  (`_create_note_once` `crew_tracker.py:1510`, `_NOTE_FLAGS` `crew_tracker.py:425`).
 - Called by `brainstorm.md:22` (`resolve`), `:30` (`create`) and `:83` (`move`), `spec.md:49`, `plan.md:87`,
   `implement.md` and `:113`, `done.md` and `fix.md:27` (`resolve`, T-0071 #5), `:30`, `:79`,
   `:87`, `:96`, `:98` (all under `plugin/crew/commands/`); fix, like
@@ -2288,14 +2360,14 @@ Citations under `plugin/crew/hooks/scripts/`.
   (`plugin/crew/tests/test_crew_ticket.py`, `test_no_module_builds_ticket_paths_itself`)
   names each in an allowlist with that reason, so the follow-up empties it.
 - The tracker: `_vault_paths` accepts the `Complete/` subfolder only through
-  `ARCHIVE_DIR` (`crew_tracker.py`); `_note_names` (`:1492`) and
-  `_note_where` (`:1498`) put the archived note beside the live one for
-  create, move and read; `remove_card` (`:1044`) cuts a card's span from Done
-  only; `archive` (`:2091`) runs `_active_holder` (`:1779`), then every vault
-  check (`_obsidian_archive_checks` `:2036`), then `_files_archive` (`:1806`),
-  `_rename_note` (`:1974`) and the board write (`_obsidian_archive` `:2070`);
+  `ARCHIVE_DIR` (`crew_tracker.py`); `_note_names` (`:1580`) and
+  `_note_where` (`:1586`) put the archived note beside the live one for
+  create, move and read; `remove_card` (`:1132`) cuts a card's span from Done
+  only; `archive` (`:2179`) runs `_active_holder` (`:1867`), then every vault
+  check (`_obsidian_archive_checks` `:2124`), then `_files_archive` (`:1894`),
+  `_rename_note` (`:2062`) and the board write (`_obsidian_archive` `:2158`);
   `move` refuses an archived or could-not-tell folder (`_folder_refusal`
-  `:2124`).
+  `:2212`).
 ## The split rulebook (T-0052)
 
 JUDGEMENT (carried, not re-verified at `bdde58724`, L-0928): the behaviour prose in this section is as of the commit it names, not re-read at `bdde58724`; only its `name` plus line citations were re-resolved by symbol against the `bdde58724` tree, and a line cited with no name beside it was not.
@@ -2812,6 +2884,20 @@ JUDGEMENT (carried, not re-verified at `bdde58724`, L-0928): the behaviour prose
   parser. A Kimi round returns before L-0514's retry loop, so it is never retried in-process.
   `commands/review.md` carries step 2e and exit 8 (the Kimi probe row and the exit-2 prose moved into `review_run.py`'s `next:` table and `docs/crew/review.md` with L-0726); `test_review_run_kimi.py`
   and `sabotage_kimi.py` (registered in `sabotage.py`) hold the cases and mutations.
+- **DERIVED** (R-10, derived on `feat/r-10-provider-registry` off `a29b816fb`, not at this map's
+  `anchor:`): the provider registry. `plugin/crew/hooks/scripts/review_providers.py` holds one
+  frozen `Provider` row per provider (`class Provider` `:51`, `REGISTRY` `:104`): name, display
+  name, launched, executable, probe kind (`standalone` codex/copilot, `in-launch` kimi,
+  `in-session` claude), `walk_probes` (codex only), `needs_model` (copilot), `events_file`
+  (`codex-events.jsonl`), and `command` / `final` / `limit`. `family` delegates to
+  `crew_state.family`; no row holds a same-family decision. `review_run.py` reads it:
+  `LAUNCHED` (`:299`), `RETRY_KEPT` (`:365`), `command_for` (`:849`), `_launch_round`, `probe`
+  (`:2088`; a limit marker answers only for the provider that wrote it, none = codex),
+  `resolve_run` (`:2542`; `--provider` any standalone row, codex when absent), `Context.walk`,
+  `next_action("probe")` (`:2791`; the probed row's display name), `PROVIDERS` (`:2843`). The
+  `--probe` branch asks usage, then `family_guard`, then the row; kimi answers `PROBE=deferred`
+  with no call (`:2983`), so one attempt never probes Kimi twice. Tests:
+  `plugin/crew/tests/test_review_providers.py`; mutations `R10_MUTATIONS` in `sabotage_review.py`.
 
 ## The agents on Kimi (L-0777)
 
@@ -3016,7 +3102,7 @@ citations taken with `grep -n` there.
   and `:148` (moved by L-0673's two patterns), `plugin/crew/hooks/scripts/crew_instructions.py:293`,
   `plugin/crew/hooks/scripts/crew_refresh_check.py:507`, `:517`, `:548`,
   `plugin/crew/hooks/scripts/crew_state.py`, `plugin/crew/hooks/scripts/crew_status.py:56`,
-  `plugin/crew/hooks/scripts/crew_tracker.py:540` and `:980`,
+  `plugin/crew/hooks/scripts/crew_tracker.py:628` and `:1068`,
   `plugin/crew/hooks/scripts/crew_trailers.py:337` (imported lazily, as that module does),
   `plugin/crew/hooks/scripts/event_claim.py`, `plugin/crew/hooks/scripts/crew_autocycle.py`
   (`ps`, reached on native Windows: no `/proc`) and `:966` (`_xdotool`),
@@ -3243,7 +3329,8 @@ JUDGEMENT (carried, not re-verified at `bdde58724`, L-0928): the behaviour prose
   shell line (`:287`). Tests: `plugin/crew/tests/test_verify_agents.py`,
   `plugin/crew/tests/test_status.py`.
 - DERIVED: `provider_probe.probe` (`plugin/crew/hooks/scripts/provider_probe.py:47`) builds its
-  call with `review_run.command_for` (`:834`) and runs it with `review_run.launch(cmd, root, ...)`
+  call with `review_run.command_for` (`review_run.py:849`, a wrapper over the provider's
+  `review_providers` row since R-10) and runs it with `review_run.launch(cmd, root, ...)`
   (`:53`), so `--skip-git-repo-check`, `-C <root>` and cwd=root hold from any directory. Tests:
   `plugin/crew/tests/test_provider_probe.py`. No hook, `/crew:status` or `/crew:review` runs it.
 - DERIVED: `crew_upgrade._write_upgrade_report`

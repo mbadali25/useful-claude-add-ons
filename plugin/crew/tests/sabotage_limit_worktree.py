@@ -36,14 +36,15 @@ LIMIT_WORKTREE_MUTATIONS = (
      '        return PROBE_UNKNOWN, f"no answer within {timeout}s"\n',
      '        return PROBE_OK, "timed out"\n',
      _L + "test_probe_timeout_is_unknown_not_ok"),
+    # R-10 re-anchor: the probe reads the limit through its provider row.
     ("any probe failure is classed limited", RUN,
-     ('    line = review_limit.limit_line(error or "", stderr)\n    if line:\n'
+     ('    line = row.limit(error, stderr)\n    if line:\n'
      "        return PROBE_LIMITED, line\n"),
-     ('    line = review_limit.limit_line(error or "", stderr) or (error or "failed")\n'
+     ('    line = row.limit(error, stderr) or (error or "failed")\n'
      "    if line:\n        return PROBE_LIMITED, line\n"),
      _L + "test_probe_other_failure_is_failed_not_limited"),
     ("a mid-round limit is not recorded", RUN,
-     '            review_limit.record(args.root, args.ticket, number, "codex", args.model, limit)\n',
+     '            review_limit.record(args.root, args.ticket, number, row.name, args.model, limit)\n',
      "            pass\n",
      _L + "test_limit_mid_round_is_recorded_and_next_probe_says_limited"),
     ("the marker's round check is dropped", LIMIT,

@@ -75,6 +75,43 @@ No job is excluded whole; a step is excluded only by a WINDOWS_ONLY_IFS
 condition. The check is one-way: table steps CI does not run (sabotage.py,
 ruff-no-new, check-tooling-pr) are allowed.
 
+Map mode (opt-in, nothing calls it yet; R-81 wires the verify gate to it):
+  python3 scripts/gate-runner.py --map .crew/verify.json --changed-file F|- [--tier fast|heavy|all]
+  python3 scripts/gate-runner.py --map .crew/verify.json --base REF --slice K/N [--plan]
+selects the rules of the .crew/verify.json map that the changed set requires
+(the matcher of verify-gate.sh; bookkeeping paths dropped; an unmatched path is
+unmapped unless a refresh artifact; `always`; `default` exactly when nothing is
+left to run after `always` and reach exclusion; `unmapped` read from the parsed
+top-level key, an unknown value failing closed -- verify-gate greps the literal
+"fail", a recorded divergence), then runs ONE tier per round or ONE
+deterministic slice K of N of the whole selected set. Selection never drops what
+the map requires: --tier fast lists every matched heavy unit under other_tier
+(SKIP, NOT VERIFIED - heavy, runs at Gate) and --tier heavy does the same for the
+fast ones; the last stdout line counts them. A rule is `fast` only by a
+measurement on THIS machine (.crew/.verify-gate.timings.json) below
+--fast-seconds (default 120); declared `seconds` alone is heavy. A slice
+partitions every matched rule (reach-excluded and requiresCleanTree ones too,
+exclusions are applied inside the slice as SKIP NOT VERIFIED) by declared
+`seconds` only, longest first onto the lightest slice, so every machine computes
+the same partition from the map bytes and the changed list alone; @always,
+@default and @unmapped are always slice 1. A rule with a valid `coveredBy` joins
+its superset's unit and is credited (PASS, credited_by) only when the superset
+is PASS in this run, PYTEST_ADDOPTS is empty and the tree snapshots before the
+superset and before the credit are equal; otherwise it runs as itself.
+status.json gains `map`: head, changed_digest, map_digest, partition_digest
+(R-81 checks that n slices share all four and that their unit lists are disjoint
+and union to the selection), workers, units, other_tier, carried (preReview is
+carried, run by review_run.py, never counted as PASS). Heavy-tier units and
+every slice unit run in the ONE heavy-run call (--map-inner, refused unless the
+plan file has the digest the outer wrote); fast-tier units run directly, at most
+--workers at once (default probed: min(cpus, MemAvailable / 1.5 GiB, 4); any
+probe failure is 1, said on stderr). PASS prints one line; anything else prints
+each FAIL or COULD-NOT-TELL unit and the last 20 lines of its failing log, then
+the same count line. Trust: the map's `run` strings execute here without
+verify_trust.py's check -- use this runner on this repo's own map only until
+R-81 owns trust. Not run on Windows here: INFERRED that `bash -c` resolves as the
+table steps' `bash` does.
+
 Windows: the kill path uses CREATE_NEW_PROCESS_GROUP and `taskkill /T`. Not
 verified on a Windows host.
 """
@@ -95,6 +132,7 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -713,6 +751,8 @@ class Context:
         self.ruff_no_new = os.environ.get("RUFF_NO_NEW") or DEFAULT_RUFF_NO_NEW
         self._probe: dict = {}
         self._probe_lock = threading.Lock()
+        self.helpers = None      # map mode: the imported harness modules (Helpers)
+        self.tree_dirty = None   # map mode: whether the tree was dirty at the start; None = unknown
 
     def subst(self, text: str) -> str:
         return (text.replace("{python}", sys.executable).replace("{root}", self.root)
@@ -1405,6 +1445,961 @@ def _workflow_commands(wf: str, doc, covered: set, windows_only: set) -> list:
     return problems
 
 
+# ---- map mode (R-80): tiers and slices of .crew/verify.json ----------------
+
+MAP_SCRIPTS = os.path.join("plugin", "crew", "hooks", "scripts")
+TIMINGS_FILE = os.path.join(".crew", ".verify-gate.timings.json")
+DEFAULT_FAST_SECONDS = 120
+UNKNOWN_SECONDS = 300
+MAX_SLICES = 64
+GIB = 1024 ** 3
+SYNTHETIC = ("@always", "@default", "@unmapped")
+NOT_VERIFIED_HEAVY = "NOT VERIFIED - heavy, runs at Gate"
+NOT_VERIFIED_FAST = "NOT VERIFIED - fast, runs per round"
+
+
+@dataclass
+class Helpers:
+    """The read-only harness modules map mode imports (D2, D3). None = not
+    importable; every use below says what an absent one means."""
+    vr: object = None
+    ca: object = None
+    notices: list = dataclasses.field(default_factory=list)
+
+
+def load_helpers(root: str) -> Helpers:
+    """Import verify_record and completion_audit from the root's own
+    plugin/crew/hooks/scripts. The directory stays on sys.path for the process
+    (completion_audit imports a sibling lazily, inside its call)."""
+    scripts = os.path.join(root, MAP_SCRIPTS)
+    helpers = Helpers()
+    if os.path.isdir(scripts) and scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    for attr, name in (("vr", "verify_record"), ("ca", "completion_audit")):
+        try:
+            if not os.path.isdir(scripts):
+                raise ImportError(f"{scripts} does not exist")
+            setattr(helpers, attr, __import__(name))
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            helpers.notices.append(f"gate-runner map: {name} is not importable "
+                                   f"({type(exc).__name__}: {exc})" + (
+                                       " - every changed path is judged (none is bookkeeping or "
+                                       "an artifact)" if name == "completion_audit" else ""))
+    return helpers
+
+
+def matches(path: str, pat: str) -> bool:
+    """verify-gate.sh's `def matches`, verbatim in behaviour (test 12 execs the
+    original and compares on a case-exact path): fnmatch's * spans '/', so the
+    '**/'-stripped form and the '/**/' -> '/' form are tried as well. Matching is
+    case-sensitive on every host (fnmatchcase): fnmatch.fnmatch normcases on
+    Windows, which would select a different unit set, and so a different
+    partition, there than on Linux."""
+    import fnmatch
+    cands = {pat}
+    if pat.startswith("**/"):
+        cands.add(pat[3:])
+    cands.add(pat.replace("/**/", "/"))
+    return any(fnmatch.fnmatchcase(path, c) for c in cands)
+
+
+def load_map(path: str, root: str):
+    """(cfg, sha256 of the file's bytes). Refuses (D18) when any rule, selected
+    or not, has no usable unique `id`, or is not shaped as a rule; the message
+    names every offending rules[i]."""
+    full = path if os.path.isabs(path) else os.path.join(root, path)
+    try:
+        with open(full, "rb") as fh:
+            raw = fh.read()
+        cfg = json.loads(raw.decode("utf-8"))
+    except (OSError, ValueError) as exc:
+        raise Refusal(f"--map {path}: not readable JSON ({exc})") from exc
+    if not isinstance(cfg, dict):
+        raise Refusal(f"--map {path}: expected a JSON object")
+    rules = cfg.get("rules", [])
+    if not isinstance(rules, list):
+        raise Refusal(f"--map {path}: `rules` is not a list")
+    seen: dict = {}
+    for i, rule in enumerate(rules):
+        if isinstance(rule, dict) and isinstance(rule.get("id"), str) and rule["id"]:
+            seen.setdefault(rule["id"], []).append(i)
+    bad = []
+    for i, rule in enumerate(rules):
+        if not isinstance(rule, dict):
+            bad.append(f"rules[{i}]: not an object")
+            continue
+        rid = rule.get("id")
+        if not isinstance(rid, str) or not rid:
+            bad.append(f"rules[{i}]: no `id`, or an `id` that is not a non-empty string")
+        elif rid.startswith("@"):
+            bad.append(f"rules[{i}]: id {rid!r} begins with '@' (reserved for synthetic units)")
+        elif len(seen[rid]) > 1:
+            other = next(j for j in seen[rid] if j != i)
+            bad.append(f"rules[{i}]: id {rid!r} is also used by rules[{other}]")
+        paths, run = rule.get("paths"), rule.get("run")
+        if not isinstance(paths, list) or not all(isinstance(p, str) for p in paths):
+            bad.append(f"rules[{i}]: `paths` must be a list of strings")
+        if not isinstance(run, list) or not all(isinstance(c, str) for c in run):
+            bad.append(f"rules[{i}]: `run` must be a list of strings")
+    if bad:
+        raise Refusal("--map: " + "; ".join(bad) + " (no positional fallback: nothing run)")
+    return cfg, hashlib.sha256(raw).hexdigest()
+
+
+def _commands(rule: dict) -> list:
+    return [c for c in rule.get("run", []) if isinstance(c, str) and c.strip()]
+
+
+def _rule_env(rule: dict) -> dict:
+    env = rule.get("env")
+    if not isinstance(env, dict):
+        return {}
+    return {k: v for k, v in env.items() if isinstance(k, str) and isinstance(v, str)}
+
+
+def _identity(cmd: str, env: dict) -> str:
+    """verify-gate's command identity: the text, plus the canonical env JSON
+    after a \\x1c when the rule declares an env."""
+    if not env:
+        return cmd
+    return cmd + "\x1c" + json.dumps(env, sort_keys=True, separators=(",", ":"))
+
+
+def declared_seconds(rule: dict):
+    secs = rule.get("seconds")
+    if isinstance(secs, bool) or not isinstance(secs, (int, float)) or not math.isfinite(secs) \
+            or secs < 0:
+        return None
+    return secs
+
+
+def reach_exclusion(cmds_or_rule, helpers: Helpers, root: str, declared=True):
+    """(kind, reason) when a rule's or command list's reach keeps it from
+    running, else None. Mirrors verify-gate's `_classify_run_reach` (all three
+    non-local scan_reach statuses exclude; verify_record unimportable = wrapper)
+    and its declared-reach branch (D10)."""
+    if declared:
+        rule = cmds_or_rule
+        reach = rule.get("reach")
+        if isinstance(reach, str) and reach != "local":
+            return "reach_declared", f"declared reach: {reach}"
+        if reach is not None and not isinstance(reach, str):
+            # An unknown must not collapse into "no exclusion": a reach that is
+            # neither a string nor absent is not understood, so the rule is NOT VERIFIED.
+            return "reach_declared", f"declared reach is not a string: {reach!r}"
+        if reach is not None:
+            return None
+        run = rule.get("run")
+    else:
+        run = cmds_or_rule
+    if helpers.vr is None:
+        status, detail = "wrapper", "the shared scanner (verify_record.py) is not importable"
+    else:
+        status, detail = helpers.vr.scan_reach(run, root)
+    if status == "verb":
+        return "reach_undeclared", f"remote verb {detail!r}"
+    if status == "syntax":
+        return "reach_syntax", "shell syntax in an undeclared rule"
+    if status == "wrapper":
+        return "reach_wrapper", f"wrapper or inline shell ({detail})"
+    return None
+
+
+def select_rules(cfg: dict, changed: list, root: str, helpers: Helpers) -> dict:
+    """Which rules the map requires for `changed` (D2): bookkeeping paths are
+    removed from the set; a path is a hit when any rule's pattern matches it,
+    before reach exclusion; an unmatched path is unmapped unless it is a refresh
+    artifact. Returns {"changed", "matched" (rule indices, file order),
+    "unmapped", "notices"}."""
+    notices: list = []
+    kept = list(changed)
+    kinds: dict = {}
+    if helpers.ca is not None:
+        try:
+            kinds = dict(zip(changed, helpers.ca.classify_paths(root, changed)))
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            notices.append("gate-runner map: could not tell bookkeeping and refresh artifacts from "
+                           f"other changes ({type(exc).__name__}: {exc}) - every changed path is judged")
+    kept = [f for f in changed if kinds.get(f) != "bookkeeping"]
+    rules = cfg.get("rules", []) or []
+    matched, unmapped = [], []
+    for path in kept:
+        hit = False
+        for ri, rule in enumerate(rules):
+            if any(matches(path, p) for p in rule["paths"]):
+                hit = True
+                if ri not in matched:
+                    matched.append(ri)
+        if not hit and kinds.get(path) != "artifact":
+            unmapped.append(path)
+    return {"changed": kept, "matched": sorted(matched), "unmapped": unmapped, "notices": notices}
+
+
+def read_timings(root: str):
+    """({rule_key: seconds}, notice or None). A missing cache and a present one
+    of the wrong shape both give every rule heavy and one notice (D4)."""
+    path = os.path.join(root, TIMINGS_FILE)
+    if not os.path.exists(path):
+        return {}, f"gate-runner map: {TIMINGS_FILE} is missing - every rule is heavy"
+    data = read_json(path)
+    if isinstance(data, dict) and isinstance(data.get("rules"), dict):
+        return data["rules"], None
+    return {}, f"gate-runner map: {TIMINGS_FILE} is unreadable or the wrong shape - every rule is heavy"
+
+
+def _measured(timings: dict, key):
+    value = timings.get(key)
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return None
+    return value
+
+
+def classify_tier(unit: dict, rules: list, timings: dict, helpers: Helpers,
+                  fast_seconds: float) -> None:
+    """Set unit["tier"] and unit["tier_basis"] (D4): fast only when every
+    member rule has a measurement on this machine below fast_seconds. Declared
+    seconds alone, no scanner to key the cache, and the synthetic units are
+    heavy."""
+    if unit["kind"] != "rule":
+        unit["tier"], unit["tier_basis"] = "heavy", "synthetic unit has no timing key"
+        return
+    if helpers.vr is None:
+        unit["tier"], unit["tier_basis"] = "heavy", "verify_record not importable: no timing key"
+        return
+    worst = 0
+    for ri in unit["members"]:
+        measured = _measured(timings, helpers.vr.rule_key(rules[ri]))
+        if measured is None:
+            decl = declared_seconds(rules[ri])
+            unit["tier"] = "heavy"
+            unit["tier_basis"] = (f"declared {decl:g}s, platform not stated" if decl is not None
+                                  else "no measurement on this machine")
+            return
+        worst = max(worst, measured)
+    unit["tier"] = "fast" if worst < fast_seconds else "heavy"
+    unit["tier_basis"] = f"measured {worst}s on this machine (fast below {fast_seconds:g}s)"
+
+
+def _cmd_timeout(rule: dict) -> int:
+    decl = declared_seconds(rule)
+    return int(max(300, 3 * (decl if decl is not None else UNKNOWN_SECONDS)))
+
+
+def _member(rid: str, idx, rule, cmds: list, exclusion, credit_to=None) -> dict:
+    return {"id": rid, "idx": idx, "commands": cmds, "env": _rule_env(rule) if rule else {},
+            "timeout": _cmd_timeout(rule) if rule else 300, "exclusion": exclusion,
+            "requires_clean_tree": bool(rule and rule.get("requiresCleanTree") is True),
+            "credit_to": credit_to, "fail_paths": None}
+
+
+def build_units(cfg: dict, sel: dict, root: str, helpers: Helpers) -> list:
+    """The units of the selected set (D6-D9): one per matched rule, except a
+    rule credited under a valid coveredBy joins its superset's unit; plus the
+    synthetic @always, @default and @unmapped units. Nothing here reads the
+    timings cache, the tree's cleanliness or the environment."""
+    rules = cfg.get("rules", []) or []
+    matched = sel["matched"]
+    rule_cmds, cmds, env_of = {}, [], {}
+    for ri in matched:
+        env = _rule_env(rules[ri])
+        env_of[ri] = env
+        rule_cmds[ri] = []
+        for c in _commands(rules[ri]):
+            ident = _identity(c, env)
+            if ident not in cmds:
+                cmds.append(ident)
+            if ident not in rule_cmds[ri]:
+                rule_cmds[ri].append(ident)
+    always = [c for c in (cfg.get("always") or []) if isinstance(c, str) and c.strip()]
+    joined: dict = {}  # subset rule index -> superset rule index
+    if helpers.vr is not None:
+        valid, _notices = helpers.vr.cover_declarations(rules)
+        order, guards, _n = helpers.vr.cover_plan(rules, matched, rule_cmds, cmds, always, {})
+        guard_of = dict(zip(order, guards))
+        for ri, sup in valid.items():
+            if ri not in rule_cmds or not rule_cmds[ri]:
+                continue
+            if all(guard_of.get(c) is not None and guard_of[c]["rules"] == [sup]
+                   for c in rule_cmds[ri]):
+                joined[ri] = sup
+    units = []
+    for ri in matched:
+        if ri in joined:
+            continue
+        rule = rules[ri]
+        members = [ri] + sorted(s for s, sup in joined.items() if sup == ri)
+        specs = []
+        for mi in members:
+            r = rules[mi]
+            specs.append(_member(r["id"], mi, r, _commands(r), reach_exclusion(r, helpers, root),
+                                 credit_to=rule["id"] if mi != ri else None))
+        decl = declared_seconds(rule)
+        units.append({"id": rule["id"], "kind": "rule", "members": members,
+                      "rules": [rules[m]["id"] for m in members],
+                      "cost": decl if decl is not None else UNKNOWN_SECONDS,
+                      "cost_basis": "declared" if decl is not None else
+                      f"seconds missing: {UNKNOWN_SECONDS}",
+                      "specs": specs,
+                      "timeout": sum(len(s["commands"]) * s["timeout"] for s in specs)})
+    # @always: its commands are reach-classified one by one (verify-gate :2276-2282).
+    survivors_always = 0
+    if always:
+        cmds_a = []
+        for c in always:
+            excl = reach_exclusion([c], helpers, root, declared=False)
+            cmds_a.append({"cmd": c, "exclusion": list(excl) if excl else None})
+            survivors_always += excl is None
+        spec = _member("@always", None, None, always, None)
+        spec["commands"] = [x["cmd"] for x in cmds_a]
+        spec["command_exclusions"] = [x["exclusion"] for x in cmds_a]
+        units.append(_synthetic("@always", [spec]))
+    # @default exists exactly when nothing is left to run (verify-gate.sh:2285);
+    # requiresCleanTree does not count as exclusion for this decision (D9).
+    contributes = any(reach_exclusion(rules[ri], helpers, root) is None and _commands(rules[ri])
+                      for ri in matched)
+    default = [c for c in (cfg.get("default") or []) if isinstance(c, str) and c.strip()]
+    if not contributes and not survivors_always and default:
+        cmds_d = [(c, reach_exclusion([c], helpers, root, declared=False)) for c in default]
+        spec = _member("@default", None, None, default, None)
+        spec["command_exclusions"] = [list(e) if e else None for _c, e in cmds_d]
+        units.append(_synthetic("@default", [spec]))
+    return units
+
+
+def _synthetic(uid: str, specs: list) -> dict:
+    return {"id": uid, "kind": "synthetic", "members": [], "rules": [uid], "cost": 0,
+            "cost_basis": "synthetic", "specs": specs,
+            "timeout": sum(len(s["commands"]) * s["timeout"] for s in specs)}
+
+
+def unmapped_policy(cfg: dict, unmapped: list):
+    """(unit or None, notice or None) for D9's `unmapped` handling. The key is
+    read parsed; an unknown value fails closed (a recorded divergence from
+    verify-gate.sh:3506, which greps the literal "fail")."""
+    if not unmapped:
+        return None, None
+    if "unmapped" not in cfg:
+        return None, "gate-runner map: `unmapped` is not set - unmapped paths do not fail: " + \
+            ", ".join(unmapped)
+    value = cfg["unmapped"]
+    if value == "ignore":
+        return None, None
+    if value == "warn":
+        return None, "gate-runner map: unmapped paths (unmapped=warn): " + ", ".join(unmapped)
+    spec = _member("@unmapped", None, None, [], None)
+    spec["fail_paths"] = list(unmapped)
+    spec["fail_value"] = value
+    return _synthetic("@unmapped", [spec]), None
+
+
+def partition(units: list, n: int) -> dict:
+    """{unit id: slice number 1..n} (D7). Real units sorted by (-cost, id),
+    each to the slice with the smallest total, ties to the lowest index;
+    synthetic units are always slice 1 and weigh nothing."""
+    totals = [0.0] * n
+    out = {}
+    for unit in units:
+        if unit["kind"] == "synthetic":
+            out[unit["id"]] = 1
+    for unit in sorted((u for u in units if u["kind"] == "rule"),
+                       key=lambda u: (-u["cost"], u["id"])):
+        k = min(range(n), key=lambda i: (totals[i], i))
+        totals[k] += unit["cost"]
+        out[unit["id"]] = k + 1
+    return out
+
+
+def partition_digest(units: list, assignment: dict, n: int) -> str:
+    rows = sorted([u["id"], assignment[u["id"]], sorted(u["rules"])] for u in units)
+    text = json.dumps({"n": n, "units": rows}, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def probe_workers(meminfo: str = "/proc/meminfo", cpus=None, probe_cpus=True):
+    """(workers, source, why) (D16): max(1, min(cpus, MemAvailable // 1.5 GiB,
+    4)); any failure to know is the smallest value, said out loud."""
+    try:
+        with open(meminfo, encoding="utf-8") as fh:
+            text = fh.read()
+        match = re.search(r"^MemAvailable:\s+(\d+)\s*kB", text, re.M)
+        if not match:
+            raise ValueError("no MemAvailable line")
+        avail = int(match.group(1)) * 1024
+        count = os.cpu_count() if cpus is None and probe_cpus else cpus
+        if not count:
+            raise ValueError("cpu count unknown")
+    except (OSError, ValueError) as exc:
+        return 1, "fallback", f"probe failed: {exc}; conservative fallback"
+    return max(1, min(count, int(avail // (1.5 * GIB)), 4)), "probe", \
+        f"{count} cpus, {avail // GIB} GiB available"
+
+
+def parse_slice(text: str):
+    match = re.fullmatch(r"(\d+)/(\d+)", text or "")
+    if not match:
+        raise Refusal(f"--slice {text!r}: expected k/n with whole numbers")
+    k, n = int(match.group(1)), int(match.group(2))
+    if not 1 <= n <= MAX_SLICES or not 1 <= k <= n:
+        raise Refusal(f"--slice {text}: need 1 <= k <= n <= {MAX_SLICES}")
+    return k, n
+
+
+def changed_set(args, root: str) -> list:
+    """The changed paths (D13): a file (or - for stdin), or the diff against a
+    base ref plus every dirty path."""
+    if args.changed_file is not None:
+        try:
+            if args.changed_file == "-":
+                raw = sys.stdin.buffer.read()
+            else:
+                with open(args.changed_file, "rb") as fh:
+                    raw = fh.read()
+        except OSError as exc:
+            raise Refusal(f"--changed-file {args.changed_file}: {exc}") from exc
+        # surrogateescape: a name that is not UTF-8 survives; only the line
+        # terminator is removed, never other whitespace a name may contain.
+        text = raw.decode("utf-8", "surrogateescape")
+        lines = [ln[:-1] if ln.endswith("\r") else ln for ln in text.split("\n")]
+        return [ln for ln in lines if ln]
+    diff = _git(root, "-c", "core.quotePath=false", "diff", "--name-only", "-z",
+                f"{args.base}...HEAD")
+    status = _git(root, "-c", "core.quotePath=false", "status", "--porcelain", "-z",
+                  "--untracked-files=all")
+    if diff is None or status is None:
+        raise Refusal(f"--base {args.base}: git could not list the changed files")
+    paths = [p for p in diff.split("\0") if p]
+    toks = [t for t in status.split("\0") if t]
+    i = 0
+    while i < len(toks):
+        tok = toks[i]
+        paths.append(tok[3:])
+        if tok[:1] in "RC" or tok[1:2] in "RC":
+            i += 1
+            if i < len(toks):
+                paths.append(toks[i])
+        i += 1
+    return paths
+
+
+def build_plan(args, root: str) -> dict:
+    """Everything map mode decides before anything runs; pure of the run."""
+    helpers = load_helpers(root)
+    cfg, map_sha = load_map(args.map, root)
+    changed = changed_set(args, root)
+    # NUL-joined: a path can hold a newline but never a NUL, so no two sets collide.
+    changed_digest = hashlib.sha256(
+        "\0".join(sorted(set(changed))).encode("utf-8", "surrogateescape")).hexdigest()
+    sel = select_rules(cfg, changed, root, helpers)
+    rules = cfg.get("rules", []) or []
+    units = build_units(cfg, sel, root, helpers)
+    um_unit, um_notice = unmapped_policy(cfg, sel["unmapped"])
+    if um_unit:
+        units.append(um_unit)
+    timings, tnote = read_timings(root)
+    for unit in units:
+        classify_tier(unit, rules, timings, helpers, args.fast_seconds)
+    slice_k, n = (parse_slice(args.slice) if args.slice is not None else (None, 1))
+    assignment = partition(units, n)
+    for unit in units:
+        unit["slice"] = assignment[unit["id"]]
+    notices = helpers.notices + sel["notices"] + ([tnote] if tnote else []) + \
+        ([um_notice] if um_notice else [])
+    tier = "all" if args.slice is not None else (args.tier or "all")
+    # Disposition of every matched rule: exactly one of run, other_tier, excluded (test 2).
+    other, dispositions = [], {}
+    run_units = []
+    for unit in units:
+        if unit["id"] == "@unmapped":
+            if slice_k is None or unit["slice"] == slice_k:
+                run_units.append(unit)
+            continue
+        if slice_k is not None and unit["slice"] != slice_k:
+            continue
+        if slice_k is None and tier != "all" and unit["tier"] != tier:
+            why = NOT_VERIFIED_HEAVY if unit["tier"] == "heavy" else NOT_VERIFIED_FAST
+            for rid in unit["rules"]:
+                other.append({"id": rid, "unit": unit["id"], "state": SKIP, "reason": why,
+                              "tier": unit["tier"]})
+                dispositions[rid] = "other_tier"
+            continue
+        run_units.append(unit)
+        for spec in unit["specs"]:
+            dispositions[spec["id"]] = f"excluded:{spec['exclusion'][0]}" if spec["exclusion"] \
+                else "run"
+    carried = []
+    if cfg.get("preReview"):
+        carried.append({"id": "preReview", "reason": "run by review_run.py before a review "
+                        "round; not run here"})
+    head = _git(root, "rev-parse", "HEAD")
+    return {"helpers": helpers, "rules": rules, "units": units, "run_units": run_units,
+            "other_tier": other, "carried": carried, "dispositions": dispositions,
+            "notices": notices, "matched": [rules[i]["id"] for i in sel["matched"]],
+            "unmapped": sel["unmapped"], "tier": tier, "slice_k": slice_k, "n": n,
+            "head": head.strip() if head else None, "changed_digest": changed_digest,
+            "map_digest": map_sha,
+            "partition_digest": partition_digest(units, assignment, n)}
+
+
+def plan_json(plan: dict) -> dict:
+    return {
+        "mode": f"slice {plan['slice_k']}/{plan['n']}" if plan["slice_k"] else f"tier {plan['tier']}",
+        "head": plan["head"], "changed_digest": plan["changed_digest"],
+        "map_digest": plan["map_digest"], "partition_digest": plan["partition_digest"],
+        "matched": plan["matched"], "unmapped": plan["unmapped"],
+        "units": [{"id": u["id"], "kind": u["kind"], "rules": u["rules"], "slice": u["slice"],
+                   "tier": u["tier"], "tier_basis": u["tier_basis"], "cost": u["cost"],
+                   "cost_basis": u["cost_basis"],
+                   "run_here": u in plan["run_units"]} for u in plan["units"]],
+        "dispositions": plan["dispositions"], "other_tier": plan["other_tier"],
+        "carried": plan["carried"], "notices": plan["notices"],
+    }
+
+
+# ---- map mode: running a unit -------------------------------------------
+
+def _safe(name: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", name)
+
+
+def _record(rid: str, unit: str) -> dict:
+    return {"id": rid, "unit": unit, "state": None, "reason": "", "rc": None, "seconds": 0.0,
+            "credited_by": None, "commands": []}
+
+
+def _run_command(cmd: str, env_extra: dict, timeout: int, log: str, ctx: Context) -> dict:
+    out = {"cmd": cmd, "rc": None, "state": CNT, "reason": "", "log": log, "seconds": 0.0}
+    bash = _which("bash")
+    if bash is None:
+        out["reason"] = "bash not found on PATH"
+        return out
+    if STOP.is_set():
+        out["reason"] = "runner stopped by a signal before this command started"
+        return out
+    env = dict(os.environ)
+    env.update(env_extra)
+    started_at = time.monotonic()
+    rc, timed_out, started, note = spawn_and_wait([bash, "-c", cmd], ctx.root, log, timeout,
+                                                  ctx.grace, env=env)
+    out["seconds"] = round(time.monotonic() - started_at, 1)
+    out["rc"] = rc
+    state, reason = classify(rc, timed_out, started)
+    if note:
+        reason = note
+    if STOP.is_set() and state != PASS:
+        state, reason = CNT, f"runner stopped by a signal while this ran ({reason})"
+    out["state"], out["reason"] = state, reason
+    return out
+
+
+def _fold(record: dict) -> None:
+    """A record's state from its commands: FAIL and COULD-NOT-TELL dominate, then
+    a command that did not run (SKIP) makes the whole NOT VERIFIED; PASS needs
+    every command PASS."""
+    states = [c["state"] for c in record["commands"]]
+    for want in (FAIL, CNT, SKIP):
+        if want in states:
+            bad = next(c for c in record["commands"] if c["state"] == want)
+            record["state"] = want
+            record["rc"] = bad["rc"]
+            record["reason"] = f"{bad['cmd'][:80]}: {bad['reason']}" if bad["reason"] else bad["cmd"][:80]
+            return
+    record["state"], record["rc"] = PASS, 0
+
+
+def tree_dirty_now(ctx: Context):
+    """True/False/None (could not tell) for the working tree right now. Paths
+    under this run's own --out are the runner's logs, not the tree's change."""
+    porcelain = _git(ctx.root, "status", "--porcelain", "-z", "--untracked-files=all")
+    if porcelain is None:
+        return None
+    try:
+        rel = os.path.relpath(ctx.out, ctx.root).replace(os.sep, "/")
+    except ValueError:
+        rel = None
+    own = rel is not None and rel != "." and not rel.startswith("..")
+    for tok in porcelain.split("\0"):
+        if not tok:
+            continue
+        path = tok[3:] if len(tok) > 3 else tok
+        if own and (path == rel or path.startswith(rel.rstrip("/") + "/")):
+            continue
+        return True
+    return False
+
+
+def run_member(spec: dict, unit_id: str, ctx: Context) -> dict:
+    rec = _record(spec["id"], unit_id)
+    if spec["fail_paths"] is not None:
+        rec["state"], rec["rc"] = FAIL, None
+        rec["reason"] = (f"unmapped={spec.get('fail_value')!r}: no rule maps " +
+                         ", ".join(spec["fail_paths"]))
+        return rec
+    if spec["exclusion"]:
+        rec["state"] = SKIP
+        rec["reason"] = f"NOT VERIFIED - {spec['exclusion'][0]}: {spec['exclusion'][1]}"
+        return rec
+    if spec["requires_clean_tree"]:
+        dirty = tree_dirty_now(ctx)  # sampled now: an earlier rule may have dirtied it
+        if dirty is None:
+            rec["state"], rec["reason"] = CNT, "could not tell whether the working tree is clean"
+            return rec
+        if dirty:
+            rec["state"], rec["reason"] = SKIP, "NOT VERIFIED - requires a clean working tree"
+            return rec
+    if not spec["commands"]:
+        rec["state"], rec["reason"] = SKIP, "NOT VERIFIED - the rule has no runnable command"
+        return rec
+    excl = spec.get("command_exclusions") or [None] * len(spec["commands"])
+    for k, cmd in enumerate(spec["commands"]):
+        if excl[k]:
+            rec["commands"].append({"cmd": cmd, "rc": None, "state": SKIP, "log": None,
+                                    "seconds": 0.0,
+                                    "reason": f"NOT VERIFIED - {excl[k][0]}: {excl[k][1]}"})
+            continue
+        log = os.path.join(ctx.out, "logs", f"{_safe(unit_id)}-{_safe(spec['id'])}-{k}.log")
+        res = _run_command(cmd, spec["env"], spec["timeout"], log, ctx)
+        rec["commands"].append(res)
+        rec["seconds"] = round(rec["seconds"] + res["seconds"], 1)
+        if res["state"] in (FAIL, CNT):
+            break  # a SKIP does not stop the rest: a later FAIL must not be hidden behind it
+    _fold(rec)
+    return rec
+
+
+def run_unit(unit: dict, ctx: Context) -> list:
+    """The records of one unit, superset first. A subset is credited only when,
+    in this same run, the superset is PASS, PYTEST_ADDOPTS is empty and the tree
+    snapshots taken before the superset and before the credit are equal (D8)."""
+    specs = unit["specs"]
+    records = []
+    subsets = [s for s in specs if s["credit_to"]]
+    vr = ctx.helpers.vr if ctx.helpers else None
+    snap0 = vr.tree_snapshot(ctx.root) if (vr is not None and subsets) else None
+    sup = run_member(specs[0], unit["id"], ctx)
+    records.append(sup)
+    for spec in specs[1:]:
+        # A credit never outranks the subset's own exclusions (D6/D10): a reach
+        # exclusion or a tree that is not known clean sends it to run_member,
+        # which records SKIP / COULD-NOT-TELL instead of a PASS.
+        blocked = bool(spec["exclusion"]) or (
+            spec["requires_clean_tree"] and tree_dirty_now(ctx) is not False)
+        # D8, decided per subset: the snapshot is taken now, so a tracked file
+        # changed between two subset decisions costs the later one its credit.
+        # PYTEST_ADDOPTS is read from the environment the commands receive: the
+        # process's and each rule-level env, the superset's and the subset's.
+        addopts = (os.environ.get("PYTEST_ADDOPTS", "")
+                   or specs[0]["env"].get("PYTEST_ADDOPTS", "")
+                   or spec["env"].get("PYTEST_ADDOPTS", ""))
+        snap1 = vr.tree_snapshot(ctx.root) if (vr is not None and subsets) else None
+        credit = (sup["state"] == PASS and not addopts
+                  and snap0 is not None and snap0 == snap1)
+        if credit and spec["credit_to"] and not blocked:
+            rec = _record(spec["id"], unit["id"])
+            rec["state"], rec["rc"], rec["credited_by"] = PASS, None, spec["credit_to"]
+            rec["reason"] = f"covered by {spec['credit_to']}, PASS this run"
+            records.append(rec)
+        else:
+            records.append(run_member(spec, unit["id"], ctx))
+    return records
+
+
+def _cmd_rows_valid(rec: dict, spec: dict) -> bool:
+    """The command rows of a member record: a list of dicts that the renderer
+    can read; a PASS that ran is checked against the planned member."""
+    rows = rec.get("commands")
+    seconds = rec.get("seconds")
+    if not isinstance(rows, list) or not isinstance(rec.get("reason"), str) \
+            or isinstance(seconds, bool) or not isinstance(seconds, (int, float)):
+        return False
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get("cmd"), str) \
+                or row.get("state") not in (PASS, FAIL, SKIP, CNT):
+            return False
+    if rec["state"] == PASS and rec["rc"] == 0:
+        if spec["exclusion"] or spec["fail_paths"] is not None or not spec["commands"]:
+            return False
+        if [r["cmd"] for r in rows] != list(spec["commands"]) \
+                or any(r["state"] != PASS for r in rows):
+            return False
+    return True
+
+
+def _unit_valid(unit: dict, res) -> bool:
+    """A heavy-part unit result is taken only under its own unit id, with one
+    record per member (no extras), each record's state one its rc can give and,
+    for a PASS, command rows that match the planned member."""
+    if not isinstance(res, dict) or res.get("unit") != unit["id"] \
+            or not isinstance(res.get("records"), list):
+        return False
+    want = {s["id"]: s for s in unit["specs"]}
+    seen = {}
+    for rec in res["records"]:
+        if not isinstance(rec, dict) or not all(k in rec for k in ("id", "state", "rc", "unit")):
+            return False
+        if rec["id"] not in want or rec["id"] in seen or rec["unit"] != unit["id"]:
+            return False
+        seen[rec["id"]] = rec
+    if set(seen) != set(want):
+        return False
+    for rid, rec in seen.items():
+        rc, state = rec["rc"], rec["state"]
+        if state not in (PASS, FAIL, SKIP, CNT):
+            return False
+        if rc is not None and (isinstance(rc, bool) or not isinstance(rc, int)):
+            return False
+        if not _cmd_rows_valid(rec, want[rid]):
+            return False
+        if state == PASS:
+            if rc == 0:
+                continue
+            sup = seen.get(unit["id"])
+            owner = want[rid]["credit_to"]
+            if not (rc is None and owner is not None and rec.get("credited_by") == owner
+                    and sup is not None and sup["state"] == PASS
+                    and not want[rid]["exclusion"]):
+                return False
+        elif state == FAIL:
+            if rc is None or classify(rc, False, True)[0] != FAIL:
+                if not (rc is None and want[rid]["fail_paths"] is not None):
+                    return False
+        elif state == SKIP and not (rc is None or rc == EXIT_SKIP):
+            return False
+    return True
+
+
+def run_map_inner(part: str, plan_file: str, digest: str, ctx: Context) -> int:
+    """The units inside the one heavy-run call, serially. Refuses (exit 2, nothing
+    run) unless the plan file has the digest the outer runner computed."""
+    try:
+        with open(plan_file, "rb") as fh:
+            raw = fh.read()
+    except OSError as exc:
+        raise Refusal(f"--plan-file {plan_file}: {exc}") from exc
+    if hashlib.sha256(raw).hexdigest() != digest:
+        raise Refusal("--map-inner: the plan file changed since the outer runner wrote it "
+                      f"(outer {digest}, inner {hashlib.sha256(raw).hexdigest()})")
+    plan = json.loads(raw.decode("utf-8"))
+    ctx.tree_dirty = plan.get("tree_dirty")
+    ctx.helpers = load_helpers(ctx.root)
+    data = {"started": time.time(), "pid": os.getpid(), "nonce": plan.get("nonce"),
+            "slot": os.environ.get("HEAVY_RUN_SLOT") or None, "units": {}}
+    write_status(part, data)
+    for unit in plan["units"]:
+        data["units"][unit["id"]] = {"unit": unit["id"], "records": run_unit(unit, ctx)}
+        write_status(part, data)
+    if STOP.is_set():
+        return 128 + (STOP_SIGNAL[0] if STOP_SIGNAL else int(signal.SIGTERM))
+    return 0
+
+
+def _tail_lines(path, count: int = 20) -> list:
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            fh.seek(max(0, fh.tell() - 65536))
+            lines = fh.read().decode("utf-8", "replace").splitlines()
+    except (OSError, TypeError):
+        return []
+    return [ln for ln in lines if ln.strip()][-count:]
+
+
+def record_line(rec: dict) -> str:
+    base = f"{rec['state']} {rec['id']} rc={rec['rc']} secs={rec['seconds']}"
+    return f"{base} -- {rec['reason']}" if rec["reason"] else base
+
+
+def map_last_line(results: list, plan: dict, state: str, hr_label: str, workers: tuple,
+                  status_path: str) -> str:
+    credited = [r for r in results if r.get("credited_by")]
+    skipped = [r["id"] for r in results if r["state"] == SKIP]
+    ran = [r for r in results if r["state"] != SKIP and not r.get("credited_by")]
+    return (f"overall: {state}  ran {len(ran)}, credited {len(credited)}, "
+            f"other_tier {len(plan['other_tier'])}, SKIPPED {len(skipped)} "
+            f"(NOT VERIFIED: {', '.join(skipped) or 'none'}), carried {len(plan['carried'])}  "
+            f"workers: {workers[0]} ({workers[1]})  heavy_run: {hr_label}  status: {status_path}")
+
+
+def run_map(args) -> int:
+    root = os.path.abspath(args.root)
+    plan = build_plan(args, root)
+    if args.plan:
+        print(json.dumps(plan_json(plan), indent=2))
+        return EXIT_PASS
+    mode, hpath = resolve_heavy_run(os.environ)
+    install_signal_handlers()
+    if args.workers:
+        workers = (args.workers, "flag", f"--workers {args.workers}")
+    else:
+        workers = probe_workers()
+    print(f"workers: {workers[0]} ({workers[1]}: {workers[2]})", file=sys.stderr)
+    for note in plan["notices"]:
+        print(note, file=sys.stderr)
+    out = os.path.abspath(args.out) if args.out else default_out(root)
+    ctx = Context(root, out, args.grace, set())
+    ctx.helpers = plan["helpers"]
+    porcelain = _git(root, "status", "--porcelain")
+    ctx.tree_dirty = (porcelain.strip() != "") if porcelain is not None else None
+    hr = {"mode": mode, "path": hpath, "launched": False, "rc": None, "waited_seconds": None,
+          "slot": None, "note": "uncapped" if mode == "absent" else None}
+    status_path = os.path.join(out, "status.json")
+    status = {
+        "runner": "scripts/gate-runner.py", "root": root, "head": plan["head"],
+        "dirty": ctx.tree_dirty, "heavy_run": hr,
+        "started": datetime.now(timezone.utc).isoformat(timespec="seconds"), "ended": None,
+        "overall": "RUNNING", "steps": [],
+        "map": {"mode": plan_json(plan)["mode"], "tier": plan["tier"],
+                "slice": f"{plan['slice_k']}/{plan['n']}" if plan["slice_k"] else None,
+                "head": plan["head"], "changed_digest": plan["changed_digest"],
+                "map_digest": plan["map_digest"], "partition_digest": plan["partition_digest"],
+                "workers": {"n": workers[0], "source": workers[1], "why": workers[2]},
+                "units": plan_json(plan)["units"], "other_tier": plan["other_tier"],
+                "carried": plan["carried"], "notices": plan["notices"]}}
+    by_unit: dict = {}
+    lock = threading.Lock()
+
+    def save() -> None:
+        flat = []
+        for unit in plan["run_units"]:
+            flat.extend(by_unit.get(unit["id"], []))
+        status["steps"] = flat
+        with lock:
+            write_status(status_path, status)
+
+    to_run = [u for u in plan["run_units"] if u["id"] != "@unmapped"]
+    for unit in plan["run_units"]:
+        if unit["id"] == "@unmapped":
+            by_unit[unit["id"]] = [run_member(unit["specs"][0], unit["id"], ctx)]
+    if plan["slice_k"]:
+        direct, heavy = [], to_run
+    else:
+        direct = [u for u in to_run if u["tier"] == "fast"]
+        heavy = [u for u in to_run if u["tier"] != "fast"]
+    save()
+    if direct:
+        queue = list(direct)
+        qlock = threading.Lock()
+
+        def worker() -> None:
+            while True:
+                with qlock:
+                    if not queue:
+                        return
+                    unit = queue.pop(0)
+                try:
+                    by_unit[unit["id"]] = run_unit(unit, ctx)
+                except Exception as exc:  # pylint: disable=broad-exception-caught
+                    by_unit[unit["id"]] = _cnt_records(unit, f"worker raised {type(exc).__name__}: {exc}")
+                save()
+
+        threads = [threading.Thread(target=worker) for _ in range(min(workers[0], len(direct)))]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+    if heavy and mode == "absent":
+        for unit in heavy:
+            by_unit[unit["id"]] = run_unit(unit, ctx)
+            save()
+    elif heavy:
+        _run_heavy(args, plan, heavy, ctx, hr, by_unit, save)
+    for unit in plan["run_units"]:  # a unit with no result is never a silent PASS
+        if unit["id"] not in by_unit:
+            by_unit[unit["id"]] = _cnt_records(unit, "no result was recorded for this unit")
+    save()
+    results = [r for u in plan["run_units"] for r in by_unit.get(u["id"], [])]
+    state, code = overall(results)
+    status["overall"] = state
+    status["ended"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    save()
+    last = map_last_line(results, plan, state, heavy_run_label(hr), workers, status_path)
+    if state == PASS:
+        print(last)
+        return code
+    for rec in results:
+        if rec["state"] in (FAIL, CNT):
+            print(record_line(rec))
+            for cmd in rec["commands"]:
+                if cmd["state"] in (FAIL, CNT):
+                    for line in _tail_lines(cmd["log"]):
+                        print(f"  | {line}")
+    print(last)
+    return code
+
+
+def _cnt_records(unit: dict, why: str) -> list:
+    recs = []
+    for spec in unit["specs"]:
+        rec = _record(spec["id"], unit["id"])
+        rec["state"], rec["reason"] = CNT, why
+        recs.append(rec)
+    return recs
+
+
+def _run_heavy(args, plan: dict, heavy: list, ctx: Context, hr: dict, by_unit: dict, save) -> None:
+    plan_file = os.path.join(ctx.out, "plan.json")
+    nonce = uuid.uuid4().hex
+    part = os.path.join(ctx.out, "heavy-part.json")
+    try:
+        os.remove(part)  # a result left by an earlier run in this --out is not this run's
+    except FileNotFoundError:
+        pass
+    write_status(plan_file, {"tree_dirty": ctx.tree_dirty, "nonce": nonce, "units": heavy})
+    with open(plan_file, "rb") as fh:
+        digest = hashlib.sha256(fh.read()).hexdigest()
+    cmd = [sys.executable, os.path.abspath(__file__), "--map-inner", part, "--plan-file",
+           plan_file, "--plan-digest", digest, "--root", ctx.root, "--out", ctx.out,
+           "--grace", f"{ctx.grace:g}"]
+    cmd = [hr["path"], *cmd]
+    wanted = {u["id"]: u for u in heavy}
+
+    def take_part() -> dict:
+        got = read_json(part)
+        units = got.get("units") if isinstance(got, dict) else None
+        if not isinstance(units, dict) or got.get("nonce") != nonce:
+            return {}, None, None
+        good = {uid: res["records"] for uid, res in units.items()
+                if uid in wanted and _unit_valid(wanted[uid], res)}
+        started = got.get("started")
+        if isinstance(started, bool) or not isinstance(started, (int, float)) \
+                or not math.isfinite(started):
+            started = None
+        return good, started, _slot(got.get("slot"))
+
+    def tick() -> None:
+        fresh = {uid: recs for uid, recs in take_part()[0].items() if uid not in by_unit}
+        if fresh:
+            by_unit.update(fresh)
+            save()
+
+    budget = args.heavy_timeout or (sum(u["timeout"] for u in heavy) + ctx.grace * (len(heavy) + 2)
+                                    + SLOT_WAIT_ALLOWANCE)
+    launched = time.time()
+    hr["launched"] = True
+    save()
+    if STOP.is_set():
+        rc, timed_out, note = None, False, "runner stopped by a signal before the heavy-run call"
+    else:
+        rc, timed_out, _s, note = spawn_and_wait(
+            cmd, ctx.root, os.path.join(ctx.out, "logs", "heavy-run.log"), budget,
+            ctx.grace * 2 + 5, on_tick=tick)
+    hr["rc"] = rc
+    recorded, inner_started, hr["slot"] = take_part()
+    if inner_started is not None:
+        hr["waited_seconds"] = round(inner_started - launched, 1)
+    why = (f"heavy-run call timed out after {budget:g}s (slot wait included)" if timed_out
+           else note or f"heavy-run call ended rc={rc}")
+    if rc == EXIT_USAGE and not timed_out and not note:
+        tail = _log_tail(os.path.join(ctx.out, "logs", "heavy-run.log"))
+        if tail:
+            why = f"{why} ({tail})"
+    for unit in heavy:
+        if unit["id"] in recorded:
+            by_unit[unit["id"]] = recorded[unit["id"]]
+        elif unit["id"] not in by_unit:
+            by_unit[unit["id"]] = _cnt_records(unit, f"{why} before this unit recorded a result")
+    save()
+
+
 # ---- main -----------------------------------------------------------------
 
 def _duration(text: str) -> float:
@@ -1414,6 +2409,16 @@ def _duration(text: str) -> float:
         raise argparse.ArgumentTypeError(f"{text!r} is not a number") from exc
     if not positive_finite(value):
         raise argparse.ArgumentTypeError(f"{text!r} must be a finite number > 0")
+    return value
+
+
+def _workers(text: str) -> int:
+    try:
+        value = int(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a whole number") from exc
+    if not 1 <= value <= 8:
+        raise argparse.ArgumentTypeError(f"{text!r} must be 1..8")
     return value
 
 
@@ -1429,14 +2434,54 @@ def parse_args(argv):
     ap.add_argument("--grace", type=_duration, default=30.0, help="seconds between SIGTERM and SIGKILL")
     ap.add_argument("--heavy-timeout", type=_duration, default=None,
                     help="seconds for the whole heavy-run call (default: from the step timeouts)")
+    ap.add_argument("--map", help="map mode: select, tier and slice the rules of this verify.json "
+                    "(relative to --root); see the module docstring")
+    ap.add_argument("--changed-file", metavar="PATH", help="map mode: newline list of changed paths (- = stdin)")
+    ap.add_argument("--base", metavar="REF", help="map mode: changed = git diff REF...HEAD plus dirty paths")
+    ap.add_argument("--tier", choices=("fast", "heavy", "all"), help="map mode: run one tier")
+    ap.add_argument("--slice", metavar="K/N", help="map mode: run slice K of N of the whole selected set")
+    ap.add_argument("--fast-seconds", type=_duration, default=None,
+                    help=f"map mode: measured seconds below which a rule is fast (default {DEFAULT_FAST_SECONDS})")
+    ap.add_argument("--workers", type=_workers, default=None,
+                    help="map mode: direct fast-tier concurrency, 1..8 (default: probed)")
+    ap.add_argument("--plan", action="store_true", help="map mode: print the selection as JSON, run nothing")
     ap.add_argument("--inner", metavar="PART_JSON", help=argparse.SUPPRESS)
     ap.add_argument("--table-digest", help=argparse.SUPPRESS)
+    ap.add_argument("--map-inner", metavar="PART_JSON", help=argparse.SUPPRESS)
+    ap.add_argument("--plan-file", help=argparse.SUPPRESS)
+    ap.add_argument("--plan-digest", help=argparse.SUPPRESS)
     return ap.parse_args(argv)
 
 
 def main(argv=None) -> int:
     args = parse_args(argv)
     try:
+        if args.map_inner:
+            if not (args.plan_file and args.plan_digest and args.out):
+                raise Refusal("--map-inner needs --plan-file, --plan-digest and --out")
+            install_signal_handlers()
+            ctx = Context(os.path.abspath(args.root), os.path.abspath(args.out), args.grace, set())
+            return run_map_inner(args.map_inner, args.plan_file, args.plan_digest, ctx)
+        map_flags = [name for name, val in (
+            ("--tier", args.tier), ("--slice", args.slice), ("--changed-file", args.changed_file),
+            ("--base", args.base), ("--plan", args.plan), ("--workers", args.workers),
+            ("--fast-seconds", args.fast_seconds)) if val is not None and val is not False]
+        if map_flags and args.map is None:
+            raise Refusal(f"{', '.join(map_flags)} need --map")
+        if args.map is not None:
+            clash = [name for name, val in (("--table", args.table), ("--list", args.list),
+                                            ("--check-ci", args.check_ci), ("--only", args.only),
+                                            ("--skip", args.skip), ("--inner", args.inner))
+                     if val is not None and val is not False]
+            if clash:
+                raise Refusal(f"--map cannot be combined with {', '.join(clash)}")
+            if args.tier is not None and args.slice is not None:
+                raise Refusal("--tier and --slice are exclusive")
+            if (args.changed_file is None) == (args.base is None):
+                raise Refusal("map mode needs exactly one of --changed-file and --base")
+            if args.fast_seconds is None:
+                args.fast_seconds = DEFAULT_FAST_SECONDS
+            return run_map(args)
         steps, source = load_table(args.table, os.path.abspath(args.root))
         digest = table_digest(steps)  # the full table, before --only
         if args.inner and args.table_digest != digest:

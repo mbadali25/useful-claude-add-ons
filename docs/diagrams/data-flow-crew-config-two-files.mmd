@@ -2,6 +2,8 @@
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% Purpose: Which repo file is the config: .crew/config.json, which /crew:init writes and crew_config.py and every gate read (L-0713); .crew/crew.json exists only after /crew:migrate, and crew_context.py reads it first when it does.
 %% Embed: none
+%% Re-anchored for R-72 (no node or edge changed): crew_tracker.py gained the status maps above resolve, which moved
+%%    :267 -> :345 (re-read with grep -n); resolve's body is unchanged, so TRKREAD's two-file read still holds.
 %% Re-anchored 48db91a13 -> 7944f06d7 (L-0867 refresh, 2026-10-22): of the Anchors paths only crew_context.py changed
 %%    (L-0727 slice 3: _resume_typing_cmd / start_resume_typing lost their ps1 branch, -7 net lines above load_crew_config).
 %%    load_crew_config moved :121-132 -> :124-135 (re-read: crew.json first, then config.json, a non-dict or invalid JSON
@@ -32,7 +34,7 @@
 %% Note OPEN: L-0713: .crew/config.json is the repo config - /crew:init writes it and every gate reads it. Only
 %%    a repo that has run --apply has BOTH files, and there crew_context, crew_resume, crew_refresh_check,
 %%    crew_tracker and crew_diagrams read crew.json first.
-%% Note TRKREAD: crew_tracker.resolve() plugin/crew/hooks/scripts/crew_tracker.py:267 tracker key only: reads
+%% Note TRKREAD: crew_tracker.resolve() plugin/crew/hooks/scripts/crew_tracker.py:345 tracker key only: reads
 %%    BOTH files (crew.json tracker.kind, config.json tracker) and answers 'could not tell' when they disagree
 %%    - on the kind, on the vault, boardDir, board or lane names each yields (defaults and memory.vaultPath
 %%    fallback applied; a value only one file yields counts), or on a jira/sdp block - refuses rather than

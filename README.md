@@ -239,8 +239,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.179**: `crew_actions.py`, the Actions schema per kind, report-only. `crew` 1.3.179 adds `crew_actions.py`, one closed schema for a plan's Actions block that says whether each planned action is well formed and why not; nothing calls it yet, so no guard or command changes.
-- **crew 1.3.177**: `crew_triage.py`, size route, difficulty score and starting model, report-only. `crew` 1.3.177 adds `crew_triage.py`, which says for one task whether it is an epic, needs a size, is mechanical or docs-only, or which model it would start on and why; nothing calls it yet, so no model choice anywhere changes.
+- **crew 1.3.187**: `crew_paths.py`, machine-owned run folders and the one safe delete. `crew` 1.3.187 adds one resolver for every crew run folder, read from the machine config layer only, and the single recursive delete crew will use; nothing calls it yet.
+- **crew 1.3.185**: `crew_never.py`, the Never-lane command tripwire and shared redactor, report-only. `crew` 1.3.185 adds `crew_never.py`, which says whether a command a model runs skips git hooks or signing or carries a secret-shaped value, and holds the one shared redactor; nothing calls it yet, so no guard or command changes.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

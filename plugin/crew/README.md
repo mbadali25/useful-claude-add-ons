@@ -340,16 +340,18 @@ Both come from `crew_autopilot_owner.owner_items`, which asks autopilot's own ph
 
 One vocabulary, owned by `crew_tracker.py` (`STATUS_ORDER`, `OWNER_STATUSES`, `CLOSED_STATUSES`, `LANE_FOR_STATUS`); every other reader's list is held to it by `tests/test_status_vocabulary.py` (T-0037).
 
-| Word | Open or closed | Written in | A spec header edit to it | Obsidian lane | Jira / SDP |
+| Word | Open or closed | Written in | A spec header edit to it | Obsidian lane | Jira / SDP (`STATUS_MAP`) |
 |---|---|---|---|---|---|
-| `direction`, `ready` | open | INDEX, tracker | stales the approval (not in `STATUS_VALUES`) | `backlog` | nothing pushed |
-| `spec`, `planned`, `review` | open | INDEX, tracker, spec header | keeps the approval | `ready` (`spec`, `planned`), `review` | nothing pushed |
-| `in-progress` | open | INDEX, tracker, spec header | keeps the approval (T-0059's non-final slice) | `inProgress` | pushed |
-| `needs-owner` | open, waiting on the owner | INDEX, tracker only — never a spec header | stales it, like any unknown word | `backlog` | nothing pushed |
-| `done` | closed | INDEX, tracker, spec header | keeps the approval | `done`, checked | pushed |
-| `cancelled`, `superseded` | closed | INDEX, tracker, spec header | stales the approval on purpose | `done`, checked | nothing pushed; the owner closes the item by hand |
+| `direction`, `ready` | open | INDEX, tracker | stales the approval (not in `STATUS_VALUES`) | `backlog` | nothing pushed (Jira name: Brainstorm, Spec) |
+| `spec`, `planned`, `review` | open | INDEX, tracker, spec header | keeps the approval | `ready` (`spec`, `planned`), `review` | nothing pushed (Jira name: Approve, Approve, Development In Review) |
+| `in-progress` | open | INDEX, tracker, spec header | keeps the approval (T-0059's non-final slice) | `inProgress` | pushed; Jira: In Progress; SDP: the desk name, resolved by sdp-sync |
+| `needs-owner` | open, waiting on the owner | INDEX, tracker only — never a spec header | stales it, like any unknown word | `backlog` | nothing pushed (Jira name: Blocked or Parked) |
+| `done` | closed | INDEX, tracker, spec header | keeps the approval | `done`, checked | pushed; Jira: Complete; SDP: the desk name, resolved by sdp-sync |
+| `cancelled`, `superseded` | closed | INDEX, tracker, spec header | stales the approval on purpose | `done`, checked | nothing pushed and no Jira name; the owner closes the item by hand |
 
 Any other INDEX word maps to no lane: `move` refuses it with nothing written, and `crew_tracker.py read` reports it as `could not tell` (`INDEX status <s> is not a status crew knows (...)`), never as a disagreement. The words the owner retired on 2026-10-05 get a text-only hint naming their replacement (`RETIRED_STATUSES`: `approved` -> `spec`, `merged` -> `done`, `closed` -> `done`, `new` -> `direction`, `parked` -> `needs-owner`) — never a lane, a write or an exit code (L-0530).
+
+**Status maps and events** (R-72). `crew_tracker.py`'s `STATUS_MAP` names each kind's status for each crew word: files, obsidian and sdp take the crew word itself (sdp-sync resolves the desk's own name with `sdp_list_metadata`), Jira its 13-status workflow (`JIRA_STATUSES`; `map --to <word>` prints one). A word with no row has no native status and nothing is invented for it. A Jira push prints a second line, `jira: target: <name>`. `crew_tracker.py transition --ticket <KEY> --to <word> --seen "<status>"` (Jira only) answers `go:`, `unchanged:` or `refused:` from the issue's last seen status, so a push never moves an issue backwards or re-transitions it. Every tracker post has a durable event id (`event begin|record|post`, ledger under `<git-common-dir>/crew/tickets/<ID>/events/`) and carries `crew-event: <id>` as its last line: a timeout is recorded `unknown`, and the remote is searched for the marker before anything is posted again, so a timed-out post is never duplicated blind. The call budget per ticket is 1 for a pickup read, 2 for an in-progress push, 4 for a done push and at most 7 after one timed-out post (`commands/jira-sync.md`, "Posting once"). `events --ticket <id>` lists them, report-only: `/crew:done` does not refuse on a missing event yet (R-73).
 
 `approved` and `merged` are spec-header words only (they keep the approval; a header `merged` does not close a ticket for autopilot). `crew_ticket.STATUS_VALUES` is unchanged by T-0037: it is the approval-keeping subset, so a blocking hook accepts nothing new.
 
@@ -461,6 +463,8 @@ Parallelism scales on independent work units, not job titles.
 | `/crew:change <new\|status <id>\|close <id>\|list>` | File a change request into SDP, Jira or `.work/changes/`, one process either way. `new` refuses to file while any of the template's questions 1–9 is unanswered or a placeholder and names which; `close` refuses without the post-change validation results — see §24b |
 
 40 commands.<!-- claim: plugin-commands:crew -->
+
+**Machine-owned run folders (`hooks/scripts/crew_paths.py`, R-04; nothing calls it yet).** One resolver for every crew location, read from the machine layer only (a repo `worktrees.root` is ignored there and reported by `crew_paths.py explain`), and the one recursive delete crew will use. Run folders, each made exclusively with a `.crew-owner.json` record: `scratch` `~/.claude/crew/scratch/<repo>-<digest>/<ticket>/<role>`, `review` `~/.claude/crew/review/<repo>-<digest>/<ticket>-r<n>-<provider>` (`in/`, `out/`), `sandbox` `~/.claude/crew/scratch/sandbox/<run-id>` (`in/`, `home/`, `out/`), `tests` `~/.claude/crew/scratch/tests/<run-id>` or `$CREW_TEST_ROOT/<run-id>`. `delete_run_dir` refuses, changing nothing, unless the path passes string checks (not a root, home, category root or system path; exactly one kind's shape), a link walk anchored at the resolved allowed root, the ownership record (one link, opened without following links) and a read-only pre-scan for mounts (Linux mountinfo, `st_dev`, a Windows junction to a volume root). The walk never follows a link: a link inside a run is removed as a link, a Windows read-only file with other hard links is deleted by name without changing the shared flag, and read-only trees are cleared through verified fds or handles. Deliberate departure from plan 4.6: links inside a run dir are removed, not refused; why: removing a link never touches its target, and refusing would make any run dir that held a link undeletable. Windows has no `dir_fd`, so its walk re-checks identity before each step, which narrows a swap race but does not close it. `check-delete <path> --run-id ID` is a dry run.
 
 ### Agents
 

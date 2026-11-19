@@ -360,11 +360,28 @@ scripts/_test/crew-outcome-eval.py` after the plugin-eval runner suite).
 
 ## `scripts/gate-runner.py` - the lane-side runner
 
-**DERIVED.** 1470 lines. `python3 scripts/gate-runner.py --list` (read-only) prints **47** steps in three phases (cheap
-serial; heavy groups A and B under one `heavy-run` slot; solo: `wallclock` then `sabotage.py`); `--check-ci` asks whether the
-table is still CI's (`TABLE` `:154`, `EXCLUDED_CI` `:286`, `WINDOWS_ONLY_IFS` `:281`). Its status file carries `heavy_run.slot`
-from `HEAVY_RUN_SLOT` (`:867`). Since `c0e582fbe` the table gained `crew-outcome-eval` (`:166`). Rules `gate-runner` and
-`workflows-gate-runner` in `.crew/verify.json` run `scripts/_test/gate-runner.py` against it.
+**DERIVED.** Section re-derived 2026-11-19 against `dd0a106ef` plus R-80 (the file anchor above is unchanged).
+`python3 scripts/gate-runner.py --list` (read-only) prints one line per step, 53 at `dd0a106ef` (`--list | wc -l`;
+pinned by `scripts/_test/gate-runner.list.golden.txt`), in three phases (cheap serial; heavy groups A and B under one
+`heavy-run` slot; solo: `wallclock` then `sabotage.py`); `--check-ci` asks whether the table is still CI's (`TABLE`
+`scripts/gate-runner.py:191`, `WINDOWS_ONLY_IFS` `:332`, `EXCLUDED_CI` `:337`). Its status file carries `heavy_run.slot`
+from `HEAVY_RUN_SLOT` (`:920`). Rules `gate-runner` and `workflows-gate-runner` in `.crew/verify.json` run
+`scripts/_test/gate-runner.py` against it.
+
+**Map mode (R-80, opt-in; nothing calls it until R-81).** DERIVED: `--map PATH` plus `--changed-file` or `--base`
+selects rules of a `.crew/verify.json` (`select_rules` `:1608`, `matches` `:1491` - a copy of verify-gate.sh's inline
+`def matches`, held equal by the suite's matcher-parity case over every tracked path; case-exact on every host), tiers them (`classify_tier` `:1657`: fast only by a
+measurement in `.crew/.verify-gate.timings.json` on this machine), builds units (`build_units` `:1695`: a valid
+`coveredBy` subset joins its superset's unit; `@always`, `@default`, `@unmapped` are synthetic) and runs one `--tier`
+or one `--slice K/N` (`partition` `:1795`: declared `seconds` only, longest first onto the lightest slice, so the
+partition is the same on every machine that selects the same units; the selection itself reads the shared scanner `verify_record.py` (reach exclusion, `coveredBy`) and `@default` follows from what is left to run, so a machine where the scanner is not importable plans differently). Heavy-tier and slice units go through the one heavy-run call
+(`run_map_inner` `:2161`, refused unless `--plan-digest` matches `plan.json`); fast units run directly, bounded by
+`probe_workers` `:1818` (1 when the probe fails). `run_map` `:2213` prints one stdout line on PASS. JUDGEMENT: map mode
+re-implements verify-gate's selection instead of importing it because verify-gate's selection is an inline heredoc
+and editing it is a harness change; R-81 must compare `--plan` with verify-gate's selection on the same diff before
+trusting shard credit. Recorded divergences: `unmapped` is read from the parsed top-level key and an unknown value fails
+closed (verify-gate greps the literal `"fail"`, `verify-gate.sh:3506`); `requiresCleanTree` runs only on a clean tree
+(`--ci` runs it unconditionally).
 
 ## Sabotage lists
 

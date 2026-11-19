@@ -39,7 +39,8 @@ not a quiet write to the memory vault. Jira and ServiceDesk Plus are pushed at
 the boundaries only: `move --to in-progress` and `--to done` answer `delegated`
 with `/crew:jira-sync <KEY> --push --to <status>` (or `/crew:sdp-sync`), which
 the model runs because a script cannot call an MCP tool; every other move
-prints `nothing to push`.
+prints `nothing to push`. A Jira push prints a second line naming the Jira
+status, `jira: target: In Progress` (or `Complete`), from `STATUS_MAP` (R-72).
 
 **Forward only, unless you say otherwise.** A move backwards by the lifecycle
 order (`direction`, `ready`, `spec`, `planned`, `in-progress`, `review`,
