@@ -712,8 +712,22 @@ def problems():
             out.append(f"no summary: {key}")
         if row["type"] is not None and not isinstance(row["type"], str):
             out.append(f"bad type text: {key} ({row['type']!r})")
-        elif not values_of(key) and not (row["type"] or "").strip():
-            out.append(f"no allowed values: {key}")
+        else:
+            # The field the generator prints for this kind: a value list for
+            # tuple/ratchet/prose, the `type` text for type/open-table/unvalidated,
+            # either for a branch. Checking "either" for all kinds let an empty
+            # list through under a type, and a bare type under a list.
+            kind = row["kind"]
+            has_values = bool(values_of(key))
+            has_type = bool((row["type"] or "").strip())
+            if kind in ("tuple", "ratchet", "prose"):
+                shown = has_values
+            elif kind == "branch":
+                shown = has_values or has_type
+            else:
+                shown = has_type
+            if not shown:
+                out.append(f"no allowed values: {key}")
         since = row["since"]
         if since is not None and not isinstance(since, str):
             out.append(f"bad arrival version: {key} ({since!r})")

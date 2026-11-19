@@ -677,6 +677,27 @@ def test_a_tuple_row_with_no_values_is_a_problem(monkeypatch):  # B5
     assert f"no allowed values: {key}" in _with_row(monkeypatch, key, values=(), type=None)
 
 
+def test_a_list_row_with_a_type_but_no_values_is_a_problem(monkeypatch):  # B8
+    key = "qa.order"
+    assert crew_keys.KEY_META[key]["type"] == "list of"
+    assert f"no allowed values: {key}" in _with_row(monkeypatch, key, values=())
+
+
+def test_an_open_table_row_with_values_but_no_type_is_a_problem(monkeypatch):  # B9
+    key = "unattendedCloud.aws.nonProd"
+    assert crew_keys.KEY_META[key]["kind"] == "open-table"
+    assert f"no allowed values: {key}" in _with_row(
+        monkeypatch, key, values=("a",), type=None)
+
+
+def test_a_blank_layer_definition_stops_the_generator(monkeypatch):  # B10
+    module = _load_config_reference()
+    module.Model()
+    monkeypatch.setattr(module, "LAYER_TERMS", (("repo", "   "),) + module.LAYER_TERMS[1:])
+    with pytest.raises(RuntimeError, match="repo"):
+        module.Model()
+
+
 def test_values_alone_or_type_alone_is_allowed():  # A3, A4
     assert crew_keys.KEY_META["dev.provider"]["type"] is None
     assert crew_keys.KEY_META["qa.fallback"]["values"] is None

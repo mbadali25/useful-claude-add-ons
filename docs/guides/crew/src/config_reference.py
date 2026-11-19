@@ -97,6 +97,9 @@ class Model:  # pylint: disable=too-few-public-methods
         problems = self.keys.problems()
         if problems:
             raise RuntimeError("crew_keys disagrees with the code: " + "; ".join(problems))
+        blank = sorted(name for name, text in LAYER_TERMS if not str(text).strip())
+        if blank:
+            raise RuntimeError(f"LAYER_TERMS has no plain-language definition for {blank}")
         terms = {name for name, _ in LAYER_TERMS}
         if terms != set(self.keys.LAYERS):
             raise RuntimeError(
