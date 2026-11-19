@@ -1490,14 +1490,17 @@ def load_helpers(root: str) -> Helpers:
 
 def matches(path: str, pat: str) -> bool:
     """verify-gate.sh's `def matches`, verbatim in behaviour (test 12 execs the
-    original and compares): fnmatch's * spans '/', so the '**/'-stripped form
-    and the '/**/' -> '/' form are tried as well."""
+    original and compares on a case-exact path): fnmatch's * spans '/', so the
+    '**/'-stripped form and the '/**/' -> '/' form are tried as well. Matching is
+    case-sensitive on every host (fnmatchcase): fnmatch.fnmatch normcases on
+    Windows, which would select a different unit set, and so a different
+    partition, there than on Linux."""
     import fnmatch
     cands = {pat}
     if pat.startswith("**/"):
         cands.add(pat[3:])
     cands.add(pat.replace("/**/", "/"))
-    return any(fnmatch.fnmatch(path, c) for c in cands)
+    return any(fnmatch.fnmatchcase(path, c) for c in cands)
 
 
 def load_map(path: str, root: str):
@@ -1580,6 +1583,10 @@ def reach_exclusion(cmds_or_rule, helpers: Helpers, root: str, declared=True):
         reach = rule.get("reach")
         if isinstance(reach, str) and reach != "local":
             return "reach_declared", f"declared reach: {reach}"
+        if reach is not None and not isinstance(reach, str):
+            # An unknown must not collapse into "no exclusion": a reach that is
+            # neither a string nor absent is not understood, so the rule is NOT VERIFIED.
+            return "reach_declared", f"declared reach is not a string: {reach!r}"
         if reach is not None:
             return None
         run = rule.get("run")
@@ -1840,7 +1847,7 @@ def parse_slice(text: str):
 def changed_set(args, root: str) -> list:
     """The changed paths (D13): a file (or - for stdin), or the diff against a
     base ref plus every dirty path."""
-    if args.changed_file:
+    if args.changed_file is not None:
         try:
             if args.changed_file == "-":
                 raw = sys.stdin.buffer.read()
@@ -1856,7 +1863,8 @@ def changed_set(args, root: str) -> list:
         return [ln for ln in lines if ln]
     diff = _git(root, "-c", "core.quotePath=false", "diff", "--name-only", "-z",
                 f"{args.base}...HEAD")
-    status = _git(root, "-c", "core.quotePath=false", "status", "--porcelain", "-z")
+    status = _git(root, "-c", "core.quotePath=false", "status", "--porcelain", "-z",
+                  "--untracked-files=all")
     if diff is None or status is None:
         raise Refusal(f"--base {args.base}: git could not list the changed files")
     paths = [p for p in diff.split("\0") if p]
@@ -1890,13 +1898,13 @@ def build_plan(args, root: str) -> dict:
     timings, tnote = read_timings(root)
     for unit in units:
         classify_tier(unit, rules, timings, helpers, args.fast_seconds)
-    slice_k, n = (parse_slice(args.slice) if args.slice else (None, 1))
+    slice_k, n = (parse_slice(args.slice) if args.slice is not None else (None, 1))
     assignment = partition(units, n)
     for unit in units:
         unit["slice"] = assignment[unit["id"]]
     notices = helpers.notices + sel["notices"] + ([tnote] if tnote else []) + \
         ([um_notice] if um_notice else [])
-    tier = "all" if args.slice else (args.tier or "all")
+    tier = "all" if args.slice is not None else (args.tier or "all")
     # Disposition of every matched rule: exactly one of run, other_tier, excluded (test 2).
     other, dispositions = [], {}
     run_units = []
@@ -2001,7 +2009,7 @@ def _fold(record: dict) -> None:
 def tree_dirty_now(ctx: Context):
     """True/False/None (could not tell) for the working tree right now. Paths
     under this run's own --out are the runner's logs, not the tree's change."""
-    porcelain = _git(ctx.root, "status", "--porcelain", "-z")
+    porcelain = _git(ctx.root, "status", "--porcelain", "-z", "--untracked-files=all")
     if porcelain is None:
         return None
     try:
@@ -2052,8 +2060,8 @@ def run_member(spec: dict, unit_id: str, ctx: Context) -> dict:
         res = _run_command(cmd, spec["env"], spec["timeout"], log, ctx)
         rec["commands"].append(res)
         rec["seconds"] = round(rec["seconds"] + res["seconds"], 1)
-        if res["state"] != PASS:
-            break
+        if res["state"] in (FAIL, CNT):
+            break  # a SKIP does not stop the rest: a later FAIL must not be hidden behind it
     _fold(rec)
     return rec
 
@@ -2069,15 +2077,22 @@ def run_unit(unit: dict, ctx: Context) -> list:
     snap0 = vr.tree_snapshot(ctx.root) if (vr is not None and subsets) else None
     sup = run_member(specs[0], unit["id"], ctx)
     records.append(sup)
-    snap1 = vr.tree_snapshot(ctx.root) if (vr is not None and subsets) else None
-    credit = (sup["state"] == PASS and not os.environ.get("PYTEST_ADDOPTS", "")
-              and snap0 is not None and snap0 == snap1)
     for spec in specs[1:]:
         # A credit never outranks the subset's own exclusions (D6/D10): a reach
         # exclusion or a tree that is not known clean sends it to run_member,
         # which records SKIP / COULD-NOT-TELL instead of a PASS.
         blocked = bool(spec["exclusion"]) or (
             spec["requires_clean_tree"] and tree_dirty_now(ctx) is not False)
+        # D8, decided per subset: the snapshot is taken now, so a tracked file
+        # changed between two subset decisions costs the later one its credit.
+        # PYTEST_ADDOPTS is read from the environment the commands receive: the
+        # process's and each rule-level env, the superset's and the subset's.
+        addopts = (os.environ.get("PYTEST_ADDOPTS", "")
+                   or specs[0]["env"].get("PYTEST_ADDOPTS", "")
+                   or spec["env"].get("PYTEST_ADDOPTS", ""))
+        snap1 = vr.tree_snapshot(ctx.root) if (vr is not None and subsets) else None
+        credit = (sup["state"] == PASS and not addopts
+                  and snap0 is not None and snap0 == snap1)
         if credit and spec["credit_to"] and not blocked:
             rec = _record(spec["id"], unit["id"])
             rec["state"], rec["rc"], rec["credited_by"] = PASS, None, spec["credit_to"]
@@ -2088,9 +2103,31 @@ def run_unit(unit: dict, ctx: Context) -> list:
     return records
 
 
+def _cmd_rows_valid(rec: dict, spec: dict) -> bool:
+    """The command rows of a member record: a list of dicts that the renderer
+    can read; a PASS that ran is checked against the planned member."""
+    rows = rec.get("commands")
+    seconds = rec.get("seconds")
+    if not isinstance(rows, list) or not isinstance(rec.get("reason"), str) \
+            or isinstance(seconds, bool) or not isinstance(seconds, (int, float)):
+        return False
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get("cmd"), str) \
+                or row.get("state") not in (PASS, FAIL, SKIP, CNT):
+            return False
+    if rec["state"] == PASS and rec["rc"] == 0:
+        if spec["exclusion"] or spec["fail_paths"] is not None or not spec["commands"]:
+            return False
+        if [r["cmd"] for r in rows] != list(spec["commands"]) \
+                or any(r["state"] != PASS for r in rows):
+            return False
+    return True
+
+
 def _unit_valid(unit: dict, res) -> bool:
     """A heavy-part unit result is taken only under its own unit id, with one
-    record per member (no extras), each record's state one its rc can give."""
+    record per member (no extras), each record's state one its rc can give and,
+    for a PASS, command rows that match the planned member."""
     if not isinstance(res, dict) or res.get("unit") != unit["id"] \
             or not isinstance(res.get("records"), list):
         return False
@@ -2110,13 +2147,16 @@ def _unit_valid(unit: dict, res) -> bool:
             return False
         if rc is not None and (isinstance(rc, bool) or not isinstance(rc, int)):
             return False
+        if not _cmd_rows_valid(rec, want[rid]):
+            return False
         if state == PASS:
             if rc == 0:
                 continue
             sup = seen.get(unit["id"])
             owner = want[rid]["credit_to"]
             if not (rc is None and owner is not None and rec.get("credited_by") == owner
-                    and sup is not None and sup["state"] == PASS):
+                    and sup is not None and sup["state"] == PASS
+                    and not want[rid]["exclusion"]):
                 return False
         elif state == FAIL:
             if rc is None or classify(rc, False, True)[0] != FAIL:
@@ -2425,20 +2465,22 @@ def main(argv=None) -> int:
         map_flags = [name for name, val in (
             ("--tier", args.tier), ("--slice", args.slice), ("--changed-file", args.changed_file),
             ("--base", args.base), ("--plan", args.plan), ("--workers", args.workers),
-            ("--fast-seconds", args.fast_seconds)) if val]
-        if map_flags and not args.map:
+            ("--fast-seconds", args.fast_seconds)) if val is not None and val is not False]
+        if map_flags and args.map is None:
             raise Refusal(f"{', '.join(map_flags)} need --map")
-        if args.map:
+        if args.map is not None:
             clash = [name for name, val in (("--table", args.table), ("--list", args.list),
                                             ("--check-ci", args.check_ci), ("--only", args.only),
-                                            ("--skip", args.skip), ("--inner", args.inner)) if val]
+                                            ("--skip", args.skip), ("--inner", args.inner))
+                     if val is not None and val is not False]
             if clash:
                 raise Refusal(f"--map cannot be combined with {', '.join(clash)}")
-            if args.tier and args.slice:
+            if args.tier is not None and args.slice is not None:
                 raise Refusal("--tier and --slice are exclusive")
-            if bool(args.changed_file) == bool(args.base):
+            if (args.changed_file is None) == (args.base is None):
                 raise Refusal("map mode needs exactly one of --changed-file and --base")
-            args.fast_seconds = args.fast_seconds or DEFAULT_FAST_SECONDS
+            if args.fast_seconds is None:
+                args.fast_seconds = DEFAULT_FAST_SECONDS
             return run_map(args)
         steps, source = load_table(args.table, os.path.abspath(args.root))
         digest = table_digest(steps)  # the full table, before --only

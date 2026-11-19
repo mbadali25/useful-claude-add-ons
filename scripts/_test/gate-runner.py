@@ -1985,10 +1985,14 @@ def case_map_every_matched_rule_appears_exactly_once(tmp: str) -> None:
         for rid, kind in disp.items():
             assert (kind == "other_tier") == (rid in other), f"{rid} {kind} ({note})"
             assert kind == "other_tier" or kind == "run" or kind.startswith("excluded:"), (rid, kind)
-    # no cache here: nothing is measured fast, so --tier fast lists every run unit as other_tier
     fast = plan_of(tmp, REPO, "--tier", "fast", changed=paths)
-    assert all(v != "run" for k, v in fast["dispositions"].items()
-               if not k.startswith("@")), note
+    if not os.path.exists(os.path.join(REPO, ".crew", ".verify-gate.timings.json")):
+        # no cache: nothing is measured fast, so --tier fast lists every run unit as other_tier
+        assert all(v != "run" for k, v in fast["dispositions"].items()
+                   if not k.startswith("@")), note
+    else:  # a measured cache is valid: only the tier of what runs is checked
+        assert all(u["tier"] == "fast" for u in fast["units"]
+                   if u["run_here"] and not u["id"].startswith("@")), note
 
 
 # 3 -------------------------------------------------------------------------
@@ -2213,11 +2217,13 @@ def case_map_status_records_candidate_identity(tmp: str) -> None:
         assert st["head"] and m["head"] == st["head"], m
         keys.add((m["head"], m["changed_digest"], m["map_digest"], m["partition_digest"]))
         mine = [u["id"] for u in m["units"] if u["run_here"]]
+        executed = sorted({r["unit"] for r in st["steps"]})
+        assert executed == sorted(mine), (k, executed, mine)
         part_of = {u["id"]: u["slice"] for u in m["units"]}
         assert part_of == {u["id"]: u["slice"] for u in full["units"]}, part_of
         assert sorted(mine) == sorted(i for i, k2 in part_of.items() if k2 == k), (k, mine)
-        seen.append(set(mine))
-        covered += mine
+        seen.append(set(executed))
+        covered += executed
     assert len(keys) == 1, keys
     assert len(covered) == len(set(covered)), covered
     assert set(covered) == set(unit_ids(full)), (covered, unit_ids(full))
@@ -2635,11 +2641,143 @@ def case_map_matcher_agrees_with_verify_gate(tmp: str) -> None:
     pats = sorted({p for r in cfg["rules"] for p in r["paths"]}
                   | {"**/x", "/**/", "a/**/b", "**/*.tf", "*.md", "docs/**"})
     tracked = subprocess.run(["git", "ls-files"], cwd=REPO, capture_output=True, text=True,
-                             check=False, timeout=60).stdout.splitlines()
-    corpus = tracked[::3] + ["x", "a/x", "a/b/x", "main.tf", "mod/main.tf", "a/b", "a/c/b", "r.md"]
+                             check=False, timeout=60)
+    assert tracked.returncode == 0 and tracked.stdout.strip(), tracked.stderr
+    corpus = tracked.stdout.splitlines() + ["x", "a/x", "a/b/x", "main.tf", "mod/main.tf", "a/b", "a/c/b", "r.md"]
     for path in corpus:
         for pat in pats:
             assert runner.matches(path, pat) == original(path, pat), (path, pat)
+    # case-exact on every host: a Windows normcase must not widen the selected set
+    assert runner.matches("docs/x.md", "docs/**") and not runner.matches("Docs/x.md", "docs/**")
+    assert not runner.matches("DOCS/a/B.md", "docs/**/*.md")
+
+
+# review round 2 (R-80) ------------------------------------------------------
+
+def case_map_base_lists_new_untracked_files_one_by_one(tmp: str) -> None:
+    sel = rule("md", ["docs/**/*.md"], [echo_to(tmp, "md")])
+    root = mk_root(tmp, {"unmapped": "ignore", "rules": [sel]}, files={"docs/old.md": "o"})
+    write(os.path.join(root, "docs", "new", "deep", "n.md"), "n")
+    rc, out, err, _ = run_map_cli(tmp, root, "--plan", "--base", "HEAD", changed=None)
+    assert rc == 0, (rc, err)
+    assert "md" in json.loads(out)["matched"], out
+    _r, _o, _e, st = run_map_cli(tmp, root, "--base", "HEAD", changed=None)
+    assert recs(st)["md"]["state"] == "PASS" and read_lines(tmp) == ["md"], st["steps"]
+    # a requiresCleanTree rule sees a file inside a new directory as dirt
+    need = rule("need", ["docs/**"], [echo_to(tmp, "need")], requiresCleanTree=True)
+    root = mk_root(tmp, {"unmapped": "ignore", "rules": [need]}, name="cleanbase",
+                   files={"docs/old.md": "o"})
+    write(os.path.join(root, "docs", "dir", "f.txt"), "x")
+    _r, _o, _e, st = run_map_cli(tmp, root, "--base", "HEAD", changed=None)
+    assert recs(st)["need"]["state"] == "SKIP", st["steps"]
+
+
+def case_map_commands_after_a_skip_still_run(tmp: str) -> None:
+    for label, cmds, want in (("skipfail", ["exit 77", "exit 1"], "FAIL"),
+                              ("skippass", ["exit 77", "true"], "SKIP"),
+                              ("failskip", ["exit 1", "exit 77"], "FAIL")):
+        root = mk_root(tmp, {"unmapped": "ignore", "rules": [rule("r", ["a/**"], cmds)]},
+                       name=label)
+        rc, _o, _e, st = run_map_cli(tmp, root)
+        got = recs(st)["r"]
+        assert got["state"] == want, (label, got)
+        assert (rc == 1) == (want == "FAIL"), (label, rc)
+        if label == "skipfail":
+            assert len(got["commands"]) == 2, got
+
+
+def case_map_a_reach_that_is_not_understood_is_not_verified(tmp: str) -> None:
+    for bad in ([], {}, 3, False):
+        rl = rule("r", ["a/**"], [echo_to(tmp, "ran")])
+        rl["reach"] = bad
+        root = mk_root(tmp, {"unmapped": "ignore", "rules": [rl]}, name=f"rb{_RUN_N[0]}")
+        _r, _o, _e, st = run_map_cli(tmp, root)
+        got = recs(st)["r"]
+        assert got["state"] == "SKIP" and "reach" in got["reason"], (bad, got)
+    assert read_lines(tmp) == [], read_lines(tmp)
+
+
+def case_map_credit_checks_the_rule_level_env_and_each_subset(tmp: str) -> None:
+    for where in ("sup", "sub"):
+        sup = rule("sup", ["a/**"], [echo_to(tmp, "sup")], seconds=50,
+                   env={"PYTEST_ADDOPTS": "-q"} if where == "sup" else {})
+        sub = rule("sub", ["a/**"], [echo_to(tmp, "sub")], seconds=5, coveredBy="sup",
+                   env={"PYTEST_ADDOPTS": "-q"} if where == "sub" else {})
+        root = mk_root(tmp, {"unmapped": "ignore", "rules": [sup, sub]}, name=f"env-{where}")
+        _r, _o, _e, st = run_map_cli(tmp, root)
+        assert recs(st)["sub"]["credited_by"] is None, (where, st["steps"])
+        assert read_lines(tmp) == ["sup", "sub"], (where, read_lines(tmp))
+        os.remove(trace(tmp))
+    # each subset takes its own tree snapshot (D8): a tracked file changed after
+    # the superset costs a later subset its credit, so it runs instead
+    runner = load_runner()
+    helpers = runner.load_helpers(REPO)
+    if helpers.vr is None:
+        raise Skip("verify_record not importable")
+    sup_spec = runner._member("sup", 0, None, [echo_to(tmp, "sup")], None)  # pylint: disable=protected-access
+    sub_spec = runner._member("sub", 1, None, [echo_to(tmp, "sub")], None, credit_to="sup")  # pylint: disable=protected-access
+    root = mk_root(tmp, {"rules": []}, name="snaps", files={"tracked.txt": "orig\n"})
+    ctx = runner.Context(root, os.path.join(tmp, "snapout"), 1.0, set())
+    ctx.helpers = helpers
+    sup_spec["commands"] = ["echo changed > tracked.txt"]
+    recs_ = runner.run_unit({"id": "sup", "specs": [sup_spec, sub_spec]}, ctx)
+    assert recs_[1]["credited_by"] is None and read_lines(tmp) == ["sub"], recs_
+
+
+def case_map_heavy_part_rows_are_checked_against_the_plan(tmp: str) -> None:
+    runner = load_runner()
+    member = runner._member  # pylint: disable=protected-access
+    valid = runner._unit_valid  # pylint: disable=protected-access
+    spec = member("u", 0, rule("u", ["a/**"], ["true"]), ["true"], None)
+    excl = member("u", 0, rule("u", ["a/**"], ["true"]), ["true"],
+                  ("reach_declared", "declared reach: network"))
+
+    def row(**kw):
+        base = {"id": "u", "unit": "u", "state": "PASS", "rc": 0, "reason": "", "seconds": 0.0,
+                "credited_by": None,
+                "commands": [{"cmd": "true", "rc": 0, "state": "PASS", "log": None,
+                              "seconds": 0.0, "reason": ""}]}
+        base.update(kw)
+        return {"unit": "u", "records": [base]}
+
+    assert valid({"id": "u", "specs": [spec]}, row())
+    bad = (row(commands=[]), row(commands=[{"cmd": "other", "rc": 0, "state": "PASS"}]),
+           row(commands="x"), row(reason=None), row(seconds="3"),
+           row(state="FAIL", rc=1, commands=[3]),
+           row(commands=[{"cmd": "true", "rc": 0, "state": "FAIL"}]))
+    for res in bad:
+        assert not valid({"id": "u", "specs": [spec]}, res), res
+    assert not valid({"id": "u", "specs": [excl]}, row())  # a reach-excluded member never PASSes
+    sup = member("u", 0, rule("u", ["a/**"], ["true"]), ["true"], None)
+    sub = member("s", 1, rule("s", ["a/**"], ["true"]), ["true"], ("reach_declared", "x"),
+                 credit_to="u")
+    credited = {"id": "s", "unit": "u", "state": "PASS", "rc": None, "reason": "", "seconds": 0.0,
+                "credited_by": "u", "commands": []}
+    assert not valid({"id": "u", "specs": [sup, sub]},
+                     {"unit": "u", "records": [row()["records"][0], credited]})
+
+
+def case_map_empty_string_flags_are_refused(tmp: str) -> None:
+    root = mk_root(tmp, {"rules": [rule("r", ["a/**"], ["true"])]})
+    ch = write_changed(tmp, "a/x")
+
+    def code(*argv):
+        proc = subprocess.run([sys.executable, TARGET, "--root", root, *argv], capture_output=True,
+                              text=True, timeout=CALL_TIMEOUT, check=False, stdin=subprocess.DEVNULL,
+                              env={**os.environ, "HEAVY_RUN": "none"})
+        return proc.returncode
+
+    base = ["--map", ".crew/verify.json"]
+    assert code("--list", "--slice", "") == 2
+    assert code("--list", "--map", "") == 2
+    assert code("--list", "--base", "") == 2
+    assert code("--list", "--changed-file", "") == 2
+    assert code(*base, "--changed-file", ch, "--slice", "") == 2
+    assert code(*base, "--changed-file", ch, "--base", "") == 2
+    assert code("--map", "", "--changed-file", ch) == 2
+    assert code(*base, "--changed-file", "") == 2
+    assert code(*base, "--base", "", "--list") == 2
+
 
 CASES = [
     case_list_prints_phases,
@@ -2721,6 +2859,12 @@ CASES = [
     case_map_default_run_is_unchanged,
     case_map_flags_are_refused_where_they_do_not_apply,
     case_map_matcher_agrees_with_verify_gate,
+    case_map_base_lists_new_untracked_files_one_by_one,
+    case_map_commands_after_a_skip_still_run,
+    case_map_a_reach_that_is_not_understood_is_not_verified,
+    case_map_credit_checks_the_rule_level_env_and_each_subset,
+    case_map_heavy_part_rows_are_checked_against_the_plan,
+    case_map_empty_string_flags_are_refused,
 ]
 
 
