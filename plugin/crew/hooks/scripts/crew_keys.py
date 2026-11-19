@@ -30,6 +30,11 @@ What this module does NOT hold:
   ratchet tables, `crew_guards.PERSONAL_KEYS` and `crew_config.REPO_VETO_ONLY`,
   so it follows the code.
 
+`BLANK_EXCLUDED` (R-C2) names, per layer, each key the copy-safe blank in
+`plugin/crew/docs/configuration/` leaves out, with its reason; `problems()`
+holds every other key to the blank rules R1/R2 (below) and checks that the
+blank and its exclusions partition the layer.
+
 `COMING` holds keys from approved tickets that have not landed, each naming
 its ticket. A test fails when one of them is in the code, so the landing
 ticket moves its row into `KEY_META` and sets `since`.
@@ -738,6 +743,153 @@ def problems():
             out.append(f"bad arrival version: {key} ({since!r})")
         if layer_of(key) not in LAYERS:
             out.append(f"no layer class: {key} ({layer_of(key)!r})")
+    out.extend(blank_problems())
+    return out
+
+
+# --- R-C2: the two copy-safe blanks (`plugin/crew/docs/configuration/`) --------
+#
+# A blank is a whole config file, every key at its default, that a person may
+# copy into an EMPTY layer without changing what crew does. The generator
+# writes one per layer; this table names each key a blank leaves out, and why.
+# Two rules decide what may stay in, and `problems()` holds every key that is
+# not excluded to them, so a new two-layer key with a non-null default fails the
+# build until someone decides about it:
+#
+# R1 (repo blank): the key is layer `repo`, or its repo default is `null`. A
+#    repo `null` defers to the machine value (`crew_config.null_shadows`) and is
+#    the default when the machine file is silent; any other repo value, even the
+#    default, beats or narrows what the machine file says.
+# R2 (machine blank): the key is not `both, stricter wins` unless its machine
+#    default is `null`. A personal key at its default holds every repo's value
+#    down to it.
+#
+# Over-excluding is safe: the blank is then smaller, and the reason is in review.
+
+REASON_SHADOWS = ("a repo value, even at the default, overrides or narrows the machine "
+                  "file's value; set it in the repo file only to differ from your machine")
+REASON_PERSONAL = ("a personal key: at its default it holds your machine value down "
+                   "(stricter wins)")
+EXCLUSION_REASONS = {"shadows": REASON_SHADOWS, "personal": REASON_PERSONAL}
+
+_SHADOWING = (
+    "qa.provider", "qa.order", "qa.fallback", "qa.codex.model", "qa.roles",
+    "dev.provider", "dev.fallback", "dev.roles",
+    "secondOpinion.provider", "secondOpinion.mode",
+    "memory.mode",
+    "context.autoClear.method", "context.autoClear.delaySeconds",
+    "context.autoClear.minHandoffLines",
+    "reaper.enabled", "reaper.dryRun", "reaper.spinCpuPct", "reaper.spinMinAgeMin",
+    "reaper.blockedMinAgeHours", "reaper.intervalMin", "reaper.onSessionStart",
+    "notify.events",
+    "pm.authority", "pm.maxDispatches",
+    "install.policy", "guards.profile", "guards.overrides",
+    "environments.prodUnattended", "change.requireForProduction",
+    "git.forbiddenTrailers",
+    "route.enabled",
+)
+_PERSONAL = ("autopilot.mode", "autopilot.maxPhases", "autopilot.deploy",
+             "autopilot.approval", "autopilot.questions")
+
+BLANK_EXCLUDED = {
+    "repo": {**{key: REASON_SHADOWS for key in _SHADOWING},
+             **{key: REASON_PERSONAL for key in _PERSONAL}},
+    "machine": {key: REASON_PERSONAL for key in _PERSONAL},
+}
+
+BLANK_LAYERS = ("repo", "machine")
+
+
+def repo_layer_keys():
+    """Every key a repo `.crew/config.json` may effectively set: each leaf whose
+    layer is not `machine-only`, in `all_leaves()` order."""
+    return [key for key in all_leaves() if layer_of(key) != "machine-only"]
+
+
+def machine_layer_keys():
+    """Every key the machine file may effectively set: each leaf
+    `crew_config.is_global_path` accepts whose layer is not `repo`."""
+    return [key for key in all_leaves()
+            if crew_config.is_global_path(key) and layer_of(key) != "repo"]
+
+
+def layer_keys(layer):
+    return repo_layer_keys() if layer == "repo" else machine_layer_keys()
+
+
+def layer_default(layer, key):
+    """`(True, value)` for `key`'s default in that layer, `(False, None)` when the
+    layer's defaults do not hold it."""
+    node = crew_config.default_config() if layer == "repo" else crew_config.default_global_config()
+    for part in key.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return False, None
+        node = node[part]
+    return True, node
+
+
+def blank_config(layer):
+    """The blank for `layer`: that layer's defaults minus every excluded key and
+    every key outside the layer, a block left empty dropped. Order is the
+    defaults' order. Builds a new object."""
+    defaults = (crew_config.default_config() if layer == "repo"
+                else crew_config.default_global_config())
+    keep = set(layer_keys(layer)) - set(BLANK_EXCLUDED[layer])
+    drop = [key for key in crew_config.leaf_paths(defaults) if key not in keep]
+    return crew_config._without_paths(defaults, drop)  # pylint: disable=protected-access
+
+
+def blank_rule_problem(layer, key):
+    """Why `key` may not stay in `layer`'s blank (R1 / R2), or None."""
+    found, default = layer_default(layer, key)
+    cls = layer_of(key)
+    if layer == "repo":
+        if cls != "repo" and not (found and default is None):
+            return (f"blank R1: {key} is in the repo blank, but it is layer {cls!r} with "
+                    f"repo default {default!r}: a repo value at the default overrides or "
+                    "narrows the machine file; name it in BLANK_EXCLUDED['repo'] with a reason")
+        return None
+    if cls == "both, stricter wins" and not (found and default is None):
+        return (f"blank R2: {key} is in the machine blank, but it is a personal key with "
+                f"machine default {default!r}: at the default it holds every repo down; "
+                "name it in BLANK_EXCLUDED['machine'] with a reason")
+    return None
+
+
+def blank_problems():
+    """Every way `BLANK_EXCLUDED` and the blanks disagree with the registry."""
+    out = []
+    if set(BLANK_EXCLUDED) != set(BLANK_LAYERS):
+        out.append(f"bad exclusion table: BLANK_EXCLUDED layers {sorted(BLANK_EXCLUDED)} "
+                   f"are not {list(BLANK_LAYERS)}")
+        return out
+    for layer in BLANK_LAYERS:
+        keys = layer_keys(layer)
+        excluded = BLANK_EXCLUDED[layer]
+        for key, reason in excluded.items():
+            if key not in KEY_META:
+                out.append(f"bad exclusion: {layer} {key} is not a registry key")
+            elif key not in keys:
+                out.append(f"bad exclusion: {layer} {key} is not a {layer}-layer key "
+                           f"(layer {layer_of(key)!r})")
+            if not isinstance(reason, str) or not reason.strip():
+                out.append(f"no exclusion reason: {layer} {key}")
+        for key in keys:
+            if key in excluded:
+                continue
+            problem = blank_rule_problem(layer, key)
+            if problem:
+                out.append(problem)
+        blank = crew_config.leaf_paths(blank_config(layer))
+        overlap = sorted(set(blank) & set(excluded))
+        if overlap:
+            out.append(f"blank overlap: {layer} blank holds excluded keys {overlap}")
+        if sorted(set(blank) | (set(excluded) & set(keys))) != sorted(keys) \
+                or len(blank) != len(set(blank)):
+            missing = sorted(set(keys) - set(blank) - set(excluded))
+            extra = sorted(set(blank) - set(keys))
+            out.append(f"blank partition: {layer} blank plus exclusions is not the layer "
+                       f"(missing {missing}, outside the layer {extra})")
     return out
 
 
