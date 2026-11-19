@@ -1758,7 +1758,9 @@ rules:
   without blocking and reads only a regular file, so `crew_config --explain`
   no longer hangs on a FIFO at a config path before it reaches `crew_tiers`
   (round 5 left that as known; it was reproduced on Linux, then fixed at the
-  shared reader rather than in one command). `tier_map_duplicates` answers on
+  shared reader rather than in one command; it still goes through the
+  built-in `open`, with an `opener`, so a test that stands in for `open` by
+  path keeps working). `tier_map_duplicates` answers on
   one line of printable ASCII: SessionStart prints its answer, and a newline
   in a repeated key used to add a line that read as crew's own. Still
   unreadable, on purpose: a file nested too deeply to parse.

@@ -80,6 +80,25 @@ def require_tool(name):
     return path
 
 
+def _open_regular(path, flags):
+    """`open`'s opener for `read_text`: the descriptor of a REGULAR file, or
+    OSError. O_NONBLOCK (POSIX) because a plain `open` on a FIFO nobody writes
+    to blocks for ever, so a FIFO at a config path hung every reader here --
+    `crew_config --explain` before it reached the tier reader, which already
+    refuses one (R-05 review round 6). The type is judged on the open
+    descriptor, so nothing swapped in after a check is read; anything that is
+    not a regular file is "cannot be read", as a directory always was."""
+    fd = os.open(path, flags | getattr(os, "O_NONBLOCK", 0))
+    try:
+        regular = stat.S_ISREG(os.fstat(fd).st_mode)
+    except OSError:
+        regular = False
+    if not regular:
+        os.close(fd)
+        raise OSError(errno.EINVAL, "not a regular file", os.fspath(path))
+    return fd
+
+
 def read_text(path):
     """Return the file's text, or None if it cannot be read for any reason.
 
@@ -89,35 +108,16 @@ def read_text(path):
     config as malformed. utf-8-sig strips a leading BOM when present and is
     a no-op on a plain utf-8 file, so every other reader here is unaffected.
     """
-    # O_NONBLOCK (POSIX), then the type judged on the open descriptor: a plain
-    # `open` on a FIFO nobody writes to blocks for ever, so a FIFO at a config
-    # path hung every reader here -- `crew_config --explain` before it reached
-    # the tier reader, which already refuses one (R-05 review round 6). Only a
-    # regular file is read; anything else is "cannot be read", like a directory.
-    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
-        fd = os.open(path, flags)
+        with open(path, "r", encoding="utf-8-sig", errors="replace",
+                  opener=_open_regular) as handle:
+            return handle.read()
     except (OSError, ValueError):
         # ValueError covers a path Python rejects before touching the disk (an
         # embedded NUL raises rather than returning ENOENT). Unreachable from a
         # real filesystem, but this module must never raise from a SessionStart
         # hook under any input, so the cheap catch beats the argument about
         # reachability.
-        return None
-    try:
-        regular = stat.S_ISREG(os.fstat(fd).st_mode)
-    except OSError:
-        regular = False
-    if not regular:
-        try:
-            os.close(fd)
-        except OSError:
-            pass
-        return None
-    try:
-        with open(fd, "r", encoding="utf-8-sig", errors="replace") as handle:
-            return handle.read()
-    except (OSError, ValueError):
         return None
 
 
