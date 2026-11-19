@@ -529,16 +529,20 @@ setting. <code>application</code> and <code>accounts</code> are accepted and not
 <p>Here <code>workflow:deploy.yml</code> is <code>prod</code> (<code>narrowed-by-repo</code>) and
 <code>host:api.example.com</code> stays <code>qa</code> (<code>listed</code>; the repo's <code>dev</code> is ignored).</p>
 <p><strong>Reasons</strong>, checked in this order: <code>machine-unreadable</code> and <code>repo-unreadable</code>
-(a file that exists and is not a JSON object, or whose <code>tiers</code> is not an object:
-every target is <code>unknown</code>), <code>conflicting</code> (case twins, two keys folding to
-<code>tiers</code>, or twins of <code>tier</code> in an entry), <code>invalid</code> (a bad machine entry),
-<code>repo-invalid-entry</code> (a bad repo entry: <code>unknown</code> even over a machine <code>dev</code>),
-<code>unlisted</code>, then <code>narrowed-by-repo</code> or <code>listed</code>. An absent file is not a
-problem: no machine file means every target is <code>unlisted</code>.</p>
+(a file that exists and is not a JSON object, holds <code>NaN</code> or <code>Infinity</code>, or
+whose <code>tiers</code> is present and not an object, <code>null</code> included; a worktree whose
+<code>.crew/</code> git cannot resolve is <code>repo-unreadable</code>: every target is <code>unknown</code>),
+<code>conflicting</code> (case twins, two keys folding to <code>tiers</code>, or twins of <code>tier</code> in
+an entry), <code>invalid</code> (a bad machine entry), <code>repo-invalid-entry</code> (a bad repo
+entry: <code>unknown</code> even over a machine <code>dev</code>), <code>unlisted</code>, then
+<code>narrowed-by-repo</code> or <code>listed</code>. An absent file, or one with no <code>tiers</code> key, is
+not a problem: no machine file means every target is <code>unlisted</code>.</p>
 <p><strong>Writing it.</strong> <code>tiers</code> is written whole, because a target name may hold <code>.</code>:
 <code>python3 plugin/crew/hooks/scripts/crew_config.py --set
 'tiers={"workflow:deploy.yml":{"tier":"qa"}}' [--repo] --apply</code>. A path under
-it (<code>--set tiers.&lt;target&gt;...</code>) is refused, and <code>--unset tiers</code> removes the map.</p>
+it (<code>--set tiers.&lt;target&gt;...</code>) is refused, so is a value that is not an object
+(<code>null</code> included), and <code>--unset tiers</code> removes the map. An upgrade adds
+<code>tiers: {}</code> to a file that has none.</p>
 <p><strong>Consumers read <code>crew_tiers</code> only.</strong> The merged config (<code>resolve_config</code>)
 carries the machine map alone, never the repo's, so it is a lower bound and
 never wider than the machine; it is a display surface. Anything that decides

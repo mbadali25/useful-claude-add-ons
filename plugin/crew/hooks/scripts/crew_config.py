@@ -3542,7 +3542,9 @@ def value_allowed(dotted, layer, value):
     reason = _layer_path_refusal(dotted, layer, value)
     if reason is not None:
         return f"{dotted} - {reason}"
-    if dotted in _OPAQUE_TABLES and value is not None and not isinstance(value, dict):
+    if dotted in _OPAQUE_TABLES and not isinstance(value, dict):
+        # `null` too (D5): the reader treats a present non-map `tiers` as
+        # unreadable, so the writer never stores one; `--unset` removes the key.
         return (f"{dotted} = {value!r} - takes the whole map as a JSON object; "
                 f"--unset {dotted} removes it")
     shape = _shape(dotted)
@@ -4653,11 +4655,14 @@ def _print_tiers_row(row, width):
     print(f"{'tiers'.ljust(width)}  {row['source'].ljust(8)}  "
           + (f"{count} target(s), report-only" if count else
              "no targets: every target is unknown (report-only)"))
+    # Every line here is one physical line: `crew_tiers.show` escapes a newline
+    # or other control character a repo-written name may hold.
+    for problem in row.get("problems") or ():
+        print(f"  ! {problem}")
     for line in row["lines"]:  # `target  tier  (reason)`, rendered by crew_tiers
         print(f"  {line}")
-    for target, entry in (row.get("repoIgnored") or {}).items():
-        print(f"  ! {target}: repo asks {json.dumps(entry)}; a repo may only narrow "
-              "the machine's tier, so it is ignored")
+    for line in row.get("ignoredLines") or ():
+        print(f"  ! {line}")
 
 
 def _print_explain(rows, root=".", all_keys=False, findings=None):

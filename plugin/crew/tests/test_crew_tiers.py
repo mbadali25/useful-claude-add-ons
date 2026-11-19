@@ -315,12 +315,70 @@ def test_t_r2_malformed_machine_file_is_machine_unreadable(tmp_path):
     _t_r2(tmp_path)
 
 
-def test_a_null_map_is_no_map(tmp_path):
-    """`tiers: null` is what `--set tiers=null` writes and `null_means` calls
-    unset: no map, so every target is unlisted (still `unknown`)."""
-    got = _resolve(tmp_path, "host:a", machine_raw='{"tiers": null}',
+def test_a_null_map_is_unreadable_in_either_layer(tmp_path):
+    """D5: a present `tiers` that is not a map, `null` included, makes that
+    layer unreadable. A repo `"tiers": null` must not hide the layer and let a
+    machine `dev` through as `listed`."""
+    got = _resolve(_sub(tmp_path, "m"), "host:a", machine_raw='{"tiers": null}',
                    repo={"host:a": _entry("dev")})
-    assert (got["tier"], got["reason"]) == ("unknown", "unlisted")
+    assert (got["tier"], got["reason"]) == ("unknown", "machine-unreadable"), got
+    got = _resolve(_sub(tmp_path, "r"), "host:a", machine={"host:a": _entry("dev")},
+                   repo_raw='{"tiers": null}')
+    assert (got["tier"], got["reason"]) == ("unknown", "repo-unreadable"), got
+    # A layer with no `tiers` key at all still imposes nothing.
+    got = _resolve(_sub(tmp_path, "a"), "host:a", machine={"host:a": _entry("dev")},
+                   repo_raw='{"tracker": "files"}')
+    assert (got["tier"], got["reason"]) == ("dev", "listed"), got
+
+
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+def test_non_json_constants_make_the_layer_unreadable(tmp_path, constant):
+    """`json.loads` accepts NaN/Infinity by default; RFC 8259 JSON does not,
+    so a file holding one anywhere is unreadable (D5), not read past."""
+    raw = '{"budget": %s, "tiers": {"host:a": {"tier": "dev"}}}' % constant
+    got = _resolve(_sub(tmp_path, "m"), "host:a", machine_raw=raw)
+    assert (got["tier"], got["reason"]) == ("unknown", "machine-unreadable"), got
+    got = _resolve(_sub(tmp_path, "r"), "host:a", machine={"host:a": _entry("dev")},
+                   repo_raw=raw)
+    assert (got["tier"], got["reason"]) == ("unknown", "repo-unreadable"), got
+
+
+def test_both_layers_malformed_names_the_machine_first(tmp_path):
+    """The machine check comes first (it is the authority): with both files
+    malformed the reason is machine-unreadable. Every other malformed-layer
+    row breaks one layer only, so this is the row that turns red when the two
+    checks are swapped (review round 1, finding 6)."""
+    got = _resolve(tmp_path, "host:a", machine_raw="{bad", repo_raw="{worse")
+    assert (got["tier"], got["reason"]) == ("unknown", "machine-unreadable"), got
+    assert got["notes"][0].startswith("machine:"), got
+
+
+def test_a_path_open_refuses_is_unreadable_not_absent(tmp_path):
+    status, detail = crew_tiers._read_layer(str(tmp_path / "a\0b.json"))  # pylint: disable=protected-access
+    assert status == "unreadable", (status, detail)
+    root, _gpath = _setup(tmp_path, repo={"host:a": _entry("prod")})
+    got = crew_tiers.resolve("host:a", root, str(tmp_path / "m\0.json"))
+    assert (got["tier"], got["reason"]) == ("unknown", "machine-unreadable"), got
+    got = crew_tiers.resolve("host:a", "bad\0root", str(tmp_path / "absent.json"))
+    assert got["tier"] == "unknown", got
+
+
+def test_t_r5_worktree_git_cannot_resolve_is_repo_unreadable(tmp_path, monkeypatch):
+    """When `crew_common.repo_config_dir` cannot tell which `.crew/` is in
+    force (SOURCE_UNKNOWN), the repo layer is unreadable: reading it as
+    absent would hide a narrowing in the main checkout's file."""
+    main = make_repo(tmp_path, mode=None, name="main")
+    (main / ".crew" / "config.json").write_text(
+        json.dumps({"tiers": {"host:a": _entry("prod")}}), encoding="utf-8")
+    git(main, "worktree", "add", "-q", "-b", "lane", str(tmp_path / "wt"))
+    gpath = tmp_path / "machine.json"
+    _write(gpath, {"tiers": {"host:a": _entry("dev")}})
+    import crew_common  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(crew_common, "_main_checkout",
+                        lambda root: (None, "git rev-parse failed (test)"))
+    got = crew_tiers.resolve("host:a", str(tmp_path / "wt"), str(gpath))
+    assert (got["tier"], got["reason"]) == ("unknown", "repo-unreadable"), got
+    assert "could not tell" in got["notes"][0], got
 
 
 def test_t_r3_malformed_repo_file_and_absent_repo_file(tmp_path):
@@ -368,14 +426,15 @@ def test_t_w1_global_write_keeps_dotted_targets(tmp_path):
 
 
 def test_t_w2_repo_write_keeps_dotted_targets_and_narrows(tmp_path):
-    root, gpath = _setup(tmp_path, machine={"workflow:deploy.yml": _entry("dev")},
-                         repo_raw=json.dumps({"tracker": "files"}))
-    crew_config.write_repo_config(root, {"tiers": {"workflow:deploy.yml": _entry("qa")}},
-                                  gpath)
+    machine = {"workflow:deploy.yml": _entry("dev"), "host:api.example.com": _entry("qa")}
+    repo = {"workflow:deploy.yml": _entry("qa"), "host:api.example.com": _entry("prod")}
+    root, gpath = _setup(tmp_path, machine=machine, repo_raw=json.dumps({"tracker": "files"}))
+    crew_config.write_repo_config(root, {"tiers": repo}, gpath)
     written = json.loads((pathlib.Path(root) / ".crew" / "config.json").read_text("utf-8"))
-    assert written["tiers"] == {"workflow:deploy.yml": _entry("qa")}
-    got = crew_tiers.resolve("workflow:deploy.yml", root, gpath)
-    assert (got["tier"], got["reason"]) == ("qa", "narrowed-by-repo")
+    assert written["tiers"] == repo
+    for target, tier in (("workflow:deploy.yml", "qa"), ("host:api.example.com", "prod")):
+        got = crew_tiers.resolve(target, root, gpath)
+        assert (got["tier"], got["reason"]) == (tier, "narrowed-by-repo"), (target, got)
 
 
 def test_t_w3_cli_set_round_trips(tmp_path):
@@ -425,9 +484,20 @@ def test_t_w4_unset_tiers_removes_the_map(tmp_path):
     assert json.loads(pathlib.Path(gpath).read_text("utf-8")) == {"pm": {"authority": "act"}}
 
 
-def test_t_w4_set_tiers_to_a_non_object_is_refused(tmp_path):
+@pytest.mark.parametrize("value", ["dev", None, ["host:a"], 1])
+def test_t_w4_set_tiers_to_a_non_object_is_refused(tmp_path, value):
+    """`null` too: the reader treats a present `"tiers": null` as unreadable
+    (D5), so the writer never stores one; `--unset tiers` removes the key."""
     with pytest.raises(crew_config.GlobalWriteRefused, match="whole map"):
-        crew_config.plan_global_write({"tiers": "dev"}, str(tmp_path / "m.json"))
+        crew_config.plan_global_write({"tiers": value}, str(tmp_path / "m.json"))
+
+
+def test_t_w4_cli_set_tiers_null_is_refused(tmp_path):
+    root, gpath = _setup(tmp_path, machine={"host:a": _entry("dev")})
+    before = pathlib.Path(gpath).read_bytes()
+    assert crew_config.main(["--root", root, "--global-path", gpath, "--set", "tiers=null",
+                             "--apply"]) != 0
+    assert pathlib.Path(gpath).read_bytes() == before
 
 
 def test_t_w4_readers_and_mergers_keep_a_dotted_map_verbatim():
@@ -452,24 +522,35 @@ def test_t_w5_one_unit_path_tiers():
 
 # --- upgrade ---------------------------------------------------------------------------
 
-def test_upgrade_keeps_a_map_and_writes_no_empty_block():
-    """`tiers` is in `CONFIG_BLOCKS`, so a map is carried through the merge
-    verbatim and a non-object is reported, not discarded. An ABSENT `tiers`
-    stays absent: `upgrade_config` never writes a block that comes back empty
-    for a key the file did not mention (crew_upgrade.py, "A block the repo
-    never mentioned"), and absent and `{}` resolve the same (every target
-    unknown). Deviation from the R-05 spec's "gains `tiers: {}`", recorded on
-    CLDDEV-19."""
+def test_upgrade_adds_an_empty_map_and_keeps_a_written_one():
+    """R-05 spec section 5: an upgrade adds `tiers: {}` to a file that has
+    none (`crew_upgrade._WRITTEN_WHEN_EMPTY`), carries a map verbatim, and
+    reports a non-object instead of discarding it."""
     bare = crew_config.default_config()
     bare.pop("tiers")
     out, _notes = crew_upgrade.upgrade_config(bare)
-    assert "tiers" not in out
+    assert out["tiers"] == {}
+    out, _notes = crew_upgrade.upgrade_config({})
+    assert out["tiers"] == {}
     out, _notes = crew_upgrade.upgrade_config(dict(bare, tiers={}))
     assert out["tiers"] == {}
     out, _notes = crew_upgrade.upgrade_config(dict(bare, tiers=DOTTED_MAP))
     assert out["tiers"] == DOTTED_MAP
     out, notes = crew_upgrade.upgrade_config(dict(bare, tiers="dev"))
     assert (out["tiers"], "tiers" in notes["unmigrated"]) == ("dev", True)
+
+
+def test_an_upgraded_repo_empty_map_hides_no_machine_entry(tmp_path, monkeypatch):
+    """The `tiers: {}` an upgrade seeds into a repo file never shadows the
+    machine map: not in the merged config, not in crew_tiers."""
+    seeded, _notes = crew_upgrade.upgrade_config({"schema": 2})
+    assert seeded["tiers"] == {}
+    root, gpath = _setup(tmp_path, machine=DOTTED_MAP, repo_raw=json.dumps(seeded))
+    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", gpath)
+    assert crew_config.resolve_config(root)["tiers"] == DOTTED_MAP
+    for target, tier in (("workflow:deploy.yml", "qa"), ("host:api.example.com", "prod")):
+        got = crew_tiers.resolve(target, root, gpath)
+        assert (got["tier"], got["reason"]) == (tier, "listed"), got
 
 
 def _imports(path):
@@ -529,11 +610,11 @@ def _tiers_imports(tree):
 def _t_i1():
     bad = []
     for path in _python_files():
-        if path.name == "crew_tiers.py":
+        if _rel(path) == _T_I1_MODULE:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node, stack in _tiers_imports(tree):
-            if path.name == "crew_config.py" and stack == ("explain_config",):
+            if _rel(path) == _T_I1_EXPLAIN and stack == ("explain_config",):
                 continue
             bad.append(f"{path.relative_to(REPO)}:{node.lineno} in {stack or 'module'}")
     texts = []
@@ -555,8 +636,20 @@ def test_t_i1_the_one_import_is_inside_explain_config():
     assert [stack for _n, stack in _tiers_imports(tree)] == [("explain_config",)]
 
 
-_T_I2_ALLOWED = ("crew_tiers.py", "crew_config.py", "crew_keys.py", "crew_state.py",
-                 "crew_upgrade.py", "config_reference.py")
+# Full repo-relative paths, never basenames (D6/D10 name these files): a future
+# `plugin/crew-autopilot/crew_config.py` is scanned like any other file.
+_T_I1_MODULE = "plugin/crew/hooks/scripts/crew_tiers.py"
+_T_I1_EXPLAIN = "plugin/crew/hooks/scripts/crew_config.py"
+_T_I2_ALLOWED = ("plugin/crew/hooks/scripts/crew_tiers.py",
+                 "plugin/crew/hooks/scripts/crew_config.py",
+                 "plugin/crew/hooks/scripts/crew_keys.py",
+                 "plugin/crew/hooks/scripts/crew_state.py",
+                 "plugin/crew/skills/crew-graph/scripts/crew_upgrade.py",
+                 "docs/guides/crew/src/config_reference.py")
+
+
+def _rel(path):
+    return path.relative_to(REPO).as_posix()
 
 
 def _reads_tiers(node):
@@ -577,12 +670,20 @@ def _reads_tiers(node):
 def test_t_i2_no_consumer_reads_a_merged_tiers_value():
     bad = []
     for path in _python_files():
-        if path.name in _T_I2_ALLOWED:
+        if _rel(path) in _T_I2_ALLOWED:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
         bad.extend(f"{path.relative_to(REPO)}:{n.lineno}"
                    for n in ast.walk(tree) if _reads_tiers(n))
     assert bad == [], bad
+
+
+def test_t_i_exemptions_are_paths_not_basenames():
+    for twin in ("plugin/crew-autopilot/crew_config.py", "plugin/crew-autopilot/crew_tiers.py",
+                 "scripts/crew_state.py"):
+        assert twin not in _T_I2_ALLOWED and twin not in (_T_I1_MODULE, _T_I1_EXPLAIN), twin
+    for path in _T_I2_ALLOWED + (_T_I1_MODULE, _T_I1_EXPLAIN):
+        assert (REPO / path).is_file(), path
 
 
 def test_t_i2_scan_sees_each_read_shape():
@@ -627,6 +728,42 @@ def test_cli_explain_and_list(tmp_path, capsys):
     with pytest.raises(SystemExit) as exc:
         crew_tiers.main(["nonsense"])
     assert exc.value.code == 2
+
+
+FORGED = "host:a\nhost:b  prod  (listed)"
+
+
+def test_a_newline_in_a_name_cannot_forge_a_row(tmp_path, monkeypatch, capsys):
+    """A repo-written name holding a newline (or U+2028) is escaped, so it
+    stays on its one physical line in every text report."""
+    root, gpath = _setup(tmp_path, machine={FORGED: _entry("dev")},
+                         repo={FORGED: _entry("qa"), "host:c x": _entry("prod")})
+    assert crew_tiers.main(["list", "--root", root, "--global-path", gpath]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert not any(line.startswith("host:b") for line in lines), lines
+    assert any("host:a\\nhost:b" in line for line in lines), lines
+    assert crew_tiers.main(["explain", FORGED, "--root", root, "--global-path", gpath]) == 0
+    out = capsys.readouterr().out
+    assert len(out.splitlines()) == 1 + out.count("\n  - "), out
+    assert "\nhost:b" not in out, out
+    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", gpath)
+    assert crew_config.main(["--root", root, "--global-path", gpath, "--explain"]) == 0
+    out = capsys.readouterr().out
+    assert not any(line.lstrip().startswith("host:b") for line in out.splitlines()), out
+    assert " " not in out, out
+
+
+def test_unreadable_machine_is_reported_when_no_target_is_listed(tmp_path, monkeypatch,
+                                                                  capsys):
+    root, gpath = _setup(tmp_path, machine_raw="{bad")
+    assert crew_tiers.main(["list", "--root", root, "--global-path", gpath]) == 0
+    assert "machine-unreadable" in capsys.readouterr().out
+    row = crew_tiers.explain_row(root, gpath)
+    assert row["tiers"] == [] and row["problems"], row
+    assert row["problems"][0].startswith("machine-unreadable:"), row
+    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", gpath)
+    assert crew_config.main(["--root", root, "--global-path", gpath, "--explain"]) == 0
+    assert "machine-unreadable" in capsys.readouterr().out
 
 
 # --- sabotage (D7): each patch turns the named rows red --------------------------------

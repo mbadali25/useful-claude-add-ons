@@ -556,17 +556,21 @@ Here `workflow:deploy.yml` is `prod` (`narrowed-by-repo`) and
 `host:api.example.com` stays `qa` (`listed`; the repo's `dev` is ignored).
 
 **Reasons**, checked in this order: `machine-unreadable` and `repo-unreadable`
-(a file that exists and is not a JSON object, or whose `tiers` is not an object:
-every target is `unknown`), `conflicting` (case twins, two keys folding to
-`tiers`, or twins of `tier` in an entry), `invalid` (a bad machine entry),
-`repo-invalid-entry` (a bad repo entry: `unknown` even over a machine `dev`),
-`unlisted`, then `narrowed-by-repo` or `listed`. An absent file is not a
-problem: no machine file means every target is `unlisted`.
+(a file that exists and is not a JSON object, holds `NaN` or `Infinity`, or
+whose `tiers` is present and not an object, `null` included; a worktree whose
+`.crew/` git cannot resolve is `repo-unreadable`: every target is `unknown`),
+`conflicting` (case twins, two keys folding to `tiers`, or twins of `tier` in
+an entry), `invalid` (a bad machine entry), `repo-invalid-entry` (a bad repo
+entry: `unknown` even over a machine `dev`), `unlisted`, then
+`narrowed-by-repo` or `listed`. An absent file, or one with no `tiers` key, is
+not a problem: no machine file means every target is `unlisted`.
 
 **Writing it.** `tiers` is written whole, because a target name may hold `.`:
 `python3 plugin/crew/hooks/scripts/crew_config.py --set
 'tiers={"workflow:deploy.yml":{"tier":"qa"}}' [--repo] --apply`. A path under
-it (`--set tiers.<target>...`) is refused, and `--unset tiers` removes the map.
+it (`--set tiers.<target>...`) is refused, so is a value that is not an object
+(`null` included), and `--unset tiers` removes the map. An upgrade adds
+`tiers: {}` to a file that has none.
 
 **Consumers read `crew_tiers` only.** The merged config (`resolve_config`)
 carries the machine map alone, never the repo's, so it is a lower bound and

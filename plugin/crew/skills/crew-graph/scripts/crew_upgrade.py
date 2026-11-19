@@ -301,12 +301,17 @@ CONFIG_BLOCKS = (
     # Repo-only for the same reason: the cloud guard's identity pins.
     ("cloud", crew_state.CLOUD_DEFAULTS),
     ("change", CHANGE_BLOCK),
-    # R-05: the tier map. An upgraded repo file gains `tiers: {}`; a map it
-    # already holds is kept as written (an empty default merges nothing in), and
-    # an absent one stays absent (a block that comes back empty is not written).
-    # In `_GLOBAL_WHOLE_BLOCKS` too, which prunes nothing here (no default leaf).
+    # R-05: the tier map. An upgraded file gains `tiers: {}` (spec section 5;
+    # `_WRITTEN_WHEN_EMPTY`), so the key is there to fill; a map it already
+    # holds is kept as written (an empty default merges nothing in). In
+    # `_GLOBAL_WHOLE_BLOCKS` too, which prunes nothing here (no default leaf).
     ("tiers", crew_state.TIERS_DEFAULTS),
 )
+
+# Blocks an upgrade writes even when they come back empty and the file never
+# mentioned them (the exception to "a block that comes back empty is not
+# written"): the R-05 tier map, whose empty value is the documented default.
+_WRITTEN_WHEN_EMPTY = ("tiers",)
 
 # `{block_key: block_default}`, restricted to the whole-block globally
 # settable ones -- the lookup `_pinned_at_default` walks. Built from
@@ -707,7 +712,7 @@ def upgrade_config(cfg, accept_dropped=()):
         # decided: nothing. A block the repo DID write (`supplied` a dict,
         # even `{}`) keeps its key regardless, so a deliberate empty block
         # survives exactly as written.
-        if merged or supplied is not _ABSENT:
+        if merged or supplied is not _ABSENT or key in _WRITTEN_WHEN_EMPTY:
             out[key] = merged
 
     # What each schema bump actually added to THIS config, computed from the

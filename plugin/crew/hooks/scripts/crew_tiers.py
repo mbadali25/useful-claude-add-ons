@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 
 import _promote_match
@@ -111,8 +112,17 @@ def _twins(obj):
     return getattr(obj, "twins", None) or []
 
 
+def _no_constant(name):
+    """`parse_constant` for `_read_layer`: `NaN`, `Infinity` and `-Infinity`
+    are not JSON (RFC 8259), so a file holding one is unreadable (D5), never
+    read as if the number were there."""
+    raise ValueError(f"{name} is not JSON")
+
+
 def _read_layer(path):
-    """`("absent", None)`, `("unreadable", detail)` or `("ok", parsed)`."""
+    """`("absent", None)`, `("unreadable", detail)` or `("ok", parsed)`.
+    Never raises: a path `open` refuses (an embedded NUL, a wrong type) is
+    unreadable, not absent, so an unknown never reads as "no file"."""
     if path is None:
         return "absent", None
     try:
@@ -120,14 +130,14 @@ def _read_layer(path):
             raw = fh.read()
     except (FileNotFoundError, NotADirectoryError):
         return "absent", None
-    except OSError as exc:
-        return "unreadable", f"{path}: {type(exc).__name__}: {exc}"
+    except (OSError, ValueError, TypeError) as exc:
+        return "unreadable", f"{path!r}: {type(exc).__name__}: {exc}"
     try:
         text = raw.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
         return "unreadable", f"{path}: not UTF-8 ({exc})"
     try:
-        parsed = json.loads(text, object_pairs_hook=_pairs)
+        parsed = json.loads(text, object_pairs_hook=_pairs, parse_constant=_no_constant)
     except (ValueError, RecursionError) as exc:
         return "unreadable", f"{path}: not JSON ({type(exc).__name__}: {exc})"
     if not isinstance(parsed, dict):
@@ -150,13 +160,15 @@ def _layer(label, status, parsed):
     for group in _twins(parsed):
         if _promote_match.fold(group[0]) == _TIERS_FOLD:
             out["topTwins"] = group
-    tiers = parsed.get("tiers")
-    if tiers is None:
-        # Absent, or `null` (what `crew_config.null_means` calls "unset"): no map.
+    if "tiers" not in parsed:
         return out
+    tiers = parsed["tiers"]
     if not isinstance(tiers, dict):
+        # `null` included (D5): a present key that is not a map is unreadable,
+        # never "no map", so a `"tiers": null` cannot hide the layer's entries.
         out["status"] = "unreadable"
-        out["detail"] = f"its `tiers` is {type(tiers).__name__}, not an object"
+        kind = "null" if tiers is None else type(tiers).__name__
+        out["detail"] = f"its `tiers` is {kind}, not an object"
         return out
     out["map"] = tiers
     return out
@@ -174,9 +186,25 @@ def read_layers(root, global_path=None):
     file; `global_path` None is `crew_config.GLOBAL_CONFIG_PATH`."""
     machine_path = _default_global_path() if global_path is None else global_path
     machine = _layer("machine", *_read_layer(machine_path))
-    repo_path = None if root is None else crew_common.repo_config_file(root, "config.json")
-    repo = _layer("repo", *_read_layer(repo_path))
+    repo = _layer("repo", *_repo_read(root))
     return machine, repo
+
+
+def _repo_read(root):
+    """`_read_layer` for the repo file `crew_common.repo_config_dir` names.
+    When it cannot tell which `.crew/` is in force (a linked worktree git
+    cannot resolve, SOURCE_UNKNOWN) or fails on the path, the repo layer is
+    unreadable, not absent: a narrowing in the main checkout's file must not
+    read as "the repo says nothing"."""
+    if root is None:
+        return "absent", None
+    try:
+        crew_dir, source, detail = crew_common.repo_config_dir(root)
+    except (OSError, ValueError, TypeError) as exc:
+        return "unreadable", f"{root!r}: could not resolve .crew/ ({type(exc).__name__}: {exc})"
+    if source == crew_common.SOURCE_UNKNOWN:
+        return "unreadable", f"could not tell which .crew/ is in force ({detail})"
+    return _read_layer(os.path.join(crew_dir, "config.json"))
 
 
 def _lookup(layer, target):
@@ -351,14 +379,34 @@ def explain_row(root, global_path=None):
         source = "default"
     row = {"path": "tiers", "value": {r["target"]: r[FIELD] for r in results},
            "source": source, "tiers": results, "lines": [_line(r) for r in results],
-           "heldDownBy": "global" if ignored else None}
+           "heldDownBy": "global" if ignored else None,
+           "problems": layer_problems(machine, repo)}
     if ignored:
         row["repoIgnored"] = ignored
+        row["ignoredLines"] = [
+            show(f"{target}: repo asks {json.dumps(entry)}; a repo may only narrow "
+                 "the machine's tier, so it is ignored")
+            for target, entry in ignored.items()]
     return row
 
 
+def layer_problems(machine, repo):
+    """One display line per unreadable layer, so a report with no targets
+    still says the machine (or repo) file could not be read."""
+    return [show(f"{layer['label']}-unreadable: {layer['detail']}")
+            for layer in (machine, repo) if layer["status"] == "unreadable"]
+
+
+def show(text):
+    """`text` safe for one physical line: every character that is not
+    printable (a newline, a carriage return, U+2028, other controls) becomes
+    its escape, so a repo-written name cannot forge another result row."""
+    return "".join(ch if ch.isprintable() else ch.encode("unicode_escape").decode("ascii")
+                   for ch in str(text))
+
+
 def _line(result):
-    return f"{result['target']}  {result[FIELD]}  ({result['reason']})"
+    return show(f"{result['target']}  {result[FIELD]}  ({result['reason']})")
 
 
 def main(argv=None):
@@ -381,18 +429,22 @@ def main(argv=None):
         else:
             print(_line(result))
             for note in result["notes"]:
-                print(f"  - {note}")
+                print(f"  - {show(note)}")
         return 0
-    results = resolve_all(args.root, args.global_path)
+    machine, repo = read_layers(args.root, args.global_path)
+    results = [resolve_layers(machine, repo, t) for t in _targets(machine, repo)]
+    problems = layer_problems(machine, repo)
     if args.json:
         print(json.dumps(results, indent=2))
-    elif not results:
+        return 0
+    for problem in problems:
+        print(f"! {problem}")
+    if not results:
         print("no targets listed: every target is unknown (report-only until R-01)")
-    else:
-        for result in results:
-            print(_line(result))
-            for note in result["notes"]:
-                print(f"  - {note}")
+    for result in results:
+        print(_line(result))
+        for note in result["notes"]:
+            print(f"  - {show(note)}")
     return 0
 
 

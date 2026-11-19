@@ -1686,6 +1686,16 @@ rules:
   tell"; `crew_gitallow.strict_pairs` refuses the whole file for one twin
   anywhere. `crew_tiers._read_layer` reports a broken file as unreadable and
   consults twins only where they decide a tier.
+- **Unreadable means every way of not knowing** (review round 1). A present
+  `"tiers": null` is unreadable, not "no map": otherwise a repo `null` would
+  hide that layer and a machine `dev` would read `listed`; the writer refuses
+  it too, so `--unset tiers` is the only way to remove the map. `NaN` and
+  `Infinity` are not JSON, so a file holding one is unreadable. A path `open`
+  refuses, and a linked worktree whose main checkout git cannot name
+  (`crew_common.SOURCE_UNKNOWN`), read as unreadable, never as absent, so a
+  narrowing in a file crew could not find is never dropped. Text reports escape
+  every non-printable character, so a name holding a newline cannot print as a
+  second result row.
 
 ### The ratchet is one table, not five copies
 
