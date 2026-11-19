@@ -17,8 +17,9 @@ It is never a pass.
 
 ## Codex CLI
 
-**What crew calls.** `review_run.command_for` (`plugin/crew/hooks/scripts/review_run.py:835-849`)
-runs `codex exec` with these flags and nothing else:
+**What crew calls.** `review_run.command_for` (`plugin/crew/hooks/scripts/review_run.py:849`)
+reads the codex row of `plugin/crew/hooks/scripts/review_providers.py` (R-10), whose
+`_codex_command` runs `codex exec` with these flags and nothing else:
 
 | Flag | Meaning |
 |------|---------|
@@ -30,6 +31,16 @@ runs `codex exec` with these flags and nothing else:
 | `-c` | config override (long form `--config`); crew passes `model_reasoning_effort=<effort>` only when an effort is set |
 
 stdin is always closed. A real run hung waiting on it.
+
+**The probe (R-10).** `review_run.py --probe` makes one minimal call through the
+same row's command line, with `review_run.PROBE_PROMPT` as the prompt. Copilot
+has a probe too, through its own row (`copilot -p <PROBE_PROMPT> --model <m>
+--deny-tool write --deny-tool shell -s`), opt-in only, never part of the default
+walk. Crew has no documented Copilot limit text, so a failing Copilot probe is
+`failed` or `unknown`, never `limited`; exit 0 with non-empty stdout is `ok`
+(the reading `provider_probe.py` already made, not checked against a real
+Copilot run). Kimi probes inside its own launch, so its `--probe` makes no call
+and answers `PROBE=deferred`.
 
 **The stream.** Each line is one JSON object whose `type` names the event:
 `thread.started`, `turn.started`, `turn.completed`, `turn.failed`,
@@ -109,9 +120,9 @@ Probed: not probed. The T-0087 host is Linux (Ubuntu) with no `wsl.exe`, so `tes
 **What crew calls.** On Windows, `review_checks.resolve_executable("codex")` or
 `resolve_executable("copilot")` (the absolute `PATH` entries only, never the current
 directory) resolves an npm-installed CLI to its `.cmd` shim. `review_run.through_batch_shim`
-(`plugin/crew/hooks/scripts/review_run.py:435`) names a provider whose resolved
-path ends `.cmd` or `.bat` (`BATCH_SHIM_SUFFIXES`, `:287`), and
-`review_run.prompt_argument` (`:442`) never hands such a provider the prompt
+(`plugin/crew/hooks/scripts/review_run.py:449`) names a provider whose resolved
+path ends `.cmd` or `.bat` (`BATCH_SHIM_SUFFIXES`, `:298`), and
+`review_run.prompt_argument` (`:456`) never hands such a provider the prompt
 inline: it passes the one-line pointer to `prompt.txt` that an over-limit prompt
 already gets, and says why on stderr.
 
