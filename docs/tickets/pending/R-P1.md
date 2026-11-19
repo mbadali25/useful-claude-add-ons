@@ -1,6 +1,8 @@
 # R-P1: Plan-of-record template and validator (`crew_planrecord.py`): sections, research labels, typed operations (`payment`, `account-create`, `admin-identity-op`), per-kind envelope fields, exact-only kinds, generated Accounts, Permissions and Money views, expiry
 
 Status: blocked: waits for R-30, R-P6.
+
+Note (R-30): the nine action kinds, the three typed operations included, are defined in `plugin/crew/hooks/scripts/crew_actions.py` (`KINDS`). R-P1 imports `KINDS` and reads plan text through `validate_text`; it does not redefine a kind. R-P1 still owns envelope fields, which R-30 rejects (`envelope-not-supported`).
 Phase: Phase 5 — Plan of record (new in revision 3)
 Size: M
 Model tier: Opus 5.5
