@@ -74,7 +74,7 @@ def _repo(tmp_path, rules, name="repo"):
     # minutes of slack, not seconds: gate start-up alone was measured at 36s
     # on a loaded Windows host (2026-11-07) and must not decide a case.
     (root / ".crew" / "config.json").write_text(json.dumps(
-        {"verify": {"stopBudgetSeconds": 5000}}), encoding="utf-8")
+        {"verify": {"stopBudgetSeconds": 540}}), encoding="utf-8")
     return root
 
 
@@ -124,12 +124,12 @@ def _timings(root):
 # --- 1. the deadline ------------------------------------------------------
 
 _FAST = _rule(["a.py"], ['touch "$OUT_DIR/fast"'], seconds=1)
-_SLOW = _rule(["a.py"], ['touch "$OUT_DIR/slow"'], seconds=900)
+_SLOW = _rule(["a.py"], ['touch "$OUT_DIR/slow"'], seconds=500)
 
 
 def test_a_rule_that_would_pass_the_hook_deadline_is_deferred_by_name(tmp_path):
     """MUST-BLOCK. Both rules fit the fixture's Stop budget, but at most 300s
-    are left before the hook deadline once the 60s margin is kept: the 900s
+    are left before the hook deadline once the 60s margin is kept: the 500s
     rule must not start, must be named, and the run must not be recorded as
     verified."""
     root = _repo(tmp_path, [_FAST, _SLOW])
@@ -139,7 +139,7 @@ def test_a_rule_that_would_pass_the_hook_deadline_is_deferred_by_name(tmp_path):
     assert "deferred: would pass the hook deadline" in result.stderr, result.stderr
     assert 'touch "$OUT_DIR/slow"' in result.stderr, (
         "the deferred rule must be NAMED. " + result.stderr)
-    assert "priced 900s" in result.stderr, result.stderr
+    assert "priced 500s" in result.stderr, result.stderr
     assert (out / "fast").exists(), "the rule that fits must still run. " + result.stderr
     assert not (out / "slow").exists(), (
         "the rule that would pass the deadline RAN - the gate kept no clock. " + result.stderr)

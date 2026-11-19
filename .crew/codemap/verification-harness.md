@@ -204,7 +204,7 @@ only `bash "..."` and `& "..."` launcher commands (8 of each).
 - **`--price` is operator-only**, dispatched before the stdin read (`verify-gate.sh:34`, comment `:24-33`) and refused in
   any position but first (`:115-116`). The Stop row (`crew_hook.py:81`) passes no extra argument.
 - **Budget.** `budget = 60` (`:1409`) unless `--all`/`--ci` (None) or `verify.stopBudgetSeconds` in the repo config
-  (`:1412-1419`; an unreadable config falls back to 60, never to no limit). Matched rules run mandatory-first, then
+  (`:1412-1419`; an unreadable config, or a value that is not a whole number 1..540, falls back to 60, never to no limit). Matched rules run mandatory-first, then
   cheapest-first (`:1886-1901`); a rule that does not fit whole is deferred, and one costing more than the whole budget is
   CHRONIC (comment `:1925-1935`), which must not block the baseline and must never read as verified (`verify_record.py`
   persists it until a clean `--all`). 38 rules are over 60 s on the declared seconds.

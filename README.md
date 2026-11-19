@@ -239,8 +239,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.167**: The Stop budget reader agrees with the writer (harness-only). `crew` 1.3.167: a hand-edited `verify.stopBudgetSeconds` that `/crew:config` would refuse (0, a negative, a decimal, a string, a boolean, null, a number over 540, or the key written twice) now reads as the 60 s default in `verify-gate.sh`, instead of being taken as written.
 - **crew 1.3.166**: Codex `gpt-6.2-sol` is the pinned default for `qa.codex.model`. `crew` 1.3.166 makes Codex `gpt-6.2-sol` the default review model (`qa.codex.model`), where before the default was `null` and the Codex CLI chose; a repo that spells `"model": null` keeps `null` (no flag) unless a machine-wide config supplies a model, which then wins over that `null`; a new `/crew:init` repo writes the pin itself, so it overrides a custom machine-wide `qa.codex.model` until you remove the repo key.
-- **crew 1.3.161**: An owner-typed, one-use receipt lets an agent run a trust command you approved (harness half, off by default). `crew` 1.3.161 adds the core of an approval route an agent can use and cannot complete: a refused `verify_trust.py approve` becomes a request, you type `/crew:allow-run <id>`, and that exact command may run once. It is off by default, and the command file and config keys that make it usable from a prompt ship in the next change.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
