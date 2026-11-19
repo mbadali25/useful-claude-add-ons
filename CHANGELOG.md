@@ -146,6 +146,12 @@ read entries under any `## [` heading.
 - crew 1.3.159: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); the accepted-value test changed plugin/crew after the number was set, so the branch moved to 1.3.160; the change is recorded under crew 1.3.160
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Added — crew 1.3.183: tracker status maps, Jira transition check and durable event ids (R-72)
+
+- **Summary.** `crew` 1.3.183 gives every tracker kind a status map, checks a Jira transition against the issue's last seen status before it is pushed, and gives each tracker post a durable event id so a timed-out post is not posted twice.
+- **What.** `crew_tracker.py` gains `STATUS_MAP` (files, obsidian and sdp take the crew word; Jira its 13-status workflow, `JIRA_STATUSES`) and `transition` (Jira only: go / unchanged / refused); a Jira delegated push prints a second line, `jira: target: <name>`, and `_line` is unchanged. New `crew_tracker_events.py` keeps a ledger under the git common dir and searches for the `crew-event: <id>` marker before re-posting; `events` is report-only (R-73 enforces). `jira-sync.md` holds the one "Posting once" procedure and `sdp-sync.md` points at it.
+- **Tests.** `test_crew_tracker_maps.py`, `test_crew_tracker_events.py` (with in-test mutants), plus additions to `test_crew_tracker.py`, `test_status_vocabulary.py` and `test_crew_autopilot_tracker.py`.
+
 ### Changed — crew 1.3.182: review provider registry; one probe per attempt (R-10)
 
 - **Summary.** `crew` 1.3.182 moves each review provider's command, parser, limit text and probe kind into one registry row, so `review_run.py` no longer branches on `codex` by name; the default `/crew:review` path is unchanged.

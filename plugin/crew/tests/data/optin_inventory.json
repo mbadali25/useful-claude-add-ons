@@ -456,6 +456,22 @@
    "target": "hooks/scripts/crew_tracker.py"
   },
   {
+   "file": "commands/jira-sync.md",
+   "home": "crew-trackers",
+   "in": "core",
+   "kind": "exec",
+   "line": 55,
+   "target": "hooks/scripts/crew_tracker.py"
+  },
+  {
+   "file": "commands/jira-sync.md",
+   "home": "crew-trackers",
+   "in": "core",
+   "kind": "exec",
+   "line": 79,
+   "target": "hooks/scripts/crew_tracker.py"
+  },
+  {
    "file": "commands/obsidian-sync.md",
    "home": "crew-trackers",
    "in": "core",
@@ -502,6 +518,14 @@
    "kind": "exec",
    "line": 11,
    "target": "hooks/scripts/crew_tracker.py"
+  },
+  {
+   "file": "commands/sdp-sync.md",
+   "home": "crew-trackers",
+   "in": "core",
+   "kind": "read",
+   "line": 69,
+   "target": "commands/jira-sync.md"
   },
   {
    "file": "skills/crew-change/SKILL.md",
