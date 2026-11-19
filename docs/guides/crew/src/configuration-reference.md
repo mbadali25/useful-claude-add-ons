@@ -506,7 +506,7 @@ Columns:
 | `schema` | repo | `8` | not validated - read by `plugin/crew/hooks/scripts/crew_state.py` (expects integer) | 0.11.0 or earlier | Config schema version; `/crew:migrate` upgrades an older one. |
 | `tracker` | repo | `"files"` | `files` \| `obsidian` \| `jira` \| `sdp` | 0.11.0 or earlier | Where tickets live; `crew_tracker.resolve` answers `could not tell` when two configs disagree. |
 | `verifyGate` | repo | `true` | not validated - read by `plugin/crew/hooks/scripts/verify-gate.sh` (expects boolean) | 0.11.0 or earlier | Run the Stop verify gate. |
-| `tiers` | both, ratchet | `{}` | object of `<kind>:<name>` to {tier} (checked in `plugin/crew/hooks/scripts/crew_tiers.py`) | unreleased | Machine-owned tier per target (`<kind>:<name>` -> `{"tier": "dev"\|"qa"\|"prod"}`); dev < qa < prod < unknown, an unlisted target is `unknown`, and a repo entry may only narrow. Written whole (`--set tiers=<map>`). Read through `crew_tiers` only, never the merged value; report-only until R-01. |
+| `tiers` | both, ratchet | `{}` | object of `<kind>:<name>` to {tier} (checked in `plugin/crew/hooks/scripts/crew_tiers.py`) | 1.3.180 | Machine-owned tier per target (`<kind>:<name>` -> `{"tier": "dev"\|"qa"\|"prod"}`); dev < qa < prod < unknown, an unlisted target is `unknown`, and a repo entry may only narrow. Written whole (`--set tiers=<map>`). Read through `crew_tiers` only, never the merged value; report-only until R-01. |
 
 ### `qa`
 
@@ -755,7 +755,7 @@ Columns:
 | `unattendedCloud.aws.readOnly.profile` | machine-only | `null` | profile name, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.10 | The AWS profile an unattended run exports credentials from (`aws configure export-credentials`); it must yield temporary credentials. Machine file only. |
 | `unattendedCloud.aws.readOnly.identity` | machine-only | `null` | ARN prefix ending in `/`, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.10 | The assumed-role ARN prefix STS must report for that profile, ending in `/`; null refuses every launch. Machine file only. |
 | `unattendedCloud.aws.readOnly.region` | machine-only | `null` | region, or null (coerced in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.10 | The AWS region the unattended run gets; null is `us-east-1`. Machine file only. |
-| `unattendedCloud.aws.nonProd` | machine-only | `{}` | None (checked in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.10 | Environment name -> `{profile, identity, region}` for `launch --environment NAME`; usable only where the repo's `environments.nonProd` agrees. Machine file only. |
+| `unattendedCloud.aws.nonProd` | machine-only | `{}` | object: environment name -> {profile, identity, region?} (checked in `plugin/crew/hooks/scripts/crew_unattended.py`) | 1.1.10 | Environment name -> `{profile, identity, region?}` (region optional, default `us-east-1`) for `launch --environment NAME`; usable only where the repo's `environments.nonProd` agrees. Machine file only. |
 
 ## Coming (not in code yet)
 

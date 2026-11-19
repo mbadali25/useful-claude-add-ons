@@ -3,6 +3,7 @@ from. Each check here is what keeps that table honest against the code:
 one row per leaf, value tuples held by identity (never copied), code-branch
 values run through the real reader, and no "coming" key already in the code.
 """
+import importlib.util
 import json
 import os
 import re
@@ -52,6 +53,18 @@ def test_problems_names_a_deleted_and_an_extra_row(monkeypatch):
     found = crew_keys.problems()
     assert "missing: pm.maxDispatches is a config leaf with no KEY_META row" in found
     assert "orphan: pm.noSuchKey has a KEY_META row and is not a config leaf" in found
+
+
+def test_problems_guards_field_types(monkeypatch):
+    """A non-string summary, type or since is a named problem, not an exception."""
+    meta = dict(crew_keys.KEY_META)
+    meta["pm.authority"] = dict(meta["pm.authority"], summary=5)
+    meta["pm.maxDispatches"] = dict(meta["pm.maxDispatches"], type=["x"], since=123)
+    monkeypatch.setattr(crew_keys, "KEY_META", meta)
+    found = crew_keys.problems()
+    assert "no summary: pm.authority" in found
+    assert any(p.startswith("bad type text: pm.maxDispatches") for p in found)
+    assert any(p.startswith("bad arrival version: pm.maxDispatches") for p in found)
 
 
 def test_ratcheted_rows_do_not_restate_tiers():
@@ -194,7 +207,8 @@ def test_since_is_a_version_no_newer_than_the_plugin():
         plugin = _version(json.load(fh)["version"])
     for key, row in crew_keys.KEY_META.items():
         since = row["since"]
-        if since is None or since == "<=0.11.0":
+        assert since is not None, key
+        if since == "<=0.11.0":
             continue
         assert re.fullmatch(r"\d+\.\d+\.\d+", since), (key, since)
         assert _version(since) <= plugin, (key, since)
@@ -436,6 +450,9 @@ _NOT_A_READER = {
     ('hooks/scripts/crew_policy.py',
      'tier = _pick(req.get("tier"), TIERS)'):
         "a field of the policy table's request dict (dev, qa or prod), not the retired config key",
+    ('hooks/scripts/crew_actions.py',
+     'tier = action.get("tier", _MISSING)'):
+        "a field of a planned action in the Actions block (dev, qa or prod), not the retired config key",
     ('hooks/scripts/crew_config.py',
      'table = block.get("roles")'):
         _ROLE_PINS,
@@ -613,3 +630,112 @@ def test_no_section_citations():
     offenders = [p for p in listed.stdout.split() if not p.startswith(_CITATION_EXEMPT_PREFIXES)]
 
     assert offenders == [], "CONFIG.md section citations remain in:\n" + "\n".join(offenders)
+
+
+# --- R-C1: a row is complete (summary, allowed values, layer, arrival version) --
+
+def _with_row(monkeypatch, key, **changes):
+    meta = dict(crew_keys.KEY_META)
+    meta[key] = dict(meta[key], **changes)
+    monkeypatch.setattr(crew_keys, "KEY_META", meta)
+    return crew_keys.problems()
+
+
+def _load_config_reference():
+    path = os.path.join(os.path.dirname(os.path.dirname(PLUGIN)), "docs", "guides",
+                        "crew", "src", "config_reference.py")
+    spec = importlib.util.spec_from_file_location("config_reference_r_c1", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_committed_table_is_complete():  # A1
+    assert crew_keys.problems() == []
+
+
+def test_blank_summary_is_a_problem(monkeypatch):  # B1
+    assert "no summary: pm.authority" in _with_row(monkeypatch, "pm.authority", summary="   ")
+
+
+def test_missing_arrival_version_is_a_problem(monkeypatch):  # B2
+    assert "no arrival version: qa.order" in _with_row(monkeypatch, "qa.order", since=None)
+
+
+def test_malformed_arrival_version_is_a_problem(monkeypatch):  # B3
+    assert "bad arrival version: qa.order ('1.3')" in _with_row(monkeypatch, "qa.order", since="1.3")
+
+
+def test_the_first_version_marker_is_an_arrival_version(monkeypatch):  # A2
+    found = _with_row(monkeypatch, "qa.order", since=crew_keys.FIRST)
+    assert not [p for p in found if "arrival version" in p]
+
+
+def test_a_row_with_neither_values_nor_type_is_a_problem(monkeypatch):  # B4
+    key = "unattendedCloud.aws.readOnly.region"
+    assert crew_keys.KEY_META[key]["values"] is None
+    assert f"no allowed values: {key}" in _with_row(monkeypatch, key, type=None)
+
+
+def test_a_tuple_row_with_no_values_is_a_problem(monkeypatch):  # B5
+    key = next(k for k, r in crew_keys.KEY_META.items()
+               if r["kind"] == "tuple" and not crew_guards.ratchet_spec(k))
+    assert f"no allowed values: {key}" in _with_row(monkeypatch, key, values=(), type=None)
+
+
+def test_a_list_row_with_a_type_but_no_values_is_a_problem(monkeypatch):  # B8
+    key = "qa.order"
+    assert crew_keys.KEY_META[key]["type"] == "list of"
+    assert f"no allowed values: {key}" in _with_row(monkeypatch, key, values=())
+
+
+def test_an_open_table_row_with_values_but_no_type_is_a_problem(monkeypatch):  # B9
+    key = "unattendedCloud.aws.nonProd"
+    assert crew_keys.KEY_META[key]["kind"] == "open-table"
+    assert f"no allowed values: {key}" in _with_row(
+        monkeypatch, key, values=("a",), type=None)
+
+
+def test_a_blank_layer_definition_stops_the_generator(monkeypatch):  # B10
+    module = _load_config_reference()
+    module.Model()
+    monkeypatch.setattr(module, "LAYER_TERMS", (("repo", "   "),) + module.LAYER_TERMS[1:])
+    with pytest.raises(RuntimeError, match="repo"):
+        module.Model()
+
+
+def test_a_none_layer_definition_stops_the_generator(monkeypatch):  # B10b
+    module = _load_config_reference()
+    monkeypatch.setattr(module, "LAYER_TERMS", (("repo", None),) + module.LAYER_TERMS[1:])
+    with pytest.raises(RuntimeError, match="repo"):
+        module.Model()
+
+
+def test_values_alone_or_type_alone_is_allowed():  # A3, A4
+    assert crew_keys.KEY_META["dev.provider"]["type"] is None
+    assert crew_keys.KEY_META["qa.fallback"]["values"] is None
+    assert not [p for p in crew_keys.problems() if "allowed values" in p]
+
+
+def test_a_layer_outside_layers_is_a_problem(monkeypatch):  # B6
+    key = "pm.authority"
+    real = crew_keys.layer_of
+    monkeypatch.setattr(crew_keys, "layer_of", lambda k: "nowhere" if k == key else real(k))
+    assert f"no layer class: {key} ('nowhere')" in crew_keys.problems()
+
+
+def test_layers_is_exactly_what_layer_of_returns():  # A5
+    observed = {crew_keys.layer_of(k) for k in crew_keys.KEY_META}
+    assert observed == set(crew_keys.LAYERS)
+
+
+def test_a_layer_with_no_definition_stops_the_generator(monkeypatch):  # B7
+    module = _load_config_reference()
+    module.Model()
+    monkeypatch.setattr(crew_keys, "LAYERS", crew_keys.LAYERS + ("protected",))
+    with pytest.raises(RuntimeError, match="protected"):
+        module.Model()
+
+
+def test_the_nonprod_table_describes_its_shape():  # A6
+    assert (crew_keys.KEY_META["unattendedCloud.aws.nonProd"]["type"] or "").strip()

@@ -616,7 +616,7 @@ by tier (R-01, R-35, R-A1, R-36) calls <code>crew_tiers.resolve</code>.</p>
 <td>both, ratchet</td>
 <td><code>{}</code></td>
 <td>object of <code>&lt;kind&gt;:&lt;name&gt;</code> to {tier} (checked in <code>plugin/crew/hooks/scripts/crew_tiers.py</code>)</td>
-<td>unreleased</td>
+<td>1.3.180</td>
 <td>Machine-owned tier per target (<code>&lt;kind&gt;:&lt;name&gt;</code> -&gt; <code>{"tier": "dev"\|"qa"\|"prod"}</code>); dev &lt; qa &lt; prod &lt; unknown, an unlisted target is <code>unknown</code>, and a repo entry may only narrow. Written whole (<code>--set tiers=&lt;map&gt;</code>). Read through <code>crew_tiers</code> only, never the merged value; report-only until R-01.</td>
 </tr>
 </tbody>
@@ -1857,9 +1857,9 @@ by tier (R-01, R-35, R-A1, R-36) calls <code>crew_tiers.resolve</code>.</p>
 <td><code>unattendedCloud.aws.nonProd</code></td>
 <td>machine-only</td>
 <td><code>{}</code></td>
-<td>None (checked in <code>plugin/crew/hooks/scripts/crew_unattended.py</code>)</td>
+<td>object: environment name -&gt; {profile, identity, region?} (checked in <code>plugin/crew/hooks/scripts/crew_unattended.py</code>)</td>
 <td>1.1.10</td>
-<td>Environment name -&gt; <code>{profile, identity, region}</code> for <code>launch --environment NAME</code>; usable only where the repo's <code>environments.nonProd</code> agrees. Machine file only.</td>
+<td>Environment name -&gt; <code>{profile, identity, region?}</code> (region optional, default <code>us-east-1</code>) for <code>launch --environment NAME</code>; usable only where the repo's <code>environments.nonProd</code> agrees. Machine file only.</td>
 </tr>
 </tbody>
 </table>

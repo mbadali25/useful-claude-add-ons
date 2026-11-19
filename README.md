@@ -239,8 +239,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.174**: `crew_policy.py`, the one decision table, report-only. `crew` 1.3.174 adds `crew_policy.py`, one table that says what crew would allow, ask about or refuse for an operation, with the reason; nothing calls it yet, so no allow or deny anywhere changes.
-- **crew 1.3.167**: The Stop budget reader agrees with the writer (harness-only). `crew` 1.3.167: a hand-edited `verify.stopBudgetSeconds` that `/crew:config` would refuse (0, a negative, a decimal, a string, a boolean, null, a number over 540, or the key written twice) now reads as the 60 s default in `verify-gate.sh`, instead of being taken as written.
+- **crew 1.3.179**: `crew_actions.py`, the Actions schema per kind, report-only. `crew` 1.3.179 adds `crew_actions.py`, one closed schema for a plan's Actions block that says whether each planned action is well formed and why not; nothing calls it yet, so no guard or command changes.
+- **crew 1.3.177**: `crew_triage.py`, size route, difficulty score and starting model, report-only. `crew` 1.3.177 adds `crew_triage.py`, which says for one task whether it is an epic, needs a size, is mechanical or docs-only, or which model it would start on and why; nothing calls it yet, so no model choice anywhere changes.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

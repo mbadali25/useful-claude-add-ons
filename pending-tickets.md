@@ -28,14 +28,13 @@ repairs and the rest.
 | 6 | [R-10](docs/tickets/pending/R-10.md) | Provider registry; one probe per attempt | M | Opus 5.5 | H | 1 |
 | 7 | [R-20](docs/tickets/pending/R-20.md) | Store tripwire stops refusing everyday commands | S | Opus 5.5 | H | 2 |
 | 8 | [R-21](docs/tickets/pending/R-21.md) | ADR and measurement: is a blocked prompt's hook text shown; does a plain reply arrive unchanged | S | Fable 5.2 |  | 2 |
-| 9 | [R-C1](docs/tickets/pending/R-C1.md) | Registry completeness: every key has a plain-language line, allowed values, a layer class and its arrival version | S | Sonnet 5.5 |  | 13 |
-| 10 | [R-03](docs/tickets/pending/R-03.md) | Capture one refused IAM write and one refused dispatch | S | Haiku 5.5 |  | 0 |
-| 11 | [R-3B](docs/tickets/pending/R-3B.md) | CLAUDE.md wording for O1 | S | Sonnet 5.5 |  | 4 |
-| 12 | [R-42](docs/tickets/pending/R-42.md) | Backup evidence, first provider (AWS RDS snapshots) | M | Opus 5.5 |  | 7 |
-| 13 | [R-54](docs/tickets/pending/R-54.md) | Scope guard allowance for the active ticket's handoff file | S | Opus 5.5 | H | 8 |
-| 14 | [R-70](docs/tickets/pending/R-70.md) | `crew_triage.py` | S | Sonnet 5.5 |  | 10 |
-| 15 | [R-72](docs/tickets/pending/R-72.md) | Status maps and event ids for all four trackers | M | Opus 5.5 |  | 10 |
-| 16 | [R-80](docs/tickets/pending/R-80.md) | Tiers and slices in `gate-runner.py` | M | Sonnet 5.5 |  | 11 |
+| 9 | [R-03](docs/tickets/pending/R-03.md) | Capture one refused IAM write and one refused dispatch | S | Haiku 5.5 |  | 0 |
+| 10 | [R-3B](docs/tickets/pending/R-3B.md) | CLAUDE.md wording for O1 | S | Sonnet 5.5 |  | 4 |
+| 11 | [R-42](docs/tickets/pending/R-42.md) | Backup evidence, first provider (AWS RDS snapshots) | M | Opus 5.5 |  | 7 |
+| 12 | [R-54](docs/tickets/pending/R-54.md) | Scope guard allowance for the active ticket's handoff file | S | Opus 5.5 | H | 8 |
+| 13 | [R-70](docs/tickets/pending/R-70.md) | `crew_triage.py` | S | Sonnet 5.5 |  | 10 |
+| 14 | [R-72](docs/tickets/pending/R-72.md) | Status maps and event ids for all four trackers | M | Opus 5.5 |  | 10 |
+| 15 | [R-80](docs/tickets/pending/R-80.md) | Tiers and slices in `gate-runner.py` | M | Sonnet 5.5 |  | 11 |
 
 ## All tickets by phase
 
@@ -91,7 +90,7 @@ repairs and the rest.
 
 | Ticket | Title | Size | Model | H | Depends | Status |
 |---|---|---|---|---|---|---|
-| [R-30](docs/tickets/pending/R-30.md) | Actions schema per kind, validation | M | Opus 5.5 |  | R-01 | blocked: R-01 |
+| [R-30](docs/tickets/pending/R-30.md) | Actions schema per kind, validation | M | Opus 5.5 |  | R-01 | done (PR #797) |
 | [R-31](docs/tickets/pending/R-31.md) | Planned-action matcher for exact actions, report-only | M | Opus 5.5 |  | R-30 | blocked: R-30 |
 | [R-32](docs/tickets/pending/R-32.md) | Protected policy: effective-policy comparison | M | Opus 5.5 |  | R-01 | blocked: R-01 |
 | [R-33](docs/tickets/pending/R-33.md) | Never lane: hook-skipping flags, redaction, secret tripwire | M | Opus 5.5 |  | R-01 | blocked: R-01 |
@@ -202,7 +201,7 @@ repairs and the rest.
 
 | Ticket | Title | Size | Model | H | Depends | Status |
 |---|---|---|---|---|---|---|
-| [R-C1](docs/tickets/pending/R-C1.md) | Registry completeness: every key has a plain-language line, allowed values, a layer class and its arrival version | S | Sonnet 5.5 |  | — | READY |
+| [R-C1](docs/tickets/pending/R-C1.md) | Registry completeness: every key has a plain-language line, allowed values, a layer class and its arrival version | S | Sonnet 5.5 |  | — | done (PR #795) |
 | [R-C2](docs/tickets/pending/R-C2.md) | Generator writes `config.blank.json`, `global.blank.json`, `keys.json` and `template.annotated.md` into `plugin/crew/docs/configuration/`; `--check` covers them | M | Opus 5.5 |  | R-C1 | blocked: R-C1 |
 | [R-C3](docs/tickets/pending/R-C3.md) | `guide.md`: layers, owner set-up, the AI procedure, worked examples as files validated in CI | M | Sonnet 5.5 |  | R-C2 | blocked: R-C2 |
 | [R-C4](docs/tickets/pending/R-C4.md) | `CONFIG.md` becomes a generated index under its cap; prose and family tables move to the guide; budgets read and set | S | Sonnet 5.5 |  | R-C2 | blocked: R-C2 |
