@@ -727,7 +727,7 @@
       "seconds": 90,
       "run": ["python3 scripts/_test/gate-runner.py"],
       "reach": "local",
-      "why": "L-0513: the one local gate runner lanes call instead of their own suites*.sh. It must never report a pass it did not see (T-0082): timeouts, signal deaths, could-not-start and missing results are COULD-NOT-TELL. R-80: also its opt-in map mode (tiers and slices of this map; selected set covered exactly once). See docs/crew/verify-rationale.md#gate-runner" },
+      "why": "L-0513: the one local gate runner lanes call instead of their own suites*.sh. It must never report a pass it did not see (T-0082): timeouts, signal deaths, could-not-start and missing results are COULD-NOT-TELL. R-80 adds its opt-in map mode. See docs/crew/verify-rationale.md#gate-runner" },
     { "id": "windows-shards", "paths": ["scripts/check-windows-shards.py", "scripts/_test/windows-shards.py", ".github/workflows/pytest-crew.yml"],
       "seconds": 5,
       "run": ["python3 scripts/_test/windows-shards.py"],
