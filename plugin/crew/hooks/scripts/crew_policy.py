@@ -61,6 +61,12 @@ Readings this file chooses where the plan is silent (each is a test):
     account, a provider ticket and proven ownership; unattended and not
     proved is refused. A grant that would make the account an admin account
     (facts.makes_admin) is denied, with or without a plan.
+  * In production the attestation is required attended or not (4.5 lists
+    it among the per-operation checks); 4.13's "attended without an
+    attestation" applies outside production.
+  * A production write by any route (grant, payment, outside effect) needs
+    the verified write account; an admin operation does not (the broker).
+  * QA data deletion needs facts.noted_on_ticket True, planned or not.
   * A tier landing is exact-only (no standing plan), and its own conditions
     still hold when a plan covers it.
   * A reading with an unknown tier is refused by rule 3 like any other
@@ -288,10 +294,13 @@ GRANT_FACTS = (("expiry_provable", True), ("within_ceiling", True),
                ("ownership", "own"))
 
 
-def _lane_facts(spec: Op, facts: dict) -> list:
+def _lane_facts(spec: Op, facts: dict, tier: str) -> list:
     """The conditions of the operation's own lane. A grant's expiry facts
     are dropped only when the grant is positively shown to be permanent
     (nothing to expire); unknown permanence keeps them."""
+    if spec.lane == DESTRUCTIVE:
+        # QA: the data change is noted on the ticket (4.5), planned or not.
+        return [("noted_on_ticket", True)] if tier == "qa" else []
     if spec.lane != GRANT:
         return list(spec.facts)
     if _fact(facts, "permanence", "permanent") == "met":
@@ -385,8 +394,11 @@ def decide(request: Any) -> dict:
     if layer != "clear":
         return done("2", stop_outcome,
                     f"machine layer is {layer} ({stop_word})")
-    access = spec.account or ("write" if spec.lane == GRANT and tier == "prod"
-                              else None)
+    # A production write by any route uses the verified write account; an
+    # admin operation goes through the broker instead (4.14).
+    access = spec.account or (
+        "write" if tier == "prod" and not spec.admin
+        and spec.lane in (GRANT, SERIOUS_ALWAYS) else None)
     if access:
         account = _pick(req.get("account"), ACCOUNTS)
         walk.look("2", f"account {account}, needs {access}-verified")
@@ -449,9 +461,7 @@ def decide(request: Any) -> dict:
 
     if spec.lane == READ:
         return done("6", ALLOW, "read with a verified read account")
-    needed = _lane_facts(spec, facts)
-    if spec.lane == DESTRUCTIVE and tier == "qa":
-        needed.append(("noted_on_ticket", True))
+    needed = _lane_facts(spec, facts, tier)
     if name == "merge-pr" and _emergency(req, name):
         needed = [f for f in needed if f[0] != "review_clean"]
         walk.look("8", "an owner-declared emergency for this action waives "
@@ -523,13 +533,19 @@ def _serious(req: dict, walk: _Walk, subject: tuple, serious: str,
             return walk.done("5", DENY, "the preflight is missing or "
                                         "failed, so it refuses (4.5)", serious)
     if walk.tier == "prod":
+        if not attested:
+            return walk.done(
+                "5", NEEDS_PLAN,
+                f"serious ({serious}) in production: the plan approval's "
+                "attestation is one of the per-operation checks (4.5), "
+                "attended or not", serious)
         check = _pick(req.get("prodcheck"), PRODCHECK)
         walk.look("5", f"production checks {check}")
         if check != "pass":
             return walk.done(
                 "5", stop_outcome,
                 f"production checks are {check} ({stop_word})", serious)
-    lane_facts = _lane_facts(spec, facts)
+    lane_facts = _lane_facts(spec, facts, walk.tier)
     if lane_facts:
         verdicts, bad, unknown = _verdicts(lane_facts, facts)
         walk.look("5", "the lane's own conditions still hold: " + ", ".join(

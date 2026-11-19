@@ -73,7 +73,8 @@ def req(op, tier="dev", presence="attended", facts=None, **top):
     if spec is not None:
         if spec.account:
             out["account"] = spec.account + "-verified"
-        if spec.lane == P.GRANT and tier == "prod":
+        if (tier == "prod" and not spec.admin
+                and spec.lane in (P.GRANT, P.SERIOUS_ALWAYS)):
             out["account"] = "write-verified"
         if spec.admin:
             out["admin_need"] = "covers"
@@ -165,7 +166,8 @@ def _cases():
                     planned(op, tier, presence="unattended", attested=False),
                     "needs-plan")
                 add(f"{op}: {tier}, attended and not attested",
-                    planned(op, tier, attested=False), "allow")
+                    planned(op, tier, attested=False),
+                    "needs-plan" if tier == "prod" else "allow")
                 add(f"{op}: {tier}, plan of record, unattended",
                     planned(op, tier, presence="unattended"), "allow")
             for presence in ("attended", "unattended"):
@@ -368,6 +370,25 @@ def _cases():
         "ask-routine")
     add("delete-data: qa, noted_on_ticket false",
         req("delete-data", "qa", facts={"noted_on_ticket": False}), "deny")
+    for ownership, backup in (("other", "provable"), ("own", "none")):
+        add(f"delete-data: qa, serious ({ownership}/{backup}), not noted",
+            planned("delete-data", "qa", facts={
+                "ownership": ownership, "backup": backup,
+                "noted_on_ticket": GONE, "irreversible_listed": True,
+                "cap_set": True, "preflight_ok": True}), "ask-owner")
+        add(f"delete-data: qa, serious ({ownership}/{backup}), noted",
+            planned("delete-data", "qa", facts={
+                "ownership": ownership, "backup": backup,
+                "irreversible_listed": True, "cap_set": True,
+                "preflight_ok": True}), "allow")
+    for op in ("payment", "irreversible-outside-effect"):
+        for acct in ("none", "read-verified", GONE):
+            add(f"{op}: covered prod, account {acct!r}",
+                planned(op, "prod", account=acct), "ask-owner")
+        add(f"{op}: covered dev needs no account", planned(op, account=GONE),
+            "allow")
+    add("deploy: attended prod with the attestation contradicted",
+        planned("start-deploy", "prod", attested=False), "needs-plan")
     add("delete-data: dev needs no ticket note",
         req("delete-data", "dev", facts={"noted_on_ticket": GONE}), "allow")
     add("grant-permission: a plan cannot grant admin rights",
@@ -1084,8 +1105,18 @@ MUTATIONS = (
     ("a production grant needs no write account",
      'else None)\n    if access:', 'else None)\n    if spec.account:'),
     ("a QA deletion needs no ticket note",
-     '    if spec.lane == DESTRUCTIVE and tier == "qa":\n',
-     '    if False:\n'),
+     '        return [("noted_on_ticket", True)] if tier == "qa" else []\n',
+     '        return []\n'),
+    ("a production payment needs no write account",
+     'and spec.lane in (GRANT, SERIOUS_ALWAYS) else None)',
+     'and spec.lane == GRANT else None)'),
+    ("an unattested plan may do an attended production write",
+     '        if not attested:\n            return walk.done(\n'
+     '                "5", NEEDS_PLAN,\n'
+     '                f"serious ({serious}) in production',
+     '        if False:\n            return walk.done(\n'
+     '                "5", NEEDS_PLAN,\n'
+     '                f"serious ({serious}) in production'),
     ("a grant's expiry facts are not required for a temporary grant",
      '    return list(GRANT_FACTS)\n', '    return []\n'),
     ("an unattended grant that cannot be proved only asks",
