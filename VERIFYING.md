@@ -75,7 +75,9 @@ sabotage that proved each check can fail.
 `python3 scripts/gate-runner.py --list` prints what it would run; without `--list` it runs it and
 writes one status file (the path is printed). States are PASS, FAIL, SKIP (exit 77 or a missing
 tool, which is NOT VERIFIED) and COULD-NOT-TELL. `--check-ci` reports whether its table still
-matches `.github/workflows/`.
+matches `.github/workflows/`. `--map .crew/verify.json --changed-file F --tier fast|heavy` or
+`--slice <K>/<N>` (add `--plan` to only print the selection) selects the rules a diff requires
+and runs one tier or one slice of them; it is opt-in and not yet wired into the verify gate (R-81).
 
 ### 5. Regression
 
