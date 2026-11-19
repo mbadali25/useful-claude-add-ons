@@ -450,6 +450,9 @@ _NOT_A_READER = {
     ('hooks/scripts/crew_policy.py',
      'tier = _pick(req.get("tier"), TIERS)'):
         "a field of the policy table's request dict (dev, qa or prod), not the retired config key",
+    ('hooks/scripts/crew_actions.py',
+     'tier = action.get("tier", _MISSING)'):
+        "a field of a planned action in the Actions block (dev, qa or prod), not the retired config key",
     ('hooks/scripts/crew_config.py',
      'table = block.get("roles")'):
         _ROLE_PINS,
