@@ -402,6 +402,8 @@ def _cost_over(estimate: Any, threshold: Any) -> str:
         limit = 0   # an invalid threshold must not widen (D6)
     if not isinstance(estimate, dict):
         return CANNOT_ESTIMATE
+    if set(estimate) != {"amount", "currency", "period"}:
+        return CANNOT_ESTIMATE   # an extra or missing key is not the shape
     amount = _amount(estimate.get("amount"))
     currency = _pick(estimate.get("currency"), ("usd",))
     period = _pick(estimate.get("period"), ("month",))

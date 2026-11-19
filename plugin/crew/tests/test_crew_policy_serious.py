@@ -19,6 +19,7 @@ Three kinds of test:
 """
 import contextlib
 import copy
+import hashlib
 import io
 import json
 import subprocess
@@ -107,6 +108,8 @@ SERIOUS_CASES = [
     ("money: period year", fx(monthly_cost=usd(10, period="year")), "dev", [P.MONEY], True),
     ("money: monthly_cost absent", fx(monthly_cost=GONE), "dev", [P.MONEY], True),
     ("money: monthly_cost not an object", fx(monthly_cost=10), "dev", [P.MONEY], True),
+    ("money: an estimate with an extra key", fx(monthly_cost=dict(usd(10), extra=True)),
+     "dev", [P.MONEY], True),
     ("production-write: writes True in prod", fx(writes=True), "prod",
      [P.PRODUCTION_WRITE], True),
     ("production-write: writes missing in prod", fx(writes=GONE), "prod",
@@ -303,7 +306,8 @@ def check_d9(m):
         done = m.decide(_tf(tier, False))
         if brief(done) != ("needs-plan", "5", P.MONEY):
             bad.append(f"D9 {tier}: an explicit False fact was overridden: {brief(done)}")
-        for label, cost in (("60 USD", usd(60)), ("EUR", usd(10, currency="EUR"))):
+        for label, cost in (("60 USD", usd(60)), ("EUR", usd(10, currency="EUR")),
+                            ("an extra key", dict(usd(10), extra=True))):
             done = m.decide(_tf(tier, GONE, cost))
             if brief(done) != ("needs-plan", "5", P.MONEY):
                 bad.append(f"D9 {tier} {label}: {brief(done)}")
@@ -364,9 +368,30 @@ def check_cli_reads_the_tier(m):
     return bad
 
 
+# sha256 of json.dumps([decide(row) for every R-01 row], sort_keys=True), the
+# full result and trace of each row, measured with the R-01 module (origin/main
+# 75088d6aa, before R-P6). Row ids are left out: some hold an object's address,
+# which changes from run to run. When the R-01 table or its rules change on
+# purpose, re-measure it with the module of that change and replace this value.
+R01_RESULTS_SHA256 = "cabc86892694b951a2f08e87efd2ded5b7e9b70a8710e73eb55ed0e76751bbe5"
+
+
+def r01_results_digest(m):
+    """The digest of `m.decide` over every R-01 row, result and trace."""
+    rows = [m.decide(copy.deepcopy(r)) for _cid, r, _want in T.CASES]
+    return hashlib.sha256(json.dumps(rows, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def check_r01_parity(m):
+    """Without effects, every R-01 row keeps its full result and trace."""
+    got = r01_results_digest(m)
+    return [] if got == R01_RESULTS_SHA256 else [
+        f"the R-01 rows' results or traces moved: {got}"]
+
+
 CHECKS = (check_serious_cases, check_admin_and_empty_paths, check_must_allow,
           check_union_with_own_class, check_d9, check_threshold,
-          check_presence_not_value, check_cli_reads_the_tier)
+          check_presence_not_value, check_cli_reads_the_tier, check_r01_parity)
 
 
 def violations(module):
@@ -458,6 +483,8 @@ def test_without_effects_every_r01_row_is_unchanged_trace_included():
         done = P.decide(request)
         assert done["outcome"] == want, cid
         assert "effects" not in "\n".join(done["trace"]), cid
+    # The full result and trace of every row, not only the outcome.
+    assert r01_results_digest(P) == R01_RESULTS_SHA256
 
 
 def _baseline(request):
@@ -583,7 +610,11 @@ MUTATIONS = (
      '    if destroys not in ("none", "own"):\n',
      '    if destroys == "not-own":\n'),
     ("3c a missing cost amount counts as zero",
+     '    if set(estimate) != {"amount", "currency", "period"}:\n'
+     '        return CANNOT_ESTIMATE   # an extra or missing key is not the shape\n'
      '    amount = _amount(estimate.get("amount"))\n',
+     '    if not set(estimate) <= {"amount", "currency", "period"}:\n'
+     '        return CANNOT_ESTIMATE\n'
      '    amount = _amount(estimate.get("amount", 0))\n'),
     ("4 a missing cost estimate is under the threshold",
      "    if not isinstance(estimate, dict):\n        return CANNOT_ESTIMATE\n",
@@ -639,6 +670,12 @@ MUTATIONS = (
     ("21 effects that omit admin_use do not add admin-use",
      '    admin = _pick(effects.get("admin_use"), ADMIN_USES)\n',
      '    admin = _pick(effects.get("admin_use", "none"), ADMIN_USES)\n'),
+    ("22 an estimate with an extra key is still an estimate",
+     '    if set(estimate) != {"amount", "currency", "period"}:\n',
+     "    if False:\n"),
+    ("23 a request without effects gets a new trace line",
+     'if "effects" in req else None\n',
+     'if "effects" in req else None\n    walk.look("-", "classifier off")\n'),
 )
 
 
