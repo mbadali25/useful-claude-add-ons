@@ -660,7 +660,7 @@ def test_a_float_that_overflows_makes_the_layer_unreadable(tmp_path, layer):
     got = crew_tiers.resolve("host:a", root, gpath)
     assert (got["tier"], got["reason"]) == ("unknown", f"{layer}-unreadable"), got
     row = crew_tiers.explain_row(root, gpath)
-    json.loads(json.dumps(row), parse_constant=lambda name: pytest.fail(name))
+    json.loads(json.dumps(row), parse_constant=pytest.fail)
 
 
 def test_t_w4_readers_and_mergers_keep_a_dotted_map_verbatim():
@@ -1108,13 +1108,13 @@ def test_a_directory_at_the_config_path_is_unreadable(tmp_path):
     assert (got["tier"], got["reason"]) == ("unknown", "machine-unreadable"), got
 
 
-def _resolve_within(seconds, *args):
-    """`crew_tiers.resolve(*args)` on a thread, or fail when it has not
-    returned in `seconds` (a blocked `open` never would)."""
+def _resolve_within(seconds, target, root, gpath):
+    """`crew_tiers.resolve(target, root, gpath)` on a thread, or fail when it
+    has not returned in `seconds` (a blocked `open` never would)."""
     import threading  # pylint: disable=import-outside-toplevel
     box = []
-    worker = threading.Thread(target=lambda: box.append(crew_tiers.resolve(*args)),
-                              daemon=True)
+    worker = threading.Thread(
+        target=lambda: box.append(crew_tiers.resolve(target, root, gpath)), daemon=True)
     worker.start()
     worker.join(seconds)
     assert box, f"resolve did not return within {seconds}s"

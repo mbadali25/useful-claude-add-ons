@@ -32,6 +32,7 @@ No crew imports, so `crew_config` and `crew_config_menu` can both import it.
 import copy
 import hashlib
 import json
+import math
 import os
 import re
 import secrets
@@ -276,10 +277,13 @@ class _Repeats(dict):
 
     __slots__ = ("repeats",)
 
+    def __init__(self):
+        super().__init__()
+        self.repeats = []
+
 
 def _repeats_hook(pairs):
     obj = _Repeats()
-    obj.repeats = []
     for key, value in pairs:
         if key in obj:
             obj.repeats.append(key)
@@ -481,7 +485,7 @@ def _not_json_constant(name):
 
 def _finite_float(text):
     value = float(text)
-    if value != value or value in (float("inf"), float("-inf")):
+    if math.isnan(value) or math.isinf(value):
         raise _NonFinite(f"{text} is not a finite number")
     return value
 

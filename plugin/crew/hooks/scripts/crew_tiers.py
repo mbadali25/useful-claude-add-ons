@@ -100,6 +100,11 @@ class _Obj(dict):
 
     __slots__ = ("twins", "twinValues")
 
+    def __init__(self):
+        super().__init__()
+        self.twins = []
+        self.twinValues = {}
+
 
 def _pairs(pairs):
     """The D11 `object_pairs_hook`. Never raises."""
@@ -202,7 +207,6 @@ def _layer(label, status, parsed):
     of them is `conflicting`, and a dropped target would read as "no row")."""
     out = {"label": label, "status": status, "detail": None, "map": _Obj(),
            "topTwins": None, "twinTargets": []}
-    out["map"].twins = []
     if status == "unreadable":
         out["detail"] = parsed
         return out
