@@ -1144,12 +1144,12 @@ anchor for this section: 7a9400f25
 
 ## The triage module, inert (R-70)
 
-anchor for this section: 744476809
+anchor for this section: ae759c9e2
 
 - DERIVED `plugin/crew/hooks/scripts/crew_triage.py:144` `triage` takes one task dict and returns every key of `OUTPUT_KEYS` (`:77`) on every route; `:205` `tables` and `:231` `_main` are the CLI (`triage '<json>'`, `tables`; unreadable or non-standard JSON (`NaN`, `Infinity`) or a non-object exits 2 and prints nothing on stdout).
-- DERIVED the override order is the code's order, first match wins and size before task type: a mechanical type at size S or M returns first (`:163`) without reading the factors (an L, XL or missing size beats the type, so those routes come first in effect), epic for L or XL (`:176`), needs-size for a missing or invalid size (`:180`), docs (`:185`), then the band with a risk floor; docs_only with risk 2 is a normal ticket and records `docs-rejected-risk` in `overrides`. Scoring is four factors 0..2 plus `legacy_points` (`:120`, 0..3) against `OPUS_AT = 3` and `FABLE_AT = 6` (`:48`).
+- DERIVED the override order is the code's order, first match wins and size before task type: a mechanical type at size S or M returns first (`:167`) without reading the factors (an L, XL or missing size beats the type, so those routes come first in effect), epic for L or XL (`:180`), needs-size for a missing or invalid size (`:184`), docs (`:189`), then the band with a risk floor; docs_only with risk 2 is a normal ticket and records `docs-rejected-risk` in `overrides`. Scoring is four factors 0..2 plus `legacy_points` (`:124`, 0..3) against `OPUS_AT = 3` and `FABLE_AT = 6` (`:52`-`:53`).
 - DERIVED unknown never takes the cheaper branch: `_factor` scores a missing or invalid factor 2, `_flag` counts a missing `legacy` or `money` as true and a missing `docs_only` as false, and each is named in `unknown`.
-- DERIVED nothing reaches it: `plugin/crew/tests/test_crew_triage.py::test_nothing_under_plugin_mentions_the_module` fails if any other file under `plugin/` mentions `crew_triage` (its scan root is the repo root, held by `test_the_scan_root_is_the_repo_root`); the same file holds 31 weakened copies of the module's source that each must fail a table.
+- DERIVED nothing reaches it: `plugin/crew/tests/test_crew_triage.py::test_nothing_under_plugin_mentions_the_module` fails if any other file under `plugin/` mentions `crew_triage` (its scan root is the repo root, held by `test_the_scan_root_is_the_repo_root`); the same file holds 34 weakened copies of the module's source that each must fail a table.
 - JUDGEMENT it is inert on purpose (plan section 6): role defaults and escalation (R-71), the phase machine (R-73) and posting to Jira (R-72) are later tickets, and R-71 must reconcile Fable 5.2 as an output with `crew_wave.py` "crew never selects it" (decision D1) when it wires dispatch. `crew_triage.py` is not in `HARNESS`, so it lands as feature work.
 
 ## `/crew:autopilot` (T-0004, crew 1.0.41)

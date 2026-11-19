@@ -463,6 +463,9 @@ def check_output_shape(mod):
                         f"{fac.get('ambiguity')})")
                 if want not in out["post"]:
                     bad.append(("post breakdown", route, out["post"]))
+        if out["model"] in MODEL_FACTS and isinstance(out["post"], str) and (
+                f"model {MODEL_FACTS[out['model']][0]}" not in out["post"]):
+            bad.append(("post model", route, out["model"], out["post"]))
     return bad
 
 
@@ -593,6 +596,14 @@ MUTATIONS = (
      "out.update(factors=factors, legacy_points=points, score=score)",
      "out.update(factors=factors, legacy_points=points, score=str(score))"),
     ("model name is wrong", "model_name=NAME[model],", 'model_name="Opus",'),
+    ("the docs post drops the model",
+     'out["post"] = f"size {size}; {scored}; model {NAME[SONNET]}"',
+     'out["post"] = f"size {size}; {scored}"'),
+    ("the workflow post drops the model",
+     'out["post"] = f"size {size}; {scored}; model {NAME[model]}{note}"',
+     'out["post"] = f"size {size}; {scored}{note}"'),
+    ("the mechanical post drops the model",
+     'f"model {NAME[HAIKU]}")', 'f"model")'),
     ("needs-size does not notify",
      'unknown=unknown + ["size"] + extra, ticket_status=PARKED,\n'
      '                   notify=True,',
@@ -692,7 +703,12 @@ GIT = shutil.which("git")
 def _walk(root):
     """Every file under `root/plugin`, nothing pruned."""
     found = []
-    for base, _dirs, files in os.walk(os.path.join(root, "plugin")):
+
+    def fail(error):
+        raise error  # an unreadable directory is not an empty one
+
+    for base, _dirs, files in os.walk(os.path.join(root, "plugin"),
+                                      onerror=fail):
         for fname in files:
             rel = os.path.relpath(os.path.join(base, fname), root)
             found.append(rel.replace(os.sep, "/"))
@@ -779,6 +795,28 @@ def test_the_walk_prunes_nothing(tmp_path):
         (folder / "x.md").write_text("crew_triage\n", encoding="utf-8")
     assert mentions(str(tmp_path), git=None) == [
         "plugin/__pycache__/x.md", "plugin/node_modules/x.md"]
+
+
+def test_a_failed_directory_scan_is_an_error_not_a_clean_result(
+        tmp_path, monkeypatch):
+    (tmp_path / "plugin" / "sub").mkdir(parents=True)
+    (tmp_path / "plugin" / "sub" / "a.md").write_text("crew_triage\n",
+                                                      encoding="utf-8")
+    real = os.scandir
+
+    def denied(path="."):
+        if os.fspath(path).endswith("sub"):
+            raise PermissionError("denied")
+        return real(path)
+
+    monkeypatch.setattr(os, "scandir", denied)
+    with pytest.raises(PermissionError):
+        mentions(str(tmp_path), git=None)
+
+
+def test_a_missing_plugin_dir_is_an_error_not_a_clean_result(tmp_path):
+    with pytest.raises(OSError):
+        mentions(str(tmp_path), git=None)
 
 
 def test_a_missing_git_falls_back_to_the_walk(tmp_path):
