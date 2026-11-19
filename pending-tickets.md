@@ -90,7 +90,7 @@ repairs and the rest.
 
 | Ticket | Title | Size | Model | H | Depends | Status |
 |---|---|---|---|---|---|---|
-| [R-30](docs/tickets/pending/R-30.md) | Actions schema per kind, validation | M | Opus 5.5 |  | R-01 | blocked: R-01 |
+| [R-30](docs/tickets/pending/R-30.md) | Actions schema per kind, validation | M | Opus 5.5 |  | R-01 | done (PR #797) |
 | [R-31](docs/tickets/pending/R-31.md) | Planned-action matcher for exact actions, report-only | M | Opus 5.5 |  | R-30 | blocked: R-30 |
 | [R-32](docs/tickets/pending/R-32.md) | Protected policy: effective-policy comparison | M | Opus 5.5 |  | R-01 | blocked: R-01 |
 | [R-33](docs/tickets/pending/R-33.md) | Never lane: hook-skipping flags, redaction, secret tripwire | M | Opus 5.5 |  | R-01 | blocked: R-01 |
