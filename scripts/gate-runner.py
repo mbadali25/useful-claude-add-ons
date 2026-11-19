@@ -1530,7 +1530,8 @@ def load_map(path: str, root: str):
         elif rid.startswith("@"):
             bad.append(f"rules[{i}]: id {rid!r} begins with '@' (reserved for synthetic units)")
         elif len(seen[rid]) > 1:
-            bad.append(f"rules[{i}]: id {rid!r} is also used by rules[{seen[rid][0] if seen[rid][0] != i else seen[rid][1]}]")
+            other = next(j for j in seen[rid] if j != i)
+            bad.append(f"rules[{i}]: id {rid!r} is also used by rules[{other}]")
         paths, run = rule.get("paths"), rule.get("run")
         if not isinstance(paths, list) or not all(isinstance(p, str) for p in paths):
             bad.append(f"rules[{i}]: `paths` must be a list of strings")
@@ -1840,8 +1841,11 @@ def changed_set(args, root: str) -> list:
     base ref plus every dirty path."""
     if args.changed_file:
         try:
-            text = sys.stdin.read() if args.changed_file == "-" else \
-                open(args.changed_file, encoding="utf-8").read()  # pylint: disable=consider-using-with
+            if args.changed_file == "-":
+                text = sys.stdin.read()
+            else:
+                with open(args.changed_file, encoding="utf-8") as fh:
+                    text = fh.read()
         except OSError as exc:
             raise Refusal(f"--changed-file {args.changed_file}: {exc}") from exc
         return [ln.strip() for ln in text.split("\n") if ln.strip()]
@@ -2076,7 +2080,8 @@ def _unit_valid(unit: dict, res) -> bool:
             if rc == 0:
                 continue
             sup = seen.get(unit["id"])
-            if not (rc is None and rec.get("credited_by") == want[rid]["credit_to"] is not None
+            owner = want[rid]["credit_to"]
+            if not (rc is None and owner is not None and rec.get("credited_by") == owner
                     and sup is not None and sup["state"] == PASS):
                 return False
         elif state == FAIL:

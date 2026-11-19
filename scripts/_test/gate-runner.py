@@ -2017,7 +2017,7 @@ def case_map_default_trigger_is_nothing_left_after_always_and_reach(tmp: str) ->
     cfg = {**base, "always": ["ssh x"], "rules": [net]}
     ids, root = _unit_set(tmp, cfg)
     assert sorted(ids) == ["@always", "@default", "net"], ids
-    rc, _o, _e, st = run_map_cli(tmp, root)
+    _r, _o, _e, st = run_map_cli(tmp, root)
     got = recs(st)
     assert got["@always"]["state"] == "SKIP" and "NOT VERIFIED" in got["@always"]["reason"], got
     # f. the only matched rule is requiresCleanTree on a dirty tree -> no @default, rule SKIP
@@ -2025,7 +2025,7 @@ def case_map_default_trigger_is_nothing_left_after_always_and_reach(tmp: str) ->
     root = mk_root(tmp, {**base, "rules": [clean]}, name="dirty")
     write(os.path.join(root, "untracked.txt"), "x")
     assert unit_ids(plan_of(tmp, root)) == ["clean"]
-    rc, _o, _e, st = run_map_cli(tmp, root)
+    _r, _o, _e, st = run_map_cli(tmp, root)
     assert recs(st)["clean"]["state"] == "SKIP", st["steps"]
     assert "clean working tree" in recs(st)["clean"]["reason"]
 
@@ -2134,7 +2134,8 @@ def case_map_partition_covers_selected_set_exactly_once(tmp: str) -> None:
             others = {runner._identity(c, runner._rule_env(cfg["rules"][j]))  # pylint: disable=protected-access
                       for j in sel["matched"] if j != sub for c in runner._commands(cfg["rules"][j])}
             others |= set(cfg.get("always") or [])
-            if mine and runner._commands(cfg["rules"][sup]) and not (mine & others):  # pylint: disable=protected-access
+            sup_cmds = runner._commands(cfg["rules"][sup])  # pylint: disable=protected-access
+            if mine and sup_cmds and not mine & others:
                 assert group[cfg["rules"][sub]["id"]] == cfg["rules"][sup]["id"], \
                     (trial, cfg["rules"][sub]["id"], cfg["rules"][sup]["id"])
         for n in range(1, 9):
@@ -2194,7 +2195,7 @@ def case_map_partition_is_machine_independent(tmp: str) -> None:
             assert plan["partition_digest"] == ref["partition_digest"], label
         else:
             assert plan["partition_digest"] == ref["partition_digest"], label
-    rc, _o, _e, st = run_map_cli(tmp, dirty, "--slice", "1/1")
+    _r, _o, _e, st = run_map_cli(tmp, dirty, "--slice", "1/1")
     got = recs(st)
     assert got["clean"]["state"] == "SKIP" and "clean working tree" in got["clean"]["reason"], got
     assert got["net"]["state"] == "SKIP", got
@@ -2205,7 +2206,7 @@ def case_map_status_records_candidate_identity(tmp: str) -> None:
     full = plan_of(tmp, root, "--slice", "1/3")
     seen, keys, covered = [], set(), []
     for k in (1, 2, 3):
-        rc, _o, _e, st = run_map_cli(tmp, root, "--slice", f"{k}/3")
+        _r, _o, _e, st = run_map_cli(tmp, root, "--slice", f"{k}/3")
         m = st["map"]
         assert st["head"] and m["head"] == st["head"], m
         keys.add((m["head"], m["changed_digest"], m["map_digest"], m["partition_digest"]))
@@ -2325,8 +2326,8 @@ def case_map_tier_is_a_measurement_on_this_machine(tmp: str) -> None:
         assert any("timings" in n for n in plan["notices"]), (label, plan["notices"])
     write_timings(root, runner, [(r30, 30)])
     bare = mk_root(tmp, cfg, scripts=False, name="bare")
-    write(os.path.join(bare, ".crew", ".verify-gate.timings.json"),
-          open(os.path.join(root, ".crew", ".verify-gate.timings.json"), encoding="utf-8").read())
+    with open(os.path.join(root, ".crew", ".verify-gate.timings.json"), encoding="utf-8") as fh:
+        write(os.path.join(bare, ".crew", ".verify-gate.timings.json"), fh.read())
     assert all(u["tier"] == "heavy" for u in plan_of(tmp, bare)["units"])
 
 
@@ -2343,7 +2344,7 @@ def case_map_reach_and_clean_tree_exclusions_never_run(tmp: str) -> None:
              undeclared("wrapper", "bash nothing.sh")]
     root = mk_root(tmp, {"unmapped": "ignore", "default": [], "rules": rules},
                    files={"nothing.sh": echo_to(tmp, "wrapper") + "\n"})
-    rc, _o, _e, st = run_map_cli(tmp, root)
+    _r, _o, _e, st = run_map_cli(tmp, root)
     got = recs(st)
     assert "reach_declared" in got["declared"]["reason"], got["declared"]
     assert "reach_syntax" in got["syntax"]["reason"], got["syntax"]
@@ -2483,9 +2484,10 @@ def case_map_default_run_is_unchanged(tmp: str) -> None:
                           timeout=CALL_TIMEOUT, check=False, stdin=subprocess.DEVNULL)
     assert proc.returncode == 0, proc.stderr
     got = proc.stdout.splitlines()
+    first = next(((a, b) for a, b in zip(got, want) if a != b), (len(got), len(want)))
     assert got == want, ("--list differs from scripts/_test/gate-runner.list.golden.txt; if TABLE "
                          "changed on purpose, regenerate the golden file in the same commit: "
-                         f"first difference {next((a, b) for a, b in zip(got, want) if a != b) if got[:len(want)] != want[:len(got)] else (len(got), len(want))}")
+                         f"first difference {first}")
     _need_yaml()
     proc = subprocess.run([sys.executable, TARGET, "--check-ci"], capture_output=True, text=True,
                           timeout=CALL_TIMEOUT, check=False, stdin=subprocess.DEVNULL)
