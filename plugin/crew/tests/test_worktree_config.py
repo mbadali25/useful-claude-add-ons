@@ -590,6 +590,9 @@ ALLOWED = {
     "crew_ticket.py": (2, "CREW_CONTENT_PATHS lists the config files, not a config read"),
     "review_run.py": (2, "CREW_CONFIG_PATHS: the fingerprint's two config path constants, "
                          "never a config read"),
+    # R-32: judge_change's `_materialise` writes each side's repo layer into its own
+    # throwaway root before the readers run; the real repo config is never read there.
+    "crew_protected.py": (1, "judge_change's throwaway-root copy, own path, never the real config"),
 }
 
 

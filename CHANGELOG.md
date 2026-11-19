@@ -18,6 +18,7 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.180: re-bump only - interim number on the protected-policy comparator branch (PR #798, commit 6e6d7033, pushed, never on main) before an ALLOWED row for crew_protected.py in test_worktree_config.py changed plugin/crew again; the change is recorded under crew 1.3.181
 - crew 1.3.178: re-bump only - interim number on the Actions schema branch (PR #797, commit 43dc06fd6, pushed, never on main) before a short-test-id fix in test_crew_actions.py changed plugin/crew again; the change is recorded under crew 1.3.179
 - crew 1.3.175: re-bump only - interim number on the registry-completeness branch (PR #795, commit aa15361e2, pushed, never on main) before a pylint line-length fix changed plugin/crew again; the change is recorded under crew 1.3.176
 - crew 1.3.173: re-bump only - interim number on the crew_policy branch (PR #794, pushed, never on main) before review fixes changed plugin/crew again; the change is recorded under crew 1.3.174
@@ -145,12 +146,12 @@ read entries under any `## [` heading.
 - crew 1.3.159: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); the accepted-value test changed plugin/crew after the number was set, so the branch moved to 1.3.160; the change is recorded under crew 1.3.160
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
-### Added — crew 1.3.180: `crew_protected.py`, the protected-policy comparator, report-only (R-32)
+### Added — crew 1.3.181: `crew_protected.py`, the protected-policy comparator, report-only (R-32)
 
-- **Summary.** `crew` 1.3.180 adds `crew_protected.py`, which compares the protected policy crew actually enforces before and after a change and says whether each protected key stays the same, narrows, widens or cannot be told; nothing calls it yet, so no guard or command changes.
+- **Summary.** `crew` 1.3.181 adds `crew_protected.py`, which compares the protected policy crew actually enforces before and after a change and says whether each protected key stays the same, narrows, widens or cannot be told; nothing calls it yet, so no guard or command changes.
 - **What.** `plugin/crew/hooks/scripts/crew_protected.py` maps each protected leaf (`LEAVES`) to the reader that enforces it (`READERS`, with its `path:line` and layers) and a direction kind (`DIRECTIONS`). `read_layer` reads each config layer strictly (unreadable, not UTF-8 JSON, a repeated key, not an object or a moved link target is `unknown`); `effective_protected` calls the real readers; `compare` returns `unchanged`, `narrowing`, `widening` or `unknown`, and an unknown never reads as unchanged. For `humanOnly.*` and `guards.git.allow` the raw per-layer value is compared too and the wider outcome kept. `judge_change` reads both sides in throwaway roots and never confirms; `judge_drift` reads the real paths against `<machine config dir>/protected-policy/baseline.json` and advances it only on a free result. CLI: `check`, `explain`, `keys`, `baseline --init`.
 - **Inert.** `REPORT_ONLY = True` and nothing imports it; `test_crew_protected.py` fails if any other plugin source mentions it. R-32b (harness-only: refusal, hook wiring) and R-32c (the other readers and crew's writers) switch it on after R-23's `widen-policy` receipt.
-- **Tests.** `test_crew_protected.py`: must-block and must-allow tables, a differential against each enforcing reader called by name, the coverage union, isolation, the CLI, a BOM-prefixed layer read the same as the enforcing readers, and 21 weakened copies of the module that each must turn a named case red with an `AssertionError`.
+- **Tests.** `test_crew_protected.py`: must-block and must-allow tables, a differential against each enforcing reader called by name, the coverage union, isolation, the CLI, a BOM-prefixed layer read the same as the enforcing readers, and 21 weakened copies of the module that each must turn a named case red with an `AssertionError`; `test_worktree_config.py` lists `judge_change`'s throwaway-root copy of the repo layer as the one `.crew/config.json` path the module builds, never a read of the real config.
 
 ### Added — crew 1.3.179: `crew_actions.py`, the Actions schema per kind, report-only (R-30)
 

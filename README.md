@@ -239,7 +239,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.180**: `crew_protected.py`, the protected-policy comparator, report-only. `crew` 1.3.180 adds `crew_protected.py`, which compares the protected policy crew actually enforces before and after a change and says whether each protected key stays the same, narrows, widens or cannot be told; nothing calls it yet, so no guard or command changes.
+- **crew 1.3.181**: `crew_protected.py`, the protected-policy comparator, report-only. `crew` 1.3.181 adds `crew_protected.py`, which compares the protected policy crew actually enforces before and after a change and says whether each protected key stays the same, narrows, widens or cannot be told; nothing calls it yet, so no guard or command changes.
 - **crew 1.3.179**: `crew_actions.py`, the Actions schema per kind, report-only. `crew` 1.3.179 adds `crew_actions.py`, one closed schema for a plan's Actions block that says whether each planned action is well formed and why not; nothing calls it yet, so no guard or command changes.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
