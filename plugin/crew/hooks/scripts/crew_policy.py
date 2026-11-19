@@ -36,6 +36,15 @@ Input: one request, a dict.
     emergency   a dict naming the owner, incident, target, action, expiry
                 and uses left (see below); anything else is no emergency
     facts       per-operation facts (ownership, protection, backup, ...)
+    effects     what the action does, as answers to the closed questions in
+                `EFFECT_QUESTIONS` (R-P6, 4.13); see `classify`. Read only
+                when the key is present, whatever its value. Its classes are
+                added to the table's own, never removed. One exception (D9):
+                a valid USD monthly estimate at or under the threshold
+                stands in for a missing facts.estimate_under_threshold; an
+                explicit False fact still wins. Effects must be derived from
+                the operation and the provider, never from model prose: the
+                classifier is only as truthful as the answers it is given
 
 Every field is read the same way: a value that is missing, of the wrong
 type, or not in the closed list is UNKNOWN, and unknown never takes the
@@ -86,6 +95,8 @@ Readings this file chooses where the plan is silent (each is a test):
 CLI (report-only, always exits 0 for a decision):
     crew_policy.py explain '<json>'     or  ... explain -   (stdin)
     crew_policy.py decide  '<json>'
+    crew_policy.py classify '<json>'    (the same request; reads only its
+                                         effects and tier, default threshold)
     crew_policy.py operations
 Unreadable JSON exits 2 with the reason on stderr and prints no decision.
 """
@@ -332,7 +343,142 @@ def _own_class(spec: Op, tier: str, facts: dict) -> Optional[str]:
     return None
 
 
-GRANT_FACTS = (("expiry_provable", True), ("within_ceiling", True),
+# --- the serious classifier (R-P6, plan 4.13 and 4.5 "Money") ---------------
+#
+# One action's effects, as answers to a closed set of questions. Every
+# question is required: a missing, mistyped or unlisted answer counts as the
+# serious one (could not tell is serious). A key that is not a question is an
+# effect the classifier cannot place, so UNPLACED; the known keys are still
+# read. Effects that are not an object give exactly UNPLACED.
+
+PERMISSION_CHANGES = ("none", "temporary-listed", "temporary-unlisted",
+                      "permanent")
+ADMIN_USES = ("none", "grantable-profile-temporary", "other")
+DESTROYS = ("none", "own", "not-own")
+BACKUPS = ("provable", "no-state-change")
+
+# key -> the closed answer list (None: a bool; "cost": see _cost_over).
+EFFECT_QUESTIONS = {
+    "spends": None,
+    "monthly_cost": "cost",
+    "writes": None,
+    "permission_change": PERMISSION_CHANGES,
+    "creates_account": None,
+    "admin_use": ADMIN_USES,
+    "destroys": DESTROYS,
+    "reversible": None,
+    "outside_effect": None,
+    "backup": BACKUPS,
+}
+
+# Plan section 8. No config key sets it yet (R-P6 D7): the key must be a
+# protected one, and that protection has not landed.
+DEFAULT_COST_THRESHOLD_USD_MONTH = 50
+
+UNDER = "under"
+OVER = "over"
+CANNOT_ESTIMATE = "cannot-estimate"
+
+
+def _amount(value: Any) -> Optional[float]:
+    """A finite number >= 0 that is not a bool, else None."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if value - value != 0 or value < 0:   # NaN and inf fail the first test
+        return None
+    return value
+
+
+def _cost_over(estimate: Any, threshold: Any) -> str:
+    """UNDER, OVER or CANNOT_ESTIMATE for one monthly cost estimate.
+
+    Only {"amount": n, "currency": "USD", "period": "month"} is an estimate;
+    any other shape, currency or period cannot be compared without a rate
+    source, so it cannot be estimated (counted as over, 4.5). Over means
+    strictly over. A threshold that is not a finite number >= 0 reads as 0,
+    the strictest value: an invalid threshold must never widen."""
+    limit = _amount(threshold)
+    if limit is None:
+        limit = 0   # an invalid threshold must not widen (D6)
+    if not isinstance(estimate, dict):
+        return CANNOT_ESTIMATE
+    amount = _amount(estimate.get("amount"))
+    currency = _pick(estimate.get("currency"), ("usd",))
+    period = _pick(estimate.get("period"), ("month",))
+    if amount is None or currency != "usd" or period != "month":
+        return CANNOT_ESTIMATE
+    return OVER if amount > limit else UNDER
+
+
+def _verdict(found: dict, cost: str) -> dict:
+    """The classifier's answer, built from {class: [reasons]}."""
+    classes = frozenset(found)
+    return {"classes": sorted(classes), "primary": _primary(classes),
+            "reasons": {c: "; ".join(r) for c, r in found.items()},
+            "placed": UNPLACED not in classes, "cost": cost}
+
+
+def classify(effects: Any, tier: Any, threshold: Any = None) -> dict:
+    """Place one action's effects into the closed serious list (4.13).
+
+    Returns {"classes": sorted list, "primary": the strictest by _PRIORITY or
+    None, "reasons": {class: text}, "placed": False exactly when UNPLACED is
+    in classes, "cost": UNDER | OVER | CANNOT_ESTIMATE}. A tier that is not
+    dev or qa counts as prod here (a write to an unknown tier may be a
+    production write); decide's rule 3 still refuses an unknown tier first.
+    `threshold` None is the default (USD a month)."""
+    limit = DEFAULT_COST_THRESHOLD_USD_MONTH if threshold is None else threshold
+    if not isinstance(effects, dict):
+        return _verdict({UNPLACED: ["effects is not an object, so no effect "
+                                    "in it can be placed"]}, CANNOT_ESTIMATE)
+    found: dict = {}
+
+    def add(cls: str, text: str) -> None:
+        found.setdefault(cls, []).append(text)
+
+    extra = sorted(str(k) for k in effects if k not in EFFECT_QUESTIONS)
+    if extra:
+        add(UNPLACED, "no question for effect " + ", ".join(extra))
+    prod = _pick(tier, TIERS) not in ("dev", "qa")
+
+    if effects.get("spends") is not False:
+        add(MONEY, "spends is True, missing or not a bool")
+    cost = _cost_over(effects.get("monthly_cost"), limit)
+    if cost != UNDER:
+        add(MONEY, f"monthly cost is {cost} (threshold {limit!r} USD a month)")
+    if effects.get("writes") is not False and prod:
+        add(PRODUCTION_WRITE, "writes is True, missing or not a bool, and the "
+                              "tier is not dev or qa")
+    perm = _pick(effects.get("permission_change"), PERMISSION_CHANGES)
+    if perm not in ("none", "temporary-listed") or (prod and perm != "none"):
+        add(PERMISSION_CHANGE, f"permission change is {perm}"
+                               + (" outside dev or qa" if prod else ""))
+    if effects.get("creates_account") is not False:
+        add(ACCOUNT_CREATION, "creates_account is True, missing or not a bool")
+    admin = _pick(effects.get("admin_use"), ADMIN_USES)
+    if admin != "none" and not (admin == "grantable-profile-temporary"
+                                and not prod):
+        add(ADMIN_USE, f"admin use is {admin}"
+                       + (" outside dev or qa" if prod else ""))
+    destroys = _pick(effects.get("destroys"), DESTROYS)
+    if destroys not in ("none", "own"):
+        add(DESTROY_NOT_OWNED, f"destroys is {destroys}")
+    if (effects.get("reversible") is not True
+            or effects.get("outside_effect") is not False):
+        add(IRREVERSIBLE, "reversible is not True, or outside_effect is not "
+                          "False")
+    if _pick(effects.get("backup"), BACKUPS) == UNKNOWN:
+        add(NO_PROVABLE_BACKUP, "backup is not provable or no-state-change")
+    return _verdict(found, cost)
+
+
+def _request_tier(req: dict) -> str:
+    """The request's tier: dev, qa, prod or UNKNOWN. The one reader of it."""
+    tier = _pick(req.get("tier"), TIERS)
+    return tier
+
+
+GRANT_FACTS =(("expiry_provable", True), ("within_ceiling", True),
                ("crew_account_exists", True), ("provider_ticket", True),
                ("ownership", "own"))
 
@@ -407,7 +553,7 @@ def decide(request: Any) -> dict:
     facts = req.get("facts") if isinstance(req.get("facts"), dict) else {}
     name = req.get("operation")
     name = name.strip().lower() if isinstance(name, str) else ""
-    tier = _pick(req.get("tier"), TIERS)
+    tier = _request_tier(req)
     attended = _pick(req.get("presence"), PRESENCE) == "attended"
     stop_outcome = ASK_OWNER if attended else DENY
     stop_word = "attended: ask the owner" if attended else "unattended: deny"
@@ -430,7 +576,19 @@ def decide(request: Any) -> dict:
     # Every class that applies is known before any rule runs, so a class the
     # classifier adds (classified_as) pulls in the same requirements the
     # operation's own class would: a tier, the write account, an admin need.
+    # The effects (R-P6) are read when the key is present, whatever its value.
+    effect = classify(req["effects"], tier) if "effects" in req else None
+    if effect is not None and effect["cost"] == UNDER and _fact(
+            facts, "estimate_under_threshold", True) == UNKNOWN:
+        # D9: a valid estimate under the threshold stands in for the missing
+        # fact, on a copy; an explicit False fact is kept (it is stricter).
+        facts = dict(facts, estimate_under_threshold=True)
+        walk.look("-", "effects: a monthly estimate under the threshold "
+                       "stands in for facts.estimate_under_threshold")
     classes = _classes(spec, tier, facts, req.get("classified_as"))
+    if effect is not None:
+        classes = classes | frozenset(effect["classes"])
+        walk.look("-", f"effects add {effect['classes'] or 'no class'}")
     needs_admin = spec.admin or bool(classes & {ADMIN_USE, ACCOUNT_CREATION})
 
     walk.look("1", "never lane?")
@@ -638,9 +796,9 @@ def _main(argv: list) -> int:
         for key in sorted(OPERATIONS):
             print(f"{key}\t{OPERATIONS[key].lane}")
         return 0
-    if cmd not in ("decide", "explain") or len(argv) < 3:
-        print("usage: crew_policy.py decide|explain <json|-> | operations",
-              file=sys.stderr)
+    if cmd not in ("decide", "explain", "classify") or len(argv) < 3:
+        print("usage: crew_policy.py decide|explain|classify <json|-> | "
+              "operations", file=sys.stderr)
         return 2
     raw = sys.stdin.read() if argv[2] == "-" else argv[2]
     try:
@@ -649,7 +807,14 @@ def _main(argv: list) -> int:
         print(f"crew_policy: request is not JSON ({exc}); no decision",
               file=sys.stderr)
         return 2
-    if cmd == "explain":
+    if cmd == "classify":
+        # The same request decide takes; only its effects and tier are read,
+        # and the threshold is always the default (D7).
+        body = request if isinstance(request, dict) else {}
+        effects = body["effects"] if "effects" in body else None
+        print(json.dumps(classify(effects, _request_tier(body)), indent=2,
+                         sort_keys=True))
+    elif cmd == "explain":
         print(explain(request))
     else:
         print(json.dumps(decide(request), indent=2, sort_keys=True))
