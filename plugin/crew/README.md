@@ -340,16 +340,18 @@ Both come from `crew_autopilot_owner.owner_items`, which asks autopilot's own ph
 
 One vocabulary, owned by `crew_tracker.py` (`STATUS_ORDER`, `OWNER_STATUSES`, `CLOSED_STATUSES`, `LANE_FOR_STATUS`); every other reader's list is held to it by `tests/test_status_vocabulary.py` (T-0037).
 
-| Word | Open or closed | Written in | A spec header edit to it | Obsidian lane | Jira / SDP |
+| Word | Open or closed | Written in | A spec header edit to it | Obsidian lane | Jira / SDP (`STATUS_MAP`) |
 |---|---|---|---|---|---|
-| `direction`, `ready` | open | INDEX, tracker | stales the approval (not in `STATUS_VALUES`) | `backlog` | nothing pushed |
-| `spec`, `planned`, `review` | open | INDEX, tracker, spec header | keeps the approval | `ready` (`spec`, `planned`), `review` | nothing pushed |
-| `in-progress` | open | INDEX, tracker, spec header | keeps the approval (T-0059's non-final slice) | `inProgress` | pushed |
-| `needs-owner` | open, waiting on the owner | INDEX, tracker only — never a spec header | stales it, like any unknown word | `backlog` | nothing pushed |
-| `done` | closed | INDEX, tracker, spec header | keeps the approval | `done`, checked | pushed |
-| `cancelled`, `superseded` | closed | INDEX, tracker, spec header | stales the approval on purpose | `done`, checked | nothing pushed; the owner closes the item by hand |
+| `direction`, `ready` | open | INDEX, tracker | stales the approval (not in `STATUS_VALUES`) | `backlog` | nothing pushed (Jira name: Brainstorm, Spec) |
+| `spec`, `planned`, `review` | open | INDEX, tracker, spec header | keeps the approval | `ready` (`spec`, `planned`), `review` | nothing pushed (Jira name: Approve, Approve, Development In Review) |
+| `in-progress` | open | INDEX, tracker, spec header | keeps the approval (T-0059's non-final slice) | `inProgress` | pushed; Jira: In Progress; SDP: the desk name, resolved by sdp-sync |
+| `needs-owner` | open, waiting on the owner | INDEX, tracker only — never a spec header | stales it, like any unknown word | `backlog` | nothing pushed (Jira name: Blocked or Parked) |
+| `done` | closed | INDEX, tracker, spec header | keeps the approval | `done`, checked | pushed; Jira: Complete; SDP: the desk name, resolved by sdp-sync |
+| `cancelled`, `superseded` | closed | INDEX, tracker, spec header | stales the approval on purpose | `done`, checked | nothing pushed and no Jira name; the owner closes the item by hand |
 
 Any other INDEX word maps to no lane: `move` refuses it with nothing written, and `crew_tracker.py read` reports it as `could not tell` (`INDEX status <s> is not a status crew knows (...)`), never as a disagreement. The words the owner retired on 2026-10-05 get a text-only hint naming their replacement (`RETIRED_STATUSES`: `approved` -> `spec`, `merged` -> `done`, `closed` -> `done`, `new` -> `direction`, `parked` -> `needs-owner`) — never a lane, a write or an exit code (L-0530).
+
+**Status maps and events** (R-72). `crew_tracker.py`'s `STATUS_MAP` names each kind's status for each crew word: files, obsidian and sdp take the crew word itself (sdp-sync resolves the desk's own name with `sdp_list_metadata`), Jira its 13-status workflow (`JIRA_STATUSES`; `map --to <word>` prints one). A word with no row has no native status and nothing is invented for it. A Jira push prints a second line, `jira: target: <name>`. `crew_tracker.py transition --ticket <KEY> --to <word> --seen "<status>"` (Jira only) answers `go:`, `unchanged:` or `refused:` from the issue's last seen status, so a push never moves an issue backwards or re-transitions it. Every tracker post has a durable event id (`event begin|record|post`, ledger under `<git-common-dir>/crew/tickets/<ID>/events/`) and carries `crew-event: <id>` as its last line: a timeout is recorded `unknown`, and the remote is searched for the marker before anything is posted again, so a timed-out post is never duplicated blind. The call budget per ticket is 1 for a pickup read, 2 for an in-progress push, 4 for a done push and at most 7 after one timed-out post (`commands/jira-sync.md`, "Posting once"). `events --ticket <id>` lists them, report-only: `/crew:done` does not refuse on a missing event yet (R-73).
 
 `approved` and `merged` are spec-header words only (they keep the approval; a header `merged` does not close a ticket for autopilot). `crew_ticket.STATUS_VALUES` is unchanged by T-0037: it is the approval-keeping subset, so a blocking hook accepts nothing new.
 

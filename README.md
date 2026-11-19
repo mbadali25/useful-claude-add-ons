@@ -239,8 +239,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.184**: `crew_never.py`, the Never-lane command tripwire and shared redactor, report-only. `crew` 1.3.184 adds `crew_never.py`, which says whether a command a model runs skips git hooks or signing or carries a secret-shaped value, and holds the one shared redactor; nothing calls it yet, so no guard or command changes.
-- **crew 1.3.182**: Review provider registry; one probe per attempt. `crew` 1.3.182 moves each review provider's command, parser, limit text and probe kind into one registry row, so `review_run.py` no longer branches on `codex` by name; the default `/crew:review` path is unchanged.
+- **crew 1.3.185**: `crew_never.py`, the Never-lane command tripwire and shared redactor, report-only. `crew` 1.3.185 adds `crew_never.py`, which says whether a command a model runs skips git hooks or signing or carries a secret-shaped value, and holds the one shared redactor; nothing calls it yet, so no guard or command changes.
+- **crew 1.3.183**: Tracker status maps, Jira transition check and durable event ids. `crew` 1.3.183 gives every tracker kind a status map, checks a Jira transition against the issue's last seen status before it is pushed, and gives each tracker post a durable event id so a timed-out post is not posted twice.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

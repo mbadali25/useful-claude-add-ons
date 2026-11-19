@@ -18,6 +18,7 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.184: re-bump only - interim number on the Never-lane tripwire branch (PR #802, commit 94f7586b8, pushed, never on main) before main moved to 1.3.183 (PR #801) and was merged in; the change is recorded under crew 1.3.185
 - crew 1.3.180: re-bump only - interim number on the protected-policy comparator branch (PR #798, commit 6e6d7033, pushed, never on main) before an ALLOWED row for crew_protected.py in test_worktree_config.py changed plugin/crew again; the change is recorded under crew 1.3.181
 - crew 1.3.178: re-bump only - interim number on the Actions schema branch (PR #797, commit 43dc06fd6, pushed, never on main) before a short-test-id fix in test_crew_actions.py changed plugin/crew again; the change is recorded under crew 1.3.179
 - crew 1.3.175: re-bump only - interim number on the registry-completeness branch (PR #795, commit aa15361e2, pushed, never on main) before a pylint line-length fix changed plugin/crew again; the change is recorded under crew 1.3.176
@@ -146,12 +147,18 @@ read entries under any `## [` heading.
 - crew 1.3.159: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); the accepted-value test changed plugin/crew after the number was set, so the branch moved to 1.3.160; the change is recorded under crew 1.3.160
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
-### Added — crew 1.3.184: `crew_never.py`, the Never-lane command tripwire and shared redactor, report-only (R-33)
+### Added — crew 1.3.185: `crew_never.py`, the Never-lane command tripwire and shared redactor, report-only (R-33)
 
-- **Summary.** `crew` 1.3.184 adds `crew_never.py`, which says whether a command a model runs skips git hooks or signing or carries a secret-shaped value, and holds the one shared redactor; nothing calls it yet, so no guard or command changes.
+- **Summary.** `crew` 1.3.185 adds `crew_never.py`, which says whether a command a model runs skips git hooks or signing or carries a secret-shaped value, and holds the one shared redactor; nothing calls it yet, so no guard or command changes.
 - **What.** `plugin/crew/hooks/scripts/crew_never.py` recognises `skip-hooks-or-signing` (`--no-verify`, `commit -n`, `--no-gpg-sign`, `core.hooksPath`, `HUSKY=0` and the rest of the closed `SHAPES` list) and `write-secret-plaintext` (`crew_reference.SECRET_PATTERNS`, a bearer-token shape, the literal value of a secret-named environment variable). Verdicts are `hit`, `clear` and `could-not-tell`; a finding names its rule and place, never the matched value. `redact` replaces each match with `[redacted:<rule>]`. CLI: `judge`, `redact`, `shapes`. Crew's own coordination push runs in-process and is never a hook payload, so it is unaffected.
 - **Inert.** Nothing in the plugin imports it, and `test_crew_never.py` fails if anything does. R-33b (harness-only) reports it in guard.log; R-35 enforces it.
 - **Tests.** `test_crew_never.py`: must-block, must-allow, could-not-tell, the pinned raw-pass false positive, policy binding, the real coordination argv, inertness in a throwaway HOME, and 17 in-file mutations.
+
+### Added — crew 1.3.183: tracker status maps, Jira transition check and durable event ids (R-72)
+
+- **Summary.** `crew` 1.3.183 gives every tracker kind a status map, checks a Jira transition against the issue's last seen status before it is pushed, and gives each tracker post a durable event id so a timed-out post is not posted twice.
+- **What.** `crew_tracker.py` gains `STATUS_MAP` (files, obsidian and sdp take the crew word; Jira its 13-status workflow, `JIRA_STATUSES`) and `transition` (Jira only: go / unchanged / refused); a Jira delegated push prints a second line, `jira: target: <name>`, and `_line` is unchanged. New `crew_tracker_events.py` keeps a ledger under the git common dir and searches for the `crew-event: <id>` marker before re-posting; `events` is report-only (R-73 enforces). `jira-sync.md` holds the one "Posting once" procedure and `sdp-sync.md` points at it.
+- **Tests.** `test_crew_tracker_maps.py`, `test_crew_tracker_events.py` (with in-test mutants), plus additions to `test_crew_tracker.py`, `test_status_vocabulary.py` and `test_crew_autopilot_tracker.py`.
 
 ### Changed — crew 1.3.182: review provider registry; one probe per attempt (R-10)
 
