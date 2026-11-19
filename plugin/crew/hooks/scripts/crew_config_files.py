@@ -53,7 +53,8 @@ ABSENT = "absent"
 class Unreadable(Exception):
     """The file is absent, unparsable, empty or not a JSON object.
 
-    `kind` is one of `absent`, `unparsable`, `empty`, `notobject`."""
+    `kind` is one of `absent`, `unparsable`, `empty`, `notobject`, or
+    (`read_strict(for_write=True)` only) `duplicate`."""
 
     def __init__(self, message, kind):
         super().__init__(message)
@@ -244,11 +245,13 @@ def restorable(data):
     return problem
 
 
-def read_strict(path, allow_empty=False):
+def read_strict(path, allow_empty=False, for_write=False):
     """`(parsed, raw_bytes)`, or raise `Unreadable` with its `kind`.
 
     `allow_empty` admits `{}` (the machine-global file may legitimately be
-    one); the repo file never passes it."""
+    one); the repo file never passes it. `for_write` also refuses a file a
+    rewrite would change the meaning of (`tier_map_duplicates`, kind
+    `duplicate`): the writers pass it, the diagnostic readers do not."""
     try:
         with open(path, "rb") as handle:
             raw = handle.read()
@@ -259,7 +262,60 @@ def read_strict(path, allow_empty=False):
     parsed, problem, kind = _parse(raw, allow_empty)
     if problem:
         raise Unreadable(f"{path} {problem}", kind)
+    if for_write:
+        why = tier_map_duplicates(raw.decode("utf-8-sig"))
+        if why:
+            raise Unreadable(f"{path} {why}", "duplicate")
     return parsed, raw
+
+
+class _Repeats(dict):
+    """A JSON object that remembers which keys it saw more than once."""
+
+    __slots__ = ("repeats",)
+
+
+def _repeats_hook(pairs):
+    obj = _Repeats()
+    obj.repeats = []
+    for key, value in pairs:
+        if key in obj:
+            obj.repeats.append(key)
+        else:
+            obj[key] = value
+    return obj
+
+
+def tier_map_duplicates(text):
+    """Why a rewrite of this config would erase a tier conflict, or None.
+
+    `json.loads` keeps one value of an exactly repeated key, so a writer that
+    parses and re-serialises the file would silently turn a `conflicting`
+    tier (crew_tiers, R-05) into whichever value survived (review round 3).
+    The keys crew_tiers consults are the top-level `tiers`, the targets in
+    its map and the fields of each entry; an exact repeat of any of them is
+    reported. Case twins are distinct keys, survive a rewrite, and are not
+    reported here. Unparsable text is None: `_parse` reports that."""
+    try:
+        top = json.loads(text, object_pairs_hook=_repeats_hook)
+    except (ValueError, RecursionError):
+        return None
+    if not isinstance(top, _Repeats):
+        return None
+    if "tiers" in top.repeats:
+        return ("holds the key `tiers` more than once; a rewrite would keep only "
+                "one of them. Fix it by hand")
+    tiers = top.get("tiers")
+    if not isinstance(tiers, _Repeats):
+        return None
+    if tiers.repeats:
+        return (f"repeats the tier target(s) {', '.join(sorted(set(tiers.repeats)))}; "
+                "a rewrite would keep only one value and erase the conflict. Fix it by hand")
+    for target, entry in tiers.items():
+        if isinstance(entry, _Repeats) and entry.repeats:
+            return (f"repeats {', '.join(sorted(set(entry.repeats)))} in the tier entry "
+                    f"{target}; a rewrite would keep only one value. Fix it by hand")
+    return None
 
 
 def read_restorable(path):
@@ -373,10 +429,13 @@ def parse_assignments(items):
             return None, f"--set: {key!r} is not a dotted path (a.b.c)"
         try:
             updates[key] = json.loads(raw, parse_constant=_not_json_constant,
-                                      parse_float=_finite_float)
+                                      parse_float=_finite_float,
+                                      object_pairs_hook=_no_repeated_keys)
         except ValueError as exc:
             if isinstance(exc, _NonFinite):
                 return None, f"--set {key}: {exc}; JSON has no NaN or Infinity"
+            if isinstance(exc, _Repeated):
+                return None, f"--set {key}: {exc}"
             return None, (f"--set {key}: {raw!r} is not JSON; a string needs "
                           f"its quotes ({key}='\"{raw}\"')")
         except RecursionError:
@@ -386,6 +445,24 @@ def parse_assignments(items):
 
 class _NonFinite(ValueError):
     """A `--set` value holding NaN, Infinity or a float that overflows to it."""
+
+
+class _Repeated(ValueError):
+    """A `--set` value repeating a key in one object."""
+
+
+def _no_repeated_keys(pairs):
+    # `json.loads` would keep one value of a repeated key and drop the other,
+    # so `--set tiers={"host:a": .., "host:a": ..}` would write a tier the
+    # operator never chose instead of the conflict crew_tiers reports
+    # (review round 3). Refuse it: the operator says which one they mean.
+    obj = {}
+    for key, value in pairs:
+        if key in obj:
+            raise _Repeated(f"the value repeats the key {key!r}; JSON keeps only "
+                            "one of them, so say which one you mean")
+        obj[key] = value
+    return obj
 
 
 def _not_json_constant(name):
@@ -477,7 +554,7 @@ def update_json(path, mutate, *, expect=None, create=False, wait=None, after=Non
         raise Unreadable(f"no {path}", "absent")
     with Lock(path, wait):
         try:
-            parsed, raw = read_strict(path, allow_empty=create)
+            parsed, raw = read_strict(path, allow_empty=create, for_write=True)
         except Unreadable as exc:
             if not (create and exc.kind == "absent"):
                 raise

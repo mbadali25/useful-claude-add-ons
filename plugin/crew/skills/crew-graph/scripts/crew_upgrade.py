@@ -41,6 +41,7 @@ sys.path.insert(0, os.path.join(
 ))
 import crew_backup  # pylint: disable=wrong-import-position
 import crew_common  # pylint: disable=wrong-import-position
+import crew_config_files  # pylint: disable=wrong-import-position
 import crew_dropped  # pylint: disable=wrong-import-position
 import crew_guards  # pylint: disable=wrong-import-position
 import crew_state  # pylint: disable=wrong-import-position
@@ -859,6 +860,10 @@ def _read_config_strict(root):
     except ValueError:
         return {}, False
     if not isinstance(parsed, dict):
+        return {}, False
+    if crew_config_files.tier_map_duplicates(text):
+        # R-05 review round 3: rewriting would keep one value of an exactly
+        # repeated tier key and erase the conflict crew_tiers reports.
         return {}, False
     return parsed, True
 

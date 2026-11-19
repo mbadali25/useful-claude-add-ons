@@ -1706,6 +1706,17 @@ rules:
   a file nested too deeply to parse reads as `{}` in `read_global_config` and
   `load_config` (both promise never to raise), so `--explain` still reaches
   `crew_tiers`, which names the layer unreadable.
+- **A rewrite never erases a conflict** (review round 3). `json.loads` keeps
+  one value of an exactly repeated key, so any writer that parses and
+  re-serialises the file would turn `conflicting` into whichever value
+  survived. The two config writers (through `read_strict(for_write=True)`),
+  upgrade and platform-sync therefore leave a file alone when its `tiers`
+  repeats a key exactly (`crew_config_files.tier_map_duplicates`), and `--set`
+  refuses a value that repeats a key. Case twins are distinct keys, survive a
+  rewrite, and are not refused. A number too large for a float (`1e999`)
+  makes a layer unreadable, like `Infinity`, so no report carries the non-JSON
+  `Infinity` out. `list --json` keeps stdout a list and names an unreadable
+  layer on stderr.
 
 ### The ratchet is one table, not five copies
 

@@ -381,9 +381,31 @@ def test_both_layers_malformed_names_the_machine_first(tmp_path):
     malformed the reason is machine-unreadable. Every other malformed-layer
     row breaks one layer only, so this is the row that turns red when the two
     checks are swapped (review round 1, finding 6)."""
-    got = _resolve(tmp_path, "host:a", machine_raw="{bad", repo_raw="{worse")
+    root, gpath = _setup(tmp_path, machine_raw="{bad", repo_raw="{worse")
+    got = crew_tiers.resolve("host:a", root, gpath)
     assert (got["tier"], got["reason"]) == ("unknown", "machine-unreadable"), got
     assert got["notes"][0].startswith("machine:"), got
+    # The note must name the MACHINE file: a swapped read hands the repo
+    # file's detail to the machine slot and still says "machine:" (round 3).
+    assert gpath in got["notes"][0], got
+    assert os.path.join(".crew", "config.json") not in got["notes"][0], got
+
+
+def test_d7_the_machine_file_is_read_before_the_repo_file(tmp_path, monkeypatch):
+    """Spec D7 hand mutation (c), "read the repo first", as a row: the reads
+    are recorded in order, and the machine file (the authority) comes first
+    (review round 3: no other row observed the order)."""
+    root, gpath = _setup(tmp_path, machine={"host:a": _entry("dev")},
+                         repo={"host:a": _entry("qa")})
+    real, seen = crew_tiers._read_layer, []  # pylint: disable=protected-access
+
+    def recording(path):
+        seen.append(path)
+        return real(path)
+    monkeypatch.setattr(crew_tiers, "_read_layer", recording)
+    crew_tiers.resolve("host:a", root, gpath)
+    assert seen and seen[0] == gpath, seen
+    assert len(seen) == 2 and seen[1].endswith(os.path.join(".crew", "config.json")), seen
 
 
 def test_a_path_open_refuses_is_unreadable_not_absent(tmp_path):
@@ -561,6 +583,85 @@ def test_t_w4_cli_set_tiers_null_is_refused(tmp_path):
     assert pathlib.Path(gpath).read_bytes() == before
 
 
+# Review round 3: an exact repeat that `json.loads` collapses. crew_tiers says
+# `conflicting`; a writer that parsed and re-serialised it would keep `dev`.
+REPEATED_TARGET = '{"tiers": {"host:a": {"tier": "prod"}, "host:a": {"tier": "dev"}}}'
+REPEATED_RAWS = [
+    REPEATED_TARGET,
+    '{"tiers": {"host:a": {"tier": "prod"}}, "tiers": {"host:a": {"tier": "dev"}}}',
+    '{"tiers": {"host:a": {"tier": "prod", "tier": "dev"}}}',
+]
+
+
+@pytest.mark.parametrize("raw", REPEATED_RAWS)
+def test_an_unrelated_global_write_cannot_erase_a_tier_conflict(tmp_path, capsys, raw):
+    root, gpath = _setup(tmp_path, machine_raw=raw)
+    assert crew_tiers.resolve("host:a", root, gpath)["reason"] == "conflicting"
+    before = pathlib.Path(gpath).read_bytes()
+    assert crew_config.main(["--root", root, "--global-path", gpath, "--set",
+                             'pm.authority="act"', "--apply"]) != 0
+    assert "Fix it by hand" in capsys.readouterr().err
+    assert pathlib.Path(gpath).read_bytes() == before
+    with pytest.raises(crew_config.GlobalWriteRefused, match="Fix it by hand"):
+        crew_config.write_global_config({"pm.authority": "act"}, path=gpath)
+    assert pathlib.Path(gpath).read_bytes() == before
+    assert crew_tiers.resolve("host:a", root, gpath)["reason"] == "conflicting"
+
+
+@pytest.mark.parametrize("raw", REPEATED_RAWS)
+def test_an_unrelated_repo_write_cannot_erase_a_tier_conflict(tmp_path, raw):
+    root, gpath = _setup(tmp_path, machine={"host:a": _entry("dev")}, repo_raw=raw)
+    repo_file = pathlib.Path(root) / ".crew" / "config.json"
+    before = repo_file.read_bytes()
+    with pytest.raises(crew_config.RepoWriteRefused, match="Fix it by hand"):
+        crew_config.write_repo_config(root, {"tracker": "files"}, gpath)
+    assert repo_file.read_bytes() == before
+    assert crew_tiers.resolve("host:a", root, gpath)["reason"] == "conflicting"
+
+
+def test_upgrade_leaves_a_repeated_tier_key_alone(tmp_path):
+    root, _gpath = _setup(tmp_path, repo_raw=REPEATED_TARGET)
+    cfg, ok = crew_upgrade._read_config_strict(root)  # pylint: disable=protected-access
+    assert (cfg, ok) == ({}, False)
+
+
+def test_case_twins_and_repeats_elsewhere_are_not_refused():
+    """Case twins are distinct keys and survive a rewrite (crew_tiers still
+    sees them); a repeat outside the tier map changes no tier."""
+    import crew_config_files  # pylint: disable=import-outside-toplevel
+    assert crew_config_files.tier_map_duplicates(
+        '{"tiers": {"host:a": {"tier": "dev"}, "host:A": {"tier": "dev"}}}') is None
+    assert crew_config_files.tier_map_duplicates(
+        '{"pm": {}, "pm": {}, "tiers": {"host:a": {"tier": "dev"}}}') is None
+    assert crew_config_files.tier_map_duplicates("{not json") is None
+
+
+def test_t_w4_cli_set_a_repeated_key_is_refused(tmp_path, capsys):
+    root, gpath = _setup(tmp_path, machine={"host:b": _entry("dev")})
+    before = pathlib.Path(gpath).read_bytes()
+    assert crew_config.main(["--root", root, "--global-path", gpath, "--set",
+                             "tiers=" + REPEATED_TARGET[len('{"tiers": '):-1],
+                             "--apply"]) == 2
+    assert "repeats the key 'host:a'" in capsys.readouterr().err
+    assert pathlib.Path(gpath).read_bytes() == before
+
+
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_a_float_that_overflows_makes_the_layer_unreadable(tmp_path, layer):
+    """Review round 3: `1e999` is a JSON number that parses to infinity, and a
+    report would carry it out as the non-JSON `Infinity` (in `repoIgnored`,
+    say). Such a layer is unreadable, as `Infinity` itself is."""
+    raw = '{"tiers": {"host:a": {"tier": "dev", "unused": 1e999}}}'
+    if layer == "machine":
+        root, gpath = _setup(tmp_path, machine_raw=raw)
+    else:
+        root, gpath = _setup(tmp_path, machine={"host:a": _entry("prod")}, repo_raw=raw)
+    got = crew_tiers.resolve("host:a", root, gpath)
+    assert (got["tier"], got["reason"]) == ("unknown", f"{layer}-unreadable"), got
+    row = crew_tiers.explain_row(root, gpath)
+    json.loads(json.dumps(row), parse_constant=lambda name: pytest.fail(name))
+
+
 def test_t_w4_readers_and_mergers_keep_a_dotted_map_verbatim():
     cfg = {"tiers": DOTTED_MAP}
     assert crew_config.filter_global(cfg)[0]["tiers"] == DOTTED_MAP
@@ -705,6 +806,10 @@ _T_I2_ALLOWED = ("plugin/crew/hooks/scripts/crew_tiers.py",
                  "plugin/crew/hooks/scripts/crew_config.py",
                  "plugin/crew/hooks/scripts/crew_keys.py",
                  "plugin/crew/hooks/scripts/crew_state.py",
+                 # Review round 3: `tier_map_duplicates` reads the raw map only
+                 # to refuse a rewrite that would erase a conflict; it decides
+                 # no tier.
+                 "plugin/crew/hooks/scripts/crew_config_files.py",
                  "plugin/crew/skills/crew-graph/scripts/crew_upgrade.py",
                  "docs/guides/crew/src/config_reference.py")
 
@@ -819,6 +924,12 @@ def test_unreadable_machine_is_reported_when_no_target_is_listed(tmp_path, monke
     root, gpath = _setup(tmp_path, machine_raw="{bad")
     assert crew_tiers.main(["list", "--root", root, "--global-path", gpath]) == 0
     assert "machine-unreadable" in capsys.readouterr().out
+    # `--json` keeps stdout a list, and names the broken layer on stderr, so
+    # `[]` from a broken file is not silent like an empty map (review round 3).
+    assert crew_tiers.main(["list", "--json", "--root", root, "--global-path", gpath]) == 0
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == []
+    assert "machine-unreadable" in captured.err, captured
     row = crew_tiers.explain_row(root, gpath)
     assert row["tiers"] == [] and row["problems"], row
     assert row["problems"][0].startswith("machine-unreadable:"), row

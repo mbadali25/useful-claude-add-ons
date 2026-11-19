@@ -411,7 +411,8 @@ One answer to "which tier is this target in: `dev`, `qa`, `prod` or
 `unknown`?". **Report-only until R-01**: crew computes and shows the answer,
 and nothing acts on it yet. Read it with `/crew:config --show` (the `tiers` row,
 one line per target) or `python3 plugin/crew/hooks/scripts/crew_tiers.py
-explain <kind>:<name>` (`list` for every target, `--json` for either).
+explain <kind>:<name>` (`list` for every target, `--json` for either;
+`list --json` names an unreadable layer on stderr).
 
 **The machine file owns the map; a repo can only narrow it.** Strictness runs
 `dev` < `qa` < `prod` < `unknown`. The tier in force is the stricter of the
@@ -448,7 +449,8 @@ Here `workflow:deploy.yml` is `prod` (`narrowed-by-repo`) and
 `host:api.example.com` stays `qa` (`listed`; the repo's `dev` is ignored).
 
 **Reasons**, checked in this order: `machine-unreadable` and `repo-unreadable`
-(a file that exists and is not a JSON object, holds `NaN` or `Infinity`, or
+(a file that exists and is not a JSON object, holds `NaN`, `Infinity` or a
+number too large for a float such as `1e999`, or
 whose `tiers` is present and not an object, `null` included; a worktree whose
 `.crew/` git cannot resolve is `repo-unreadable`: every target is `unknown`),
 `conflicting` (case twins, two keys folding to `tiers`, or twins of `tier` in
@@ -461,8 +463,11 @@ not a problem: no machine file means every target is `unlisted`.
 `python3 plugin/crew/hooks/scripts/crew_config.py --set
 'tiers={"workflow:deploy.yml":{"tier":"qa"}}' [--repo] --apply`. A path under
 it (`--set tiers.<target>...`) is refused, so is a value that is not an object
-(`null` included), and `--unset tiers` removes the map. An upgrade adds
-`tiers: {}` to a file that has none.
+(`null` included), so is a value that repeats a key, and `--unset tiers`
+removes the map. An upgrade adds `tiers: {}` to a file that has none. A file
+whose `tiers` repeats a key exactly (the key itself, a target, or a field of
+an entry) is not rewritten by any crew writer, upgrade or platform-sync: a
+rewrite would keep one value and erase the conflict. Fix it by hand.
 
 **Consumers read `crew_tiers` only.** The merged config (`resolve_config`)
 carries the machine map alone, never the repo's, so it is a lower bound and

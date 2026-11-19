@@ -3688,7 +3688,8 @@ def global_snapshot(path=None):
     onto `read_global_config`'s `{}` collapse would replace the whole file."""
     real_path = _global_label(path)
     try:
-        parsed, raw = crew_config_files.read_strict(real_path, allow_empty=True)
+        parsed, raw = crew_config_files.read_strict(real_path, allow_empty=True,
+                                                    for_write=True)
     except crew_config_files.Unreadable as exc:
         if exc.kind == "absent":
             return {}, None, crew_config_files.ABSENT
@@ -4050,6 +4051,9 @@ def _repo_unreadable(path, exc):
             f"no {path} - nothing to write into. Run /crew:init to set this "
             "repo up, or, if .crew/ exists, start a session so platform-sync "
             "heals it with the built-in defaults")
+    if exc.kind == "duplicate":
+        # R-05 review round 3: a rewrite would erase a tier conflict.
+        return RepoWriteRefused(f"{exc}; left untouched")
     if exc.kind == "unparsable":
         return RepoWriteRefused(
             f"{exc}; left untouched. Start a session so platform-sync backs it "
@@ -4065,7 +4069,7 @@ def repo_snapshot(root):
     create a config from one key or destroy the only copy of a broken one."""
     path = repo_config_path(root)
     try:
-        parsed, raw = crew_config_files.read_strict(path)
+        parsed, raw = crew_config_files.read_strict(path, for_write=True)
     except crew_config_files.Unreadable as exc:
         raise _repo_unreadable(path, exc) from exc
     return parsed, raw, crew_config_files.digest(raw)

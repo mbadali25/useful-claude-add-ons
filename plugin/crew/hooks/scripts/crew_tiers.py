@@ -46,6 +46,7 @@ from __future__ import annotations
 import argparse
 import itertools
 import json
+import math
 import os
 import sys
 
@@ -126,6 +127,17 @@ def _no_constant(name):
     raise ValueError(f"{name} is not JSON")
 
 
+def _finite_float(text):
+    """`parse_float` for `_read_layer`: a number that overflows a float
+    (`1e999`) would come back as infinity, which `json.dumps` then writes as
+    the non-JSON `Infinity` in a `--json` report. Such a file is unreadable
+    (D5), the same as one holding `Infinity` itself (review round 3)."""
+    value = float(text)
+    if math.isinf(value) or math.isnan(value):
+        raise ValueError(f"{text} does not fit a finite number")
+    return value
+
+
 def _read_layer(path):
     """`("absent", None)`, `("unreadable", detail)` or `("ok", parsed)`.
     Never raises: a path `open` refuses (an embedded NUL, a wrong type) is
@@ -144,7 +156,8 @@ def _read_layer(path):
     except UnicodeDecodeError as exc:
         return "unreadable", f"{path}: not UTF-8 ({exc})"
     try:
-        parsed = json.loads(text, object_pairs_hook=_pairs, parse_constant=_no_constant)
+        parsed = json.loads(text, object_pairs_hook=_pairs, parse_constant=_no_constant,
+                            parse_float=_finite_float)
     except (ValueError, RecursionError) as exc:
         return "unreadable", f"{path}: not JSON ({type(exc).__name__}: {exc})"
     if not isinstance(parsed, dict):
@@ -459,6 +472,11 @@ def main(argv=None):
     results = [resolve_layers(machine, repo, t) for t in _targets(machine, repo)]
     problems = layer_problems(machine, repo)
     if args.json:
+        # stdout keeps its list shape; an unreadable or conflicting layer is
+        # named on stderr, so `[]` from a broken file never reads as an empty
+        # map (review round 3).
+        for problem in problems:
+            print(f"! {problem}", file=sys.stderr)
         print(json.dumps(results, indent=2))
         return 0
     for problem in problems:

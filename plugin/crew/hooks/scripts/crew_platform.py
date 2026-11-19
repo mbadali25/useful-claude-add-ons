@@ -56,6 +56,7 @@ import sys
 import crew_backup
 import crew_common
 import crew_config
+import crew_config_files
 import hook_once
 
 CONFIG_PATH = ".crew/config.json"
@@ -606,12 +607,17 @@ def main(argv=None):
         facts = detect(root)
         changes = diff(cfg, facts)
         if changes:
-            if not apply_changes(root, cfg, raw, changes):
+            # R-05 review round 3: a rewrite from the parsed object keeps one
+            # value of an exactly repeated tier key, erasing the conflict
+            # crew_tiers reports, so such a file is left as it is.
+            held = crew_config_files.tier_map_duplicates(raw) if isinstance(raw, str) else None
+            if held or not apply_changes(root, cfg, raw, changes):
                 # Read-only checkout, or a permissions problem. Say what would
                 # have changed rather than pretending it did.
                 lines = report(changes, concerns(cfg, facts), facts)
                 if lines:
-                    lines[0] += " (could NOT be written - is it read-only?)"
+                    lines[0] += (f" (NOT written: .crew/config.json {held})" if held
+                                 else " (could NOT be written - is it read-only?)")
                 if heal_message:
                     lines = [heal_message] + lines
                 if lines:
