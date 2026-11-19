@@ -3,6 +3,7 @@ from. Each check here is what keeps that table honest against the code:
 one row per leaf, value tuples held by identity (never copied), code-branch
 values run through the real reader, and no "coming" key already in the code.
 """
+import importlib.util
 import json
 import os
 import re
@@ -194,7 +195,8 @@ def test_since_is_a_version_no_newer_than_the_plugin():
         plugin = _version(json.load(fh)["version"])
     for key, row in crew_keys.KEY_META.items():
         since = row["since"]
-        if since is None or since == "<=0.11.0":
+        assert since is not None, key
+        if since == "<=0.11.0":
             continue
         assert re.fullmatch(r"\d+\.\d+\.\d+", since), (key, since)
         assert _version(since) <= plugin, (key, since)
@@ -610,3 +612,84 @@ def test_no_section_citations():
     offenders = [p for p in listed.stdout.split() if not p.startswith(_CITATION_EXEMPT_PREFIXES)]
 
     assert offenders == [], "CONFIG.md section citations remain in:\n" + "\n".join(offenders)
+
+
+# --- R-C1: a row is complete (summary, allowed values, layer, arrival version) --
+
+def _with_row(monkeypatch, key, **changes):
+    meta = dict(crew_keys.KEY_META)
+    meta[key] = dict(meta[key], **changes)
+    monkeypatch.setattr(crew_keys, "KEY_META", meta)
+    return crew_keys.problems()
+
+
+def _load_config_reference():
+    path = os.path.join(os.path.dirname(os.path.dirname(PLUGIN)), "docs", "guides",
+                        "crew", "src", "config_reference.py")
+    spec = importlib.util.spec_from_file_location("config_reference_r_c1", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_committed_table_is_complete():  # A1
+    assert crew_keys.problems() == []
+
+
+def test_blank_summary_is_a_problem(monkeypatch):  # B1
+    assert "no summary: pm.authority" in _with_row(monkeypatch, "pm.authority", summary="   ")
+
+
+def test_missing_arrival_version_is_a_problem(monkeypatch):  # B2
+    assert "no arrival version: qa.order" in _with_row(monkeypatch, "qa.order", since=None)
+
+
+def test_malformed_arrival_version_is_a_problem(monkeypatch):  # B3
+    assert "bad arrival version: qa.order ('1.3')" in _with_row(monkeypatch, "qa.order", since="1.3")
+
+
+def test_the_first_version_marker_is_an_arrival_version(monkeypatch):  # A2
+    found = _with_row(monkeypatch, "qa.order", since=crew_keys.FIRST)
+    assert not [p for p in found if "arrival version" in p]
+
+
+def test_a_row_with_neither_values_nor_type_is_a_problem(monkeypatch):  # B4
+    key = "unattendedCloud.aws.readOnly.region"
+    assert crew_keys.KEY_META[key]["values"] is None
+    assert f"no allowed values: {key}" in _with_row(monkeypatch, key, type=None)
+
+
+def test_a_tuple_row_with_no_values_is_a_problem(monkeypatch):  # B5
+    key = next(k for k, r in crew_keys.KEY_META.items()
+               if r["kind"] == "tuple" and not crew_guards.ratchet_spec(k))
+    assert f"no allowed values: {key}" in _with_row(monkeypatch, key, values=(), type=None)
+
+
+def test_values_alone_or_type_alone_is_allowed():  # A3, A4
+    assert crew_keys.KEY_META["dev.provider"]["type"] is None
+    assert crew_keys.KEY_META["qa.fallback"]["values"] is None
+    assert not [p for p in crew_keys.problems() if "allowed values" in p]
+
+
+def test_a_layer_outside_layers_is_a_problem(monkeypatch):  # B6
+    key = "pm.authority"
+    real = crew_keys.layer_of
+    monkeypatch.setattr(crew_keys, "layer_of", lambda k: "nowhere" if k == key else real(k))
+    assert f"no layer class: {key} ('nowhere')" in crew_keys.problems()
+
+
+def test_layers_is_exactly_what_layer_of_returns():  # A5
+    observed = {crew_keys.layer_of(k) for k in crew_keys.KEY_META}
+    assert observed == set(crew_keys.LAYERS)
+
+
+def test_a_layer_with_no_definition_stops_the_generator(monkeypatch):  # B7
+    module = _load_config_reference()
+    module.Model()
+    monkeypatch.setattr(crew_keys, "LAYERS", crew_keys.LAYERS + ("protected",))
+    with pytest.raises(RuntimeError, match="protected"):
+        module.Model()
+
+
+def test_the_nonprod_table_describes_its_shape():  # A6
+    assert (crew_keys.KEY_META["unattendedCloud.aws.nonProd"]["type"] or "").strip()

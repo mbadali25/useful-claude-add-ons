@@ -97,6 +97,12 @@ class Model:  # pylint: disable=too-few-public-methods
         problems = self.keys.problems()
         if problems:
             raise RuntimeError("crew_keys disagrees with the code: " + "; ".join(problems))
+        terms = {name for name, _ in LAYER_TERMS}
+        if terms != set(self.keys.LAYERS):
+            raise RuntimeError(
+                "crew_keys.LAYERS and LAYER_TERMS disagree: no definition for "
+                f"{sorted(set(self.keys.LAYERS) - terms)}, no such class for "
+                f"{sorted(terms - set(self.keys.LAYERS))}")
         self.repo_defaults = self.config.default_config()
         self.global_defaults = self.config.default_global_config()
         self.leaves = self.keys.all_leaves()
