@@ -39,7 +39,9 @@ Input: one request, a dict.
     effects     what the action does, as answers to the closed questions in
                 `EFFECT_QUESTIONS` (R-P6, 4.13); see `classify`. Read only
                 when the key is present, whatever its value. Its classes are
-                added to the table's own, never removed. One exception (D9):
+                added to the table's own, never removed, and only add
+                requirements: rule 2's account check runs with and without
+                them, and both must pass. One exception (D9):
                 a valid USD monthly estimate at or under the threshold
                 stands in for a missing facts.estimate_under_threshold; an
                 explicit False fact still wins. Effects must be derived from
@@ -394,17 +396,23 @@ def _amount(value: Any) -> Any:
     return value
 
 
+def _limit(threshold: Any) -> Any:
+    """The threshold actually applied. One that is not a finite number >= 0
+    reads as 0, the strictest value: an invalid threshold must never widen."""
+    limit = _amount(threshold)
+    if limit is None:
+        limit = 0   # an invalid threshold must not widen (D6)
+    return limit
+
+
 def _cost_over(estimate: Any, threshold: Any) -> str:
     """UNDER, OVER or CANNOT_ESTIMATE for one monthly cost estimate.
 
     Only {"amount": n, "currency": "USD", "period": "month"} is an estimate;
     any other shape, currency or period cannot be compared without a rate
     source, so it cannot be estimated (counted as over, 4.5). Over means
-    strictly over. A threshold that is not a finite number >= 0 reads as 0,
-    the strictest value: an invalid threshold must never widen."""
-    limit = _amount(threshold)
-    if limit is None:
-        limit = 0   # an invalid threshold must not widen (D6)
+    strictly over the threshold `_limit` applies."""
+    limit = _limit(threshold)
     if not isinstance(estimate, dict):
         return CANNOT_ESTIMATE
     if set(estimate) != {"amount", "currency", "period"}:
@@ -452,7 +460,11 @@ def classify(effects: Any, tier: Any, threshold: Any = None) -> dict:
         add(MONEY, "spends is True, missing or not a bool")
     cost = _cost_over(effects.get("monthly_cost"), limit)
     if cost != UNDER:
-        add(MONEY, f"monthly cost is {cost} (threshold {limit!r} USD a month)")
+        # The threshold named is the one applied, not the one given (D6).
+        applied = _limit(limit)
+        add(MONEY, f"monthly cost is {cost} (threshold {applied} USD a month"
+            + ("" if applied is limit else f"; the given threshold {limit!r} "
+               "is not a finite number >= 0, so 0 applies") + ")")
     # Only a known False is benign in every tier. True is tied to the tier
     # (a dev or QA write is not a production write); an answer that cannot
     # be read is a production write in every tier (D3: could not tell).
@@ -489,7 +501,39 @@ def _request_tier(req: dict) -> str:
     return tier
 
 
-GRANT_FACTS =(("expiry_provable", True), ("within_ceiling", True),
+def _account_stop(req: dict, spec: Op, tier: str, classes: frozenset,
+                  walk: Any) -> Optional[str]:
+    """Rule 2's account check for one class set: why it stops, or None."""
+    broker = spec.admin or bool(classes & {ADMIN_USE, ACCOUNT_CREATION})
+    # A production write by any route uses the verified write account; an
+    # admin operation goes through the broker instead (4.14).
+    # A class in production asks for the write account even where the row
+    # itself would take a read account (a read classified as a write).
+    # An admin operation holds no session account at all (the else branch).
+    access = None if broker else "write" if (
+        tier == "prod" and classes and spec.lane not in (HUMAN, NEVER)
+    ) else spec.account
+    if access:
+        account = _pick(req.get("account"), ACCOUNTS)
+        walk.look("2", f"account {account}, needs {access}-verified")
+        if account != access + "-verified":
+            return (f"account is {account}, not the verified {access} "
+                    "account the tier map names")
+        return None
+    other = _pick(req.get("account"), ACCOUNTS)
+    # An admin operation runs in the broker (4.14): the session holds no
+    # credential for it, so a verified read or write account in use is
+    # the wrong credential, not a pass.
+    bad = ("mismatch", "fail", "could-not-tell")
+    if broker:
+        bad += ("read-verified", "write-verified")
+    if other in bad:
+        walk.look("2", f"account {other} (identity does not check out)")
+        return f"account is {other}"
+    return None
+
+
+GRANT_FACTS = (("expiry_provable", True), ("within_ceiling", True),
                ("crew_account_exists", True), ("provider_ticket", True),
                ("ownership", "own"))
 
@@ -596,9 +640,10 @@ def decide(request: Any) -> dict:
         facts = dict(facts, estimate_under_threshold=True)
         walk.look("-", "effects: a monthly estimate under the threshold "
                        "stands in for facts.estimate_under_threshold")
-    classes = _classes(spec, tier, facts, req.get("classified_as"))
+    base = _classes(spec, tier, facts, req.get("classified_as"))
+    classes = base
     if effect is not None:
-        classes = classes | frozenset(effect["classes"])
+        classes = base | frozenset(effect["classes"])
         walk.look("-", f"effects add {effect['classes'] or 'no class'}")
     needs_admin = spec.admin or bool(classes & {ADMIN_USE, ACCOUNT_CREATION})
 
@@ -611,33 +656,17 @@ def decide(request: Any) -> dict:
     if layer != "clear":
         return done("2", stop_outcome,
                     f"machine layer is {layer} ({stop_word})")
-    # A production write by any route uses the verified write account; an
-    # admin operation goes through the broker instead (4.14).
-    # A class in production asks for the write account even where the row
-    # itself would take a read account (a read classified as a write).
-    # An admin operation holds no session account at all (the else branch).
-    access = None if needs_admin else "write" if (
-        tier == "prod" and classes and spec.lane not in (HUMAN, NEVER)
-    ) else spec.account
-    if access:
-        account = _pick(req.get("account"), ACCOUNTS)
-        walk.look("2", f"account {account}, needs {access}-verified")
-        if account != access + "-verified":
-            return done("2", stop_outcome,
-                        f"account is {account}, not the verified {access} "
-                        f"account the tier map names ({stop_word})")
-    else:
-        other = _pick(req.get("account"), ACCOUNTS)
-        # An admin operation runs in the broker (4.14): the session holds no
-        # credential for it, so a verified read or write account in use is
-        # the wrong credential, not a pass.
-        bad = ("mismatch", "fail", "could-not-tell")
-        if needs_admin:
-            bad += ("read-verified", "write-verified")
-        if other in bad:
-            walk.look("2", f"account {other} (identity does not check out)")
-            return done("2", stop_outcome,
-                        f"account is {other} ({stop_word})")
+    # Effects only add requirements (R-P6): the account check runs for the
+    # classes without them and, when they add a class, again with them, so
+    # an added class can never swap the account the request must hold for
+    # one it does not (an admin effect does not excuse a cloud read's read
+    # account; a money effect in prod does not admit the write account in
+    # place of the read one). Both must pass; a request whose two answers
+    # contradict each other always stops here.
+    for checked in ((base, classes) if classes != base else (classes,)):
+        why = _account_stop(req, spec, tier, checked, walk)
+        if why:
+            return done("2", stop_outcome, f"{why} ({stop_word})")
 
     if spec.lane == HUMAN:
         walk.look("human", "one-way list")
@@ -685,7 +714,8 @@ def decide(request: Any) -> dict:
                       else ""))
     if serious:
         return _serious(req, walk, (name, spec, facts, classes), serious,
-                        attended, (stop_outcome, stop_word))
+                        attended, (stop_outcome, stop_word),
+                        _unplaced_what(walk, base, effect))
 
     if spec.lane == READ:
         return done("6", ALLOW, "read with a verified read account")
@@ -715,18 +745,31 @@ def decide(request: Any) -> dict:
     return done("8", ALLOW, "every condition met")
 
 
+def _unplaced_what(walk: _Walk, base: frozenset,
+                   effect: Optional[dict]) -> str:
+    """What could not be placed, for the UNPLACED reason. Without effects
+    the R-01 wording is kept whatever the source (parity, trace included)."""
+    if walk.unplaced or effect is None:
+        return "the operation is not in the closed table"
+    what = []
+    if UNPLACED in base:
+        what.append("the classified_as hint is not a class in the closed list")
+    if UNPLACED in effect["classes"]:
+        what.append("an effect has no question in the closed effects schema")
+    return "; ".join(what) or "the operation is not in the closed table"
+
+
 def _serious(req: dict, walk: _Walk, subject: tuple, serious: str,
-             attended: bool, stop: tuple) -> dict:
+             attended: bool, stop: tuple, unplaced_what: str = "") -> dict:
     """Rule 5 for a serious request. `subject` is (name, spec, facts,
     classes) and
     `stop` is (outcome, wording) for a stop that depends on presence.
-    `subject` carries every class that applies; the strictest is `serious`."""
+    `subject` carries every class that applies; the strictest is `serious`.
+    `unplaced_what` names what could not be placed (`_unplaced_what`)."""
     name, spec, facts, classes = subject
     stop_outcome, stop_word = stop
     if UNPLACED in classes:
-        what = ("the operation is not in the closed table" if walk.unplaced
-                or "effects" not in req else
-                "an effect has no question in the closed effects schema")
+        what = unplaced_what or "the operation is not in the closed table"
         return walk.done(
             "5", NEEDS_PLAN,
             f"{what}, and a plan of record cannot list a form the schema does "
@@ -804,6 +847,16 @@ def explain(request: Any) -> str:
     return "\n".join(lines)
 
 
+def _json_fraction(text: str) -> Any:
+    """A JSON fraction, read exactly as a Decimal. One whose exponent no
+    Decimal can hold (1e9999999999999999999) is read as a float instead, so
+    it is inf or 0.0 and never crashes the reader: valid JSON is a request."""
+    try:
+        return Decimal(text)
+    except ArithmeticError:   # decimal.InvalidOperation
+        return float(text)
+
+
 def _main(argv: list) -> int:
     cmd = argv[1] if len(argv) > 1 else ""
     if cmd == "operations":
@@ -818,7 +871,7 @@ def _main(argv: list) -> int:
     try:
         # A fraction is read exactly, so a cost a hair over the threshold is
         # not rounded down to it (the decide answer never prints a number).
-        request = json.loads(raw, parse_float=Decimal)
+        request = json.loads(raw, parse_float=_json_fraction)
     except ValueError as exc:
         print(f"crew_policy: request is not JSON ({exc}); no decision",
               file=sys.stderr)

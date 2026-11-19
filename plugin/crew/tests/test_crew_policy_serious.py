@@ -264,16 +264,43 @@ def check_admin_and_empty_paths(m):
                            "effects": partial}))
     if done != ("needs-plan", "5", P.DESTROY_NOT_OWNED):
         bad.append(f"partial object without destroys: {done}")
-    # An admin effect moves the account check to the broker (4.14), so a
-    # dev cloud-read with no account goes from ask-owner at rule 2 to
-    # needs-plan at rule 5: still no allow without a covering plan.
+    # An admin effect adds the broker's account rule (4.14) to the row's own;
+    # it does not replace it. A dev cloud-read with no account stops at rule
+    # 2 with or without the effect, even with a covering, attested plan.
     read = {"operation": "cloud-read", "tier": "dev", "presence": "attended",
             "machine_layer": "clear", "account": "none", "admin_need": "covers"}
-    if brief(P.decide(read))[:2] != ("ask-owner", "2"):
-        bad.append(f"cloud-read without effects moved: {brief(P.decide(read))}")
-    done = brief(m.decide(dict(read, effects=fx(admin_use="other"))))
-    if done != ("needs-plan", "5", P.ADMIN_USE):
-        bad.append(f"cloud-read with admin-use effects: {done}")
+    for plan in ({}, COVERING_PLAN):
+        if brief(P.decide(dict(read, **plan)))[:2] != ("ask-owner", "2"):
+            bad.append(f"cloud-read without effects moved: {brief(P.decide(read))}")
+        done = brief(m.decide(dict(read, effects=fx(admin_use="other"), **plan)))
+        if done[:2] != ("ask-owner", "2"):
+            bad.append(f"cloud-read with admin-use effects, plan {bool(plan)}: {done}")
+    return bad
+
+
+COVERING_PLAN = {"provenance": "plan-of-record", "plan_covers": True, "attested": True}
+
+
+def check_effects_never_swap_the_account(m):
+    """Effects only add requirements: with a covering, attested plan (the one
+    place rule 5 can allow), no single serious answer turns a request that is
+    not allowed with benign effects into an allow, in any tier, for any
+    account answer, for every operation in the table."""
+    bad = []
+    covered = dict(COVERING_PLAN, presence="attended", machine_layer="clear",
+                   admin_need="covers", prodcheck="pass", target="repo")
+    for op in sorted(P.OPERATIONS):
+        for tier in ("dev", "qa", "prod"):
+            for account in P.ACCOUNTS:
+                request = dict(covered, operation=op, tier=tier, account=account)
+                baseline = m.decide(dict(request, effects=BENIGN))["outcome"]
+                if baseline == "allow":
+                    continue
+                for key, value in SINGLE_SERIOUS:
+                    done = m.decide(dict(request, effects=fx(**{key: value})))
+                    if done["outcome"] == "allow":
+                        bad.append(f"{op} {tier} account {account}: {key}={value!r} "
+                                   f"allowed ({done['serious']})")
     return bad
 
 
@@ -352,6 +379,13 @@ def check_threshold(m):
         bad.append("the default threshold is not 50")
     if m.classify(fx(monthly_cost=usd(50.01)), "dev")["classes"] != [P.MONEY]:
         bad.append("the default threshold is not 50 (strictly over)")
+    # The reason names the threshold applied, not the rejected one given.
+    said = m.classify(fx(monthly_cost=usd(1)), "dev", threshold="100")["reasons"]
+    if "threshold 0 USD" not in said.get(P.MONEY, "") or "threshold '100' USD" in said.get(P.MONEY, ""):
+        bad.append(f"an invalid threshold is named as applied: {said}")
+    said = m.classify(fx(monthly_cost=usd(60)), "dev")["reasons"].get(P.MONEY, "")
+    if "threshold 50 USD a month)" not in said:
+        bad.append(f"the default threshold is not named: {said}")
     for field in ("threshold", "costThreshold"):
         request = ask(fx(monthly_cost=usd(60)), **{field: 100})
         done = brief(m.decide(request))
@@ -370,10 +404,14 @@ def check_presence_not_value(m):
     return bad
 
 
-def _main_out(m, body):
+def _main_out(m, body, verb="classify"):
+    """(exit code, stdout) of the CLI; a crash is code None and its repr."""
     out = io.StringIO()
-    with contextlib.redirect_stdout(out):
-        code = m._main(["crew_policy.py", "classify", body])  # pylint: disable=protected-access
+    try:
+        with contextlib.redirect_stdout(out):
+            code = m._main(["crew_policy.py", verb, body])  # pylint: disable=protected-access
+    except (ArithmeticError, ValueError, TypeError) as exc:   # decimal.InvalidOperation
+        return None, repr(exc)
     return code, out.getvalue()
 
 
@@ -395,14 +433,27 @@ def check_cli_reads_fractions_exactly(m):
     """A JSON fraction a hair over the threshold is not rounded down to it."""
     bad = []
     for raw, want in (("50.000000000000001", ["money"]), ("50.0", []),
-                      ("49.99", []), ("50.01", ["money"]), ("1e999", ["money"])):
+                      ("49.99", []), ("50.01", ["money"]), ("1e999", ["money"]),
+                      (HUGE, ["money"]), ("-" + HUGE, ["money"]),
+                      ("1e-9999999999999999999999999999999999", [])):
         body = json.dumps({"operation": "commit", "tier": "dev",
                            "effects": fx(monthly_cost=usd(0))})
         body = body.replace('"amount": 0', '"amount": ' + raw)
         code, out = _main_out(m, body)
         if code != 0 or json.loads(out)["classes"] != want:
             bad.append(f"classify CLI amount {raw}: {code} {out.strip()[:80]}")
+    # A number no Decimal can hold is still valid JSON: a decide request
+    # without effects that carries one in an unused field is answered as
+    # if the field were not there (origin/main answers it allow).
+    plain = {"operation": "commit", "tier": "dev", "presence": "attended",
+             "machine_layer": "clear", "account": "none"}
+    code, out = _main_out(m, json.dumps(plain)[:-1] + ', "unused": ' + HUGE + "}", "decide")
+    if code != 0 or json.loads(out)["outcome"] != "allow":
+        bad.append(f"decide CLI with an unused {HUGE}: {code} {out.strip()[:80]}")
     return bad
+
+
+HUGE = "1e9999999999999999999999999999999999"
 
 
 def check_unplaced_wording(m):
@@ -414,6 +465,15 @@ def check_unplaced_wording(m):
     unknown = m.decide(ask(BENIGN, op="mystery"))["reason"]
     if "operation is not in the closed table" not in unknown:
         bad.append(f"an unknown operation: {unknown}")
+    # An unrecognised classified_as hint with benign effects is the hint's,
+    # not an effect's and not the operation's.
+    hint = m.decide(ask(BENIGN, classified_as="no-such-class"))["reason"]
+    if "classified_as hint" not in hint or "effect has no question" in hint \
+            or "not in the closed table" in hint:
+        bad.append(f"an unplaced hint with benign effects: {hint}")
+    both = m.decide(ask(fx(sends_email=True), classified_as="no-such-class"))["reason"]
+    if "classified_as hint" not in both or "effect has no question" not in both:
+        bad.append(f"an unplaced hint and an unplaced effect: {both}")
     return bad
 
 
@@ -439,7 +499,8 @@ def check_r01_parity(m):
 
 
 CHECKS = (check_serious_cases, check_admin_and_empty_paths, check_must_allow,
-          check_union_with_own_class, check_d9, check_threshold,
+          check_union_with_own_class, check_effects_never_swap_the_account,
+          check_d9, check_threshold,
           check_presence_not_value, check_cli_reads_the_tier,
           check_cli_reads_fractions_exactly, check_unplaced_wording, check_r01_parity)
 
@@ -699,7 +760,7 @@ MUTATIONS = (
      '    prod = _pick(tier, TIERS) not in ("dev", "qa")\n',
      '    prod = _pick(tier, TIERS) == "prod"\n'),
     ("14 effects replace the operation's own classes",
-     '        classes = classes | frozenset(effect["classes"])\n',
+     '        classes = base | frozenset(effect["classes"])\n',
      '        classes = frozenset(effect["classes"])\n'),
     ("15 an under-threshold estimate overrides an explicit False fact",
      '"estimate_under_threshold", True) == UNKNOWN:',
@@ -730,11 +791,19 @@ MUTATIONS = (
      "    if writes is not False and (prod or writes is not True):\n",
      "    if writes is not False and prod:\n"),
     ("25 the CLI reads a fraction as a float (50.000000000000001 is 50.0)",
-     "json.loads(raw, parse_float=Decimal)", "json.loads(raw)"),
+     "json.loads(raw, parse_float=_json_fraction)", "json.loads(raw)"),
     ("26 a Decimal amount is not a number",
      "not isinstance(value, (int, float, Decimal)):", "not isinstance(value, (int, float)):"),
     ("27 an unplaced effect on a known operation is worded as an unknown operation",
-     "if walk.unplaced\n                or", "if True\n                or"),
+     "    if walk.unplaced or effect is None:\n", "    if True:\n"),
+    ("27b an unplaced classified_as hint is worded as an effect",
+     "    if UNPLACED in base:\n", "    if False:\n"),
+    ("28 an effect-added class replaces the row's account rule",
+     "(base, classes) if classes != base else (classes,)", "(classes,)"),
+    ("29 the CLI reads every fraction with Decimal, which crashes on 1e9999...",
+     "parse_float=_json_fraction", "parse_float=Decimal"),
+    ("30 the money reason names the rejected threshold as applied",
+     "        applied = _limit(limit)\n", "        applied = limit\n"),
 )
 
 
