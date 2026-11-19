@@ -386,10 +386,10 @@ KEY_META = {
         "The AWS region the unattended run gets; null is `us-east-1`. Machine file only.",
         "type", since="1.1.10", source=_S + "crew_unattended.py", type_="region, or null"),
     "unattendedCloud.aws.nonProd": _row(
-        "Environment name -> `{profile, identity, region}` for `launch --environment NAME`; "
+        "Environment name -> `{profile, identity, region?}` (region optional, default `us-east-1`) for `launch --environment NAME`; "
         "usable only where the repo's `environments.nonProd` agrees. Machine file only.",
         "open-table", since="1.1.10", source=_S + "crew_unattended.py",
-        type_="object: environment name -> {profile, identity, region}"),
+        type_="object: environment name -> {profile, identity, region?}"),
     # --- pm
     "pm.authority": _row("How much the PM may do unasked. A widening is warned about; the "
                          "two layers combine by precedence.", "tuple",
@@ -708,12 +708,16 @@ def problems():
                        "values (crew_guards.RATCHETED_KEYS owns them)")
         if crew_guards.ratchet_spec(key) is not None and row["kind"] != "ratchet":
             out.append(f"ratchet kind: {key} is ratcheted and its kind is {row['kind']!r}")
-        if not (row["summary"] or "").strip():
+        if not isinstance(row["summary"], str) or not row["summary"].strip():
             out.append(f"no summary: {key}")
-        if not values_of(key) and not (row["type"] or "").strip():
+        if row["type"] is not None and not isinstance(row["type"], str):
+            out.append(f"bad type text: {key} ({row['type']!r})")
+        elif not values_of(key) and not (row["type"] or "").strip():
             out.append(f"no allowed values: {key}")
         since = row["since"]
-        if since is None or not str(since).strip():
+        if since is not None and not isinstance(since, str):
+            out.append(f"bad arrival version: {key} ({since!r})")
+        elif since is None or not since.strip():
             out.append(f"no arrival version: {key}")
         elif since != FIRST and not re.fullmatch(r"\d+\.\d+\.\d+", str(since)):
             out.append(f"bad arrival version: {key} ({since!r})")

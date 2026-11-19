@@ -55,6 +55,18 @@ def test_problems_names_a_deleted_and_an_extra_row(monkeypatch):
     assert "orphan: pm.noSuchKey has a KEY_META row and is not a config leaf" in found
 
 
+def test_problems_guards_field_types(monkeypatch):
+    """A non-string summary, type or since is a named problem, not an exception."""
+    meta = dict(crew_keys.KEY_META)
+    meta["pm.authority"] = dict(meta["pm.authority"], summary=5)
+    meta["pm.maxDispatches"] = dict(meta["pm.maxDispatches"], type=["x"], since=123)
+    monkeypatch.setattr(crew_keys, "KEY_META", meta)
+    found = crew_keys.problems()
+    assert "no summary: pm.authority" in found
+    assert any(p.startswith("bad type text: pm.maxDispatches") for p in found)
+    assert any(p.startswith("bad arrival version: pm.maxDispatches") for p in found)
+
+
 def test_ratcheted_rows_do_not_restate_tiers():
     ratcheted = [k for k in crew_keys.KEY_META if crew_guards.ratchet_spec(k)]
     assert ratcheted, "no ratcheted key found: the test would pass vacuously"
