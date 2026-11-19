@@ -276,12 +276,21 @@ def test_probe_codex_not_on_path_is_failed(lane, tmp_path):
     assert (result.returncode, _rounds_used(repo)) == (6, 0)
 
 
-def test_probe_is_codex_only(lane):
+def test_probe_refuses_claude_defers_kimi_and_needs_a_copilot_model(lane):
+    """R-10: `--probe` takes any launched provider. claude (in the session) is
+    a usage error; kimi probes inside its own launch, so `--probe` answers
+    `deferred` with no call; copilot without --model is refused as its run is."""
     repo, scratch, bin_dir = lane
+    env = _env(bin_dir, "ok")
 
-    result = _script(repo, scratch, _env(bin_dir, "ok"), "--provider", "claude", "--probe")
+    claude = _script(repo, scratch, env, "--provider", "claude", "--probe")
+    kimi = _script(repo, scratch, env, "--provider", "kimi", "--probe")
+    copilot = _script(repo, scratch, env, "--provider", "copilot", "--probe")
 
-    assert result.returncode == 2 and "codex provider only" in result.stderr
+    assert claude.returncode == 2 and "claude runs in the session" in claude.stderr
+    assert (kimi.returncode, _field(kimi, "PROBE")) == (0, "deferred"), kimi.stderr
+    assert copilot.returncode == 2 and "copilot needs --model" in copilot.stderr
+    assert (_calls(bin_dir), _rounds_used(repo)) == ([], 0)
 
 
 # --- a limit hit mid-round is recorded, for the next round only --------------------------

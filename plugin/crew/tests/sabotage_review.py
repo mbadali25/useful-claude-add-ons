@@ -1910,7 +1910,8 @@ REVIEW_FIX_MUTATIONS = (
      '            refusal, _ = family_guard(args)\n            if False:\n',
      _SF + "test_the_probe_asks_the_family_guard_before_calling_codex"),
     ("L-0712: --resolve-run resolves the fallback with no probe", REVIEW_RUN,
-     'available=lambda p, m: p != "codex" if whole else (p, m or None) != gone)',
+     # R-10 re-anchor: the probed provider is `probed` (codex by default), not a literal.
+     'available=lambda p, m: p != probed if whole else (p, m or None) != gone)',
      'available=None)',
      _SF + "test_resolve_run_dispatches_the_resolved_fallback"),
     ("L-0712: /crew:status drops the no-reviewer count", CREW_STATUS,
@@ -2216,3 +2217,95 @@ REVIEW_FIX_MUTATIONS = (
      '            pass\n    try:\n        proc.wait()\n',
      _SP + "test_a_child_that_survives_the_kill_cannot_hold_the_wait_open"),
 )
+
+# R-10: the provider registry, one probe per attempt, and a limit that confers no
+# authority (tests/test_review_providers.py). Each row is a way the refactor could
+# double-probe, let a probe answer stand in for the family guard, or read a limit as
+# a same-family licence.
+REVIEW_PROVIDERS = os.path.join(CREW, "hooks", "scripts", "review_providers.py")
+_RP = "tests/test_review_providers.py::"
+_PROBE_GUARD = ('            refusal, _ = family_guard(args)\n            if refusal:\n'
+                '                _err(refusal)\n                return EXIT_USAGE\n'
+                '            if row.probe == review_providers.IN_LAUNCH:\n')
+R10_MUTATIONS = (
+    ("R-10 S1: --probe --provider kimi calls the Kimi probe", REVIEW_RUN,
+     '            if row.probe == review_providers.IN_LAUNCH:\n'
+     '                _out(f"PROBE={PROBE_DEFERRED}")\n',
+     '            if row.probe == review_providers.IN_LAUNCH:\n'
+     '                kimi_probe.probe(args.model or None)\n'
+     '                _out(f"PROBE={PROBE_DEFERRED}")\n',
+     _RP + "test_t6_a_kimi_attempt_defers_the_probe_to_its_own_launch"),
+    ("R-10 S2: the codex run path probes again before it launches", REVIEW_RUN,
+     '    row = review_providers.ROWS[args.provider]\n'
+     '    cmd = command_for(args.provider, exe, args.root, prompt, args.model, args.effort)\n',
+     '    row = review_providers.ROWS[args.provider]\n'
+     '    probe(args)\n'
+     '    cmd = command_for(args.provider, exe, args.root, prompt, args.model, args.effort)\n',
+     _RP + "test_t4_a_codex_attempt_probes_once_and_reviews_once"),
+    ("R-10 S3: --resolve-run grants same-family on a limit", REVIEW_RUN,
+     '            config, "qa", "review", author=(args.authors or "").split(),\n',
+     '            config, "qa", "review", author=(args.authors or "").split(),\n'
+     '            same_family_ok=status == 5,\n',
+     _RP + "test_mb2_mb3_a_limited_or_failed_codex_never_resolves_to_the_author_family"),
+    ("R-10 S4: the family guard stands down while a limit is recorded", REVIEW_RUN,
+     '    authors = {a.strip().lower() for a in args.authors.replace(",", " ").split() '
+     'if a.strip()}\n',
+     '    if review_limit.recorded(args.root, args.ticket):\n        return None, None\n'
+     '    authors = {a.strip().lower() for a in args.authors.replace(",", " ").split() '
+     'if a.strip()}\n',
+     _RP + "test_mb1_a_codex_limit_does_not_let_a_claude_round_reserve"),
+    ("R-10 S5: the probe reads any provider's limit marker as its own", REVIEW_RUN,
+     '    if mark and (mark.get("provider") or "codex") == row.name:\n',
+     '    if mark:\n',
+     _RP + "test_ma6_an_old_marker_is_codexs_and_never_copilots"),
+    ("R-10 S5: a codex marker answers a copilot probe", REVIEW_RUN,
+     '    if mark and (mark.get("provider") or "codex") == row.name:\n',
+     '    if mark:\n',
+     _RP + "test_ma6_a_codex_marker_never_answers_for_copilot"),
+    ("R-10 S6: any Copilot failure reads as limited", REVIEW_PROVIDERS,
+     '             _copilot_command, _raw_final, _no_limit),\n',
+     '             _copilot_command, _raw_final, lambda error, stderr: error or stderr or "x"),\n',
+     _RP + "test_t8_a_failing_copilot_probe_is_never_limited"),
+    ("R-10 S7: --probe skips the family guard (codex)", REVIEW_RUN,
+     '            refusal, _ = family_guard(args)\n            if refusal:\n',
+     '            refusal, _ = family_guard(args)\n            if False:\n',
+     _RP + "test_mb4_a_barred_codex_probe_makes_no_call_whatever_the_marker"),
+    ("R-10 S7: --probe skips the family guard (kimi)", REVIEW_RUN,
+     '            refusal, _ = family_guard(args)\n            if refusal:\n',
+     '            refusal, _ = family_guard(args)\n            if False:\n',
+     _RP + "test_mb6_a_refused_kimi_probe_says_kimi_and_never_deferred"),
+    ("R-10 S8: kimi's deferred answer comes before the family guard", REVIEW_RUN,
+     _PROBE_GUARD,
+     '            if row.probe == review_providers.IN_LAUNCH:\n'
+     '                _out(f"PROBE={PROBE_DEFERRED}")\n                return EXIT_CLEAN\n'
+     + _PROBE_GUARD,
+     _RP + "test_mb6_a_refused_kimi_probe_says_kimi_and_never_deferred"),
+    ("R-10 S8: kimi's deferred answer before the guard drops its warning", REVIEW_RUN,
+     _PROBE_GUARD,
+     '            if row.probe == review_providers.IN_LAUNCH:\n'
+     '                _out(f"PROBE={PROBE_DEFERRED}")\n'
+     '                _out("PROBE_DETAIL=kimi probes inside its own launch, before any '
+     'round is reserved")\n                return EXIT_CLEAN\n'
+     + _PROBE_GUARD,
+     _RP + "test_ma7_an_allowed_kimi_probe_answers_deferred_with_no_call[b-no-authors]"),
+    ("R-10 S9: the retry stops keeping the events file (registry)", REVIEW_RUN,
+     'RETRY_KEPT = ("out.txt", "stderr.txt") + review_providers.EVENTS_FILES\n',
+     'RETRY_KEPT = ("out.txt", "stderr.txt")\n',
+     _RP + "test_registry_keeps_the_public_tuples_and_every_row_is_whole"),
+    ("R-10 S9: the retry stops keeping the events file (round)", REVIEW_RUN,
+     'RETRY_KEPT = ("out.txt", "stderr.txt") + review_providers.EVENTS_FILES\n',
+     'RETRY_KEPT = ("out.txt", "stderr.txt")\n',
+     _RP + "test_t5_a_retried_codex_round_never_probes_and_keeps_its_events"),
+    ("R-10 S10: --probe refuses every in-launch provider (over-tight)", REVIEW_RUN,
+     '            if row.needs_model and not args.model:\n',
+     '            if row.probe == review_providers.IN_LAUNCH:\n                return EXIT_USAGE\n'
+     '            if row.needs_model and not args.model:\n',
+     _RP + "test_ma7_an_allowed_kimi_probe_answers_deferred_with_no_call"),
+    ("R-10 S11: a refused probe's next: says Codex whatever was probed", REVIEW_RUN,
+     '            return (f"{shown} was refused by the family guard or a usage error, '
+     'nothing was "\n',
+     '            return ("Codex was refused by the family guard or a usage error, '
+     'nothing was "\n',
+     _RP + "test_mb6_a_refused_kimi_probe_says_kimi_and_never_deferred"),
+)
+REVIEW_FIX_MUTATIONS += R10_MUTATIONS

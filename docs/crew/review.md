@@ -33,6 +33,14 @@ the repo cites (2a to 2e, 2d, 3.3) still exist in the command.
   nothing, so it stays deterministic and reserves nothing; `--resolve-run
   --probe-status <n>` turns the probe's exit code into FALLBACK / RUN_PROVIDER /
   RUN_MODEL (review.md's old one-line `python3 -c`).
+- Since R-10 each provider's command, output parser, limit text and probe kind is
+  one row of `review_providers.py`. The default walk is unchanged: it probes Codex
+  alone. `--probe --provider copilot --model <m>` is one opt-in Copilot call, never
+  `limited` (crew has no Copilot limit text). `--probe --provider kimi` makes no
+  call and answers `PROBE=deferred`, because Kimi probes inside its own run. The
+  family guard answers before any probe answer, and no probe outcome is an input
+  to it: a limit is never a same-family licence. `--resolve-run` takes
+  `--provider codex|copilot`, and reads `codex` when none is given.
 - Every exit of `review_run.py` ends with exactly one `next: <action>` line, picked
   by reason (`NEXT_REASONS` in `review_run.py`): exit 2 and exit 9 each have several
   causes, so the action depends on what was said, not on the code.

@@ -2812,6 +2812,20 @@ JUDGEMENT (carried, not re-verified at `bdde58724`, L-0928): the behaviour prose
   parser. A Kimi round returns before L-0514's retry loop, so it is never retried in-process.
   `commands/review.md` carries step 2e and exit 8 (the Kimi probe row and the exit-2 prose moved into `review_run.py`'s `next:` table and `docs/crew/review.md` with L-0726); `test_review_run_kimi.py`
   and `sabotage_kimi.py` (registered in `sabotage.py`) hold the cases and mutations.
+- **DERIVED** (R-10, derived on `feat/r-10-provider-registry` off `a29b816fb`, not at this map's
+  `anchor:`): the provider registry. `plugin/crew/hooks/scripts/review_providers.py` holds one
+  frozen `Provider` row per provider (`class Provider` `:51`, `REGISTRY` `:104`): name, display
+  name, launched, executable, probe kind (`standalone` codex/copilot, `in-launch` kimi,
+  `in-session` claude), `walk_probes` (codex only), `needs_model` (copilot), `events_file`
+  (`codex-events.jsonl`), and `command` / `final` / `limit`. `family` delegates to
+  `crew_state.family`; no row holds a same-family decision. `review_run.py` reads it:
+  `LAUNCHED` (`:299`), `RETRY_KEPT` (`:365`), `command_for` (`:849`), `_launch_round`, `probe`
+  (`:2088`; a limit marker answers only for the provider that wrote it, none = codex),
+  `resolve_run` (`:2542`; `--provider` any standalone row, codex when absent), `Context.walk`,
+  `next_action("probe")` (`:2791`; the probed row's display name), `PROVIDERS` (`:2843`). The
+  `--probe` branch asks usage, then `family_guard`, then the row; kimi answers `PROBE=deferred`
+  with no call (`:2983`), so one attempt never probes Kimi twice. Tests:
+  `plugin/crew/tests/test_review_providers.py`; mutations `R10_MUTATIONS` in `sabotage_review.py`.
 
 ## The agents on Kimi (L-0777)
 
@@ -3243,7 +3257,8 @@ JUDGEMENT (carried, not re-verified at `bdde58724`, L-0928): the behaviour prose
   shell line (`:287`). Tests: `plugin/crew/tests/test_verify_agents.py`,
   `plugin/crew/tests/test_status.py`.
 - DERIVED: `provider_probe.probe` (`plugin/crew/hooks/scripts/provider_probe.py:47`) builds its
-  call with `review_run.command_for` (`:834`) and runs it with `review_run.launch(cmd, root, ...)`
+  call with `review_run.command_for` (`review_run.py:849`, a wrapper over the provider's
+  `review_providers` row since R-10) and runs it with `review_run.launch(cmd, root, ...)`
   (`:53`), so `--skip-git-repo-check`, `-C <root>` and cwd=root hold from any directory. Tests:
   `plugin/crew/tests/test_provider_probe.py`. No hook, `/crew:status` or `/crew:review` runs it.
 - DERIVED: `crew_upgrade._write_upgrade_report`
