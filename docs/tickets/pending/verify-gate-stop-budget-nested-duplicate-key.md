@@ -1,12 +1,12 @@
 # verify-gate.sh: a repeated `verify` or `stopBudgetSeconds` key at any depth resets the Stop budget to 60 s
 
 Priority: P3 (fail-closed edge on a contrived config; the effect is the 60 s default, never no limit).
-Status: needs ticket (no T-/L-/C- id yet; pending tickets carry none). Recorded 2026-11-18 from the Codex gpt-6.2-sol review of PR #788 (crew 1.3.162). Codex labelled it blocking; the lead overrode that under the owner's standing authority: it is outside the two fixes #788 set out to make, so it is a follow-up. Priority is the recording agent's proposal; the owner may change it. Scale: P1 (correctness or safety hole) / P2 (reliability or hygiene) / P3 (docs or cleanup).
+Status: needs ticket (no T-/L-/C- id yet; pending tickets carry none). Recorded 2026-11-18 from the Codex gpt-6.2-sol review of PR #788 (crew 1.3.167). Codex labelled it blocking; the lead overrode that under the owner's standing authority: it is outside the two fixes #788 set out to make, so it is a follow-up. Priority is the recording agent's proposal; the owner may change it. Scale: P1 (correctness or safety hole) / P2 (reliability or hygiene) / P3 (docs or cleanup).
 
 Labels: VERIFIED = read in the file named; INFERRED = reasoned, not run. The recording agent did not run the example config below.
 
 ## Problem
-VERIFIED (read `plugin/crew/hooks/scripts/verify-gate.sh` lines 1941-1948 on the #788 branch, head f4d4c8967): the config is parsed with `json.load(..., object_pairs_hook=_once)`. `_once` counts `stopBudgetSeconds` and `verify` among the keys of whichever object it is handed. Python calls the hook for every object at every depth, so a repeated `verify` or `stopBudgetSeconds` key anywhere in the file is treated as a duplicate, not only the two keys the reader uses.
+VERIFIED (read `plugin/crew/hooks/scripts/verify-gate.sh` lines 1941-1948 on main bbe676138, crew 1.3.167, merged from PR #788): the config is parsed with `json.load(..., object_pairs_hook=_once)`. `_once` counts `stopBudgetSeconds` and `verify` among the keys of whichever object it is handed. Python calls the hook for every object at every depth, so a repeated `verify` or `stopBudgetSeconds` key anywhere in the file is treated as a duplicate, not only the two keys the reader uses.
 INFERRED (from the above, not run): `{"verify":{"stopBudgetSeconds":120},"other":{"verify":1,"verify":2}}` is refused, and the Stop budget falls back to the 60 s default although the real `verify.stopBudgetSeconds` is a valid 120. The same follows for a repeated `verify` inside any unrelated object.
 Effect: fail-closed. The default 60 applies, never no limit, so nothing is skipped or run longer than allowed. The cost is a budget the owner set being silently ignored.
 
