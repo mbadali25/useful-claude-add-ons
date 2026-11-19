@@ -636,6 +636,22 @@ def test_case_mb7_corrupt_layer(text, world):
     case_mb7_corrupt_layer(crew_protected, world, text)
 
 
+def test_a_bom_prefixed_layer_reads_as_the_enforcing_readers_read_it(world):
+    """`read_layer` decodes utf-8-sig. That tolerance is only safe while the
+    enforcing readers tolerate a BOM too (`crew_common.read_text`, which
+    `crew_config` and `crew_state` read through, and `crew_gitallow`'s own
+    strict read): a BOM the comparator accepted but a reader rejected would
+    let the two disagree about what a layer says."""
+    body = {"guards": {"profile": "strict"}, "scope": {"allowCliApproval": False}}
+    world.repo_file.write_bytes(b"\xef\xbb\xbf" + json.dumps(body).encode("utf-8"))
+    layer = crew_protected.read_layer(str(world.repo_file))
+    assert layer["state"] == "ok", layer["why"]
+    assert layer["cfg"] == body
+    assert json.loads(crew_state.read_text(str(world.repo_file))) == body
+    assert json.loads(world.repo_file.read_bytes().decode("utf-8-sig"),
+                      object_pairs_hook=crew_gitallow.strict_pairs) == body
+
+
 # --- the differential: each row against its reader, called directly --------------------------
 
 DIFF_TABLE = L_TABLE + [

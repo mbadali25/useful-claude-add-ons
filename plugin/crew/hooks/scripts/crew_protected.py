@@ -194,7 +194,9 @@ def read_layer(path, recorded_target=None):
     UTF-8 JSON, repeats a key or is not an object is `unknown`, never absent;
     so is a path whose resolved target (`crew_humanonly.target_key`) is not
     `recorded_target` when one was recorded (a link added, retargeted or
-    removed after the baseline)."""
+    removed after the baseline). A leading BOM is accepted (utf-8-sig), as
+    the enforcing readers accept it: `crew_common.read_text` and
+    `crew_gitallow`'s strict read both decode utf-8-sig."""
     target = crew_humanonly.target_key(path)
     out = {"state": "ok", "cfg": {}, "why": "", "target": target}
     if recorded_target is not None and target != recorded_target:
