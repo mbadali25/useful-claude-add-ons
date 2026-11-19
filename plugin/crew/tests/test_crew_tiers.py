@@ -749,12 +749,18 @@ def _tiers_imports(tree):
     """`(node, enclosing function names)` for each import of crew_tiers."""
     found = []
 
+    def named(text):
+        # Bare or package-qualified (review round 4): `crew_tiers`,
+        # `plugin.crew.hooks.scripts.crew_tiers`, `.crew_tiers`.
+        return isinstance(text, str) and text.split(".")[-1] == "crew_tiers"
+
     def visit(node, stack):
         hit = (isinstance(node, ast.Import)
-               and any(a.name == "crew_tiers" for a in node.names)) or (
-                   isinstance(node, ast.ImportFrom) and node.module == "crew_tiers") or (
+               and any(named(a.name) for a in node.names)) or (
+                   isinstance(node, ast.ImportFrom) and (
+                       named(node.module) or any(named(a.name) for a in node.names))) or (
                    isinstance(node, ast.Call) and any(
-                       isinstance(arg, ast.Constant) and arg.value == "crew_tiers"
+                       isinstance(arg, ast.Constant) and named(arg.value)
                        for arg in node.args) and (
                        getattr(node.func, "attr", None) == "import_module"
                        or getattr(node.func, "id", None) in ("__import__", "import_module")))
@@ -791,6 +797,35 @@ def _t_i1():
 
 def test_t_i1_nothing_that_decides_imports_or_invokes_crew_tiers():
     _t_i1()
+
+
+@pytest.mark.parametrize("text", [
+    "import crew_tiers",
+    "import crew_tiers as t",
+    "from crew_tiers import resolve",
+    "import plugin.crew.hooks.scripts.crew_tiers",
+    "import plugin.crew.hooks.scripts.crew_tiers as t",
+    "from plugin.crew.hooks.scripts import crew_tiers",
+    "from plugin.crew.hooks.scripts import crew_common, crew_tiers as t",
+    "from plugin.crew.hooks.scripts.crew_tiers import resolve",
+    "from . import crew_tiers",
+    "from .crew_tiers import resolve",
+    "importlib.import_module('crew_tiers')",
+    "importlib.import_module('plugin.crew.hooks.scripts.crew_tiers')",
+    "__import__('crew_tiers')",
+])
+def test_t_i1_scan_sees_each_import_shape(text):
+    """Review round 4: a package-qualified import passed the scan, so a
+    production consumer could have imported crew_tiers unseen."""
+    assert len(_tiers_imports(ast.parse(text))) == 1, text
+
+
+@pytest.mark.parametrize("text", [
+    "import crew_tiers_extra", "from crew_common import tiers", "import my_crew_tiers",
+    "from pkg import crew_config",
+])
+def test_t_i1_scan_ignores_other_modules(text):
+    assert _tiers_imports(ast.parse(text)) == [], text
 
 
 def test_t_i1_the_one_import_is_inside_explain_config():
@@ -871,14 +906,23 @@ def test_resolve_config_does_not_load_crew_tiers(tmp_path):
     """D6: the SessionStart path (`resolve_config`) never imports crew_tiers."""
     import subprocess  # pylint: disable=import-outside-toplevel
     import sys  # pylint: disable=import-outside-toplevel
-    code = ("import sys, crew_config; crew_config.resolve_config(sys.argv[1]); "
-            "print('crew_tiers' in sys.modules)")
-    env = dict(os.environ, PYTHONPATH=os.pathsep.join(
+    # An explicit temp machine file, never the operator's (spec section 5;
+    # review round 4): the child points `GLOBAL_CONFIG_PATH` at it before it
+    # resolves, and its home is the temp directory too. The file lists a
+    # target, so the merge really walks a `tiers` map.
+    root, gpath = _setup(tmp_path, machine={"host:a": _entry("qa")},
+                         repo={"host:a": _entry("prod")})
+    code = ("import sys, crew_config; crew_config.GLOBAL_CONFIG_PATH = sys.argv[2]; "
+            "cfg = crew_config.resolve_config(sys.argv[1]); "
+            "print('crew_tiers' in sys.modules, cfg['tiers']['host:a']['tier'])")
+    home = str(tmp_path / "home")
+    os.makedirs(home)
+    env = dict(os.environ, HOME=home, USERPROFILE=home, PYTHONPATH=os.pathsep.join(
         [os.path.join(context._ROOT, "hooks", "scripts"),  # pylint: disable=protected-access
          os.path.join(context._ROOT, "skills", "crew-graph", "scripts")]))  # pylint: disable=protected-access
-    out = subprocess.run([sys.executable, "-c", code, str(tmp_path)], capture_output=True,
+    out = subprocess.run([sys.executable, "-c", code, root, gpath], capture_output=True,
                          text=True, env=env, check=True, timeout=60)
-    assert out.stdout.strip() == "False"
+    assert out.stdout.split() == ["False", "qa"], out
 
 
 # --- CLI -------------------------------------------------------------------------------
@@ -938,6 +982,252 @@ def test_unreadable_machine_is_reported_when_no_target_is_listed(tmp_path, monke
     assert "machine-unreadable" in capsys.readouterr().out
 
 
+# --- review round 4 --------------------------------------------------------------------
+
+@pytest.mark.parametrize("target", [None, 7, 1.5, True, b"host:a", ["host:a"],
+                                    {"host": "a"}, ("host", "a")])
+def test_a_target_that_is_not_text_is_invalid_never_an_exception(tmp_path, target):
+    """D5: `resolve` always returns a tier and a reason. `resolve(None)` raised
+    TypeError while folding the target."""
+    root, gpath = _setup(tmp_path, machine={"host:a": _entry("dev")},
+                         repo={"host:a": _entry("qa")})
+    got = crew_tiers.resolve(target, root, gpath)
+    assert (got["tier"], got["reason"]) == ("unknown", "invalid"), got
+    assert got["target"] == repr(target), got
+    json.dumps(got)
+    assert crew_tiers.resolve(target, None, gpath)["reason"] == "invalid"
+
+
+def test_a_target_that_is_not_text_keeps_the_reason_order(tmp_path):
+    got = _resolve(_sub(tmp_path, "m"), None, machine_raw="{bad")
+    assert (got["tier"], got["reason"]) == ("unknown", "machine-unreadable"), got
+    got = _resolve(_sub(tmp_path, "r"), None, machine={}, repo_raw="{bad")
+    assert (got["tier"], got["reason"]) == ("unknown", "repo-unreadable"), got
+    got = _resolve(_sub(tmp_path, "t"), None, machine_raw='{"tiers": {}, "Tiers": {}}')
+    assert (got["tier"], got["reason"]) == ("unknown", "conflicting"), got
+
+
+def _upgrade_beside(tmp, spelling):
+    target = "host:a"
+    before_cfg = {"schema": 2, spelling: {target: _entry("prod")}}
+    root, gpath = _setup(tmp, machine={target: _entry("dev")},
+                         repo_raw=json.dumps(before_cfg))
+    before = crew_tiers.resolve(target, root, gpath)
+    assert (before["tier"], before["reason"]) == ("dev", "listed"), before
+    out, _notes = crew_upgrade.upgrade_config(before_cfg)
+    assert "tiers" not in out and out[spelling] == before_cfg[spelling], out
+    _write(pathlib.Path(root) / ".crew" / "config.json", out)
+    after = crew_tiers.resolve(target, root, gpath)
+    assert (after["tier"], after["reason"]) == ("dev", "listed"), after
+    assert crew_tiers.layer_problems(*crew_tiers.read_layers(root, gpath)) == []
+
+
+@pytest.mark.parametrize("spelling", ["Tiers", "TIERS", "tIers"])
+def test_upgrade_does_not_seed_a_twin_beside_another_spelling(tmp_path, spelling):
+    """A lone `Tiers` gained a lowercase `tiers: {}` on upgrade: two keys
+    folding to `tiers`, so every target went `conflicting`. The upgrade must
+    not change any tier: what resolved before resolves the same after."""
+    _upgrade_beside(tmp_path, spelling)
+
+
+def test_upgrade_still_seeds_beside_unrelated_keys():
+    out, _notes = crew_upgrade.upgrade_config({"schema": 2, "tiersX": 1})
+    assert out["tiers"] == {}
+
+
+# A repeat of a spelling crew_tiers folds onto `tiers`. `json.loads` keeps one,
+# so a rewrite would turn `conflicting` into a file with no conflict at all.
+FOLDED_REPEATS = [
+    '{"Tiers": {}, "Tiers": {}}',
+    '{"TIERS": {"host:a": {"tier": "prod"}}, "TIERS": {}}',
+    '{"tiers": {"host:a": {"tier": "qa"}}, "Tiers": {}, "Tiers": {}}',
+]
+
+
+def _repo_write_over(tmp, raw):
+    root, gpath = _setup(tmp, machine={"host:a": _entry("dev")}, repo_raw=raw)
+    repo_file = pathlib.Path(root) / ".crew" / "config.json"
+    before = repo_file.read_bytes()
+    assert crew_tiers.resolve("host:a", root, gpath)["reason"] == "conflicting"
+    with pytest.raises(crew_config.RepoWriteRefused, match="Fix it by hand"):
+        crew_config.write_repo_config(root, {"tracker": "files"}, gpath)
+    assert repo_file.read_bytes() == before
+    got = crew_tiers.resolve("host:a", root, gpath)
+    assert (got["tier"], got["reason"]) == ("unknown", "conflicting"), got
+    cfg, ok = crew_upgrade._read_config_strict(root)  # pylint: disable=protected-access
+    assert (cfg, ok) == ({}, False)
+
+
+@pytest.mark.parametrize("raw", FOLDED_REPEATS)
+def test_a_repo_write_cannot_erase_a_repeated_other_spelling(tmp_path, raw):
+    _repo_write_over(tmp_path, raw)
+
+
+@pytest.mark.parametrize("raw", FOLDED_REPEATS)
+def test_a_global_write_cannot_erase_a_repeated_other_spelling(tmp_path, capsys, raw):
+    root, gpath = _setup(tmp_path, machine_raw=raw)
+    before = pathlib.Path(gpath).read_bytes()
+    assert crew_tiers.resolve("host:a", root, gpath)["reason"] == "conflicting"
+    assert crew_config.main(["--root", root, "--global-path", gpath, "--set",
+                             'pm.authority="act"', "--apply"]) != 0
+    assert "Fix it by hand" in capsys.readouterr().err
+    assert pathlib.Path(gpath).read_bytes() == before
+    assert crew_tiers.resolve("host:a", root, gpath)["reason"] == "conflicting"
+
+
+def _rebuild_from_a_split_profile(tmp):
+    root, gpath = _setup(tmp, machine={"host:a": _entry("dev")})
+    _write(pathlib.Path(crew_config.profile_path(gpath)), {
+        "schema": crew_config.PROFILE_SCHEMA, "repos": {}, "saved_at": "2026-11-19T00:00:00Z",
+        "global": {"saved_at": "2026-11-19T00:00:00Z",
+                   "values": {"tiers.workflow:deploy.yml.tier": "dev"}}})
+    before = pathlib.Path(gpath).read_bytes()
+    with pytest.raises(crew_config.RebuildRefused, match="written whole"):
+        crew_config.plan_rebuild(root, "machine", global_path=gpath)
+    assert crew_config.main(["--root", root, "--global-path", gpath, "--rebuild",
+                             "--global", "--apply"]) != 0
+    assert pathlib.Path(gpath).read_bytes() == before
+
+
+def test_rebuild_refuses_a_profile_path_under_tiers(tmp_path, capsys):
+    """A saved profile holding `tiers.workflow:deploy.yml.tier` was split on
+    `.` into `{"workflow:deploy": {"yml": {..}}}`: the one write path that
+    skipped the D8 refusal."""
+    _rebuild_from_a_split_profile(tmp_path)
+    assert "written whole" in capsys.readouterr().err
+
+
+def test_a_directory_at_the_config_path_is_unreadable(tmp_path):
+    root, gpath = _setup(tmp_path, machine={"host:a": _entry("dev")})
+    os.makedirs(os.path.join(root, ".crew", "config.json"))
+    got = crew_tiers.resolve("host:a", root, gpath)
+    assert (got["tier"], got["reason"]) == ("unknown", "repo-unreadable"), got
+    os.makedirs(str(tmp_path / "dir.json"))
+    got = crew_tiers.resolve("host:a", None, str(tmp_path / "dir.json"))
+    assert (got["tier"], got["reason"]) == ("unknown", "machine-unreadable"), got
+
+
+def _resolve_within(seconds, *args):
+    """`crew_tiers.resolve(*args)` on a thread, or fail when it has not
+    returned in `seconds` (a blocked `open` never would)."""
+    import threading  # pylint: disable=import-outside-toplevel
+    box = []
+    worker = threading.Thread(target=lambda: box.append(crew_tiers.resolve(*args)),
+                              daemon=True)
+    worker.start()
+    worker.join(seconds)
+    assert box, f"resolve did not return within {seconds}s"
+    return box[0]
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs on this platform")
+def test_a_fifo_at_the_config_path_is_unreadable_and_never_blocks(tmp_path):
+    """POSIX: `open` on a FIFO with no writer blocks forever, so the answer
+    was never returned. Skipped on Windows; runs on a POSIX leg."""
+    root, gpath = _setup(tmp_path, machine={"host:a": _entry("dev")})
+    os.mkfifo(os.path.join(root, ".crew", "config.json"))
+    got = _resolve_within(20, "host:a", root, gpath)
+    assert (got["tier"], got["reason"]) == ("unknown", "repo-unreadable"), got
+    assert "not a regular file" in got["notes"][0], got
+    os.mkfifo(str(tmp_path / "fifo.json"))
+    got = _resolve_within(20, "host:a", None, str(tmp_path / "fifo.json"))
+    assert (got["tier"], got["reason"]) == ("unknown", "machine-unreadable"), got
+
+
+def _not_regular(tmp, monkeypatch):
+    import stat as stat_module  # pylint: disable=import-outside-toplevel
+    path = pathlib.Path(tmp) / "m.json"
+    _write(path, {"tiers": {"host:a": _entry("dev")}})
+
+    class _Fifo:  # pylint: disable=too-few-public-methods
+        st_mode = stat_module.S_IFIFO | 0o600
+
+    with monkeypatch.context() as patch:
+        patch.setattr(crew_tiers.os, "fstat", lambda fd: _Fifo())
+        got = crew_tiers.resolve("host:a", None, str(path))
+    assert (got["tier"], got["reason"]) == ("unknown", "machine-unreadable"), got
+    assert "not a regular file" in got["notes"][0], got
+    assert crew_tiers.resolve("host:a", None, str(path))["reason"] == "listed"
+
+
+def test_read_layer_reads_nothing_that_is_not_a_regular_file(tmp_path, monkeypatch):
+    """The FIFO row's rule on every platform: the type is checked on the open
+    descriptor, and a file that is not regular is never read."""
+    _not_regular(tmp_path, monkeypatch)
+
+
+def test_read_layer_opens_without_blocking(monkeypatch):
+    """Where the platform has `O_NONBLOCK`, `_read_layer` passes it: the flag
+    is what stops `open` on a writerless FIFO from blocking."""
+    seen = []
+    real = os.open
+
+    def recording(path, flags, *args, **kwargs):
+        seen.append(flags)
+        return real(path, flags, *args, **kwargs)
+    with monkeypatch.context() as patch:
+        patch.setattr(crew_tiers.os, "open", recording)
+        status, _parsed = crew_tiers._read_layer(__file__)  # pylint: disable=protected-access
+    assert status == "unreadable"  # this file is not JSON; it was opened and read
+    assert seen, "os.open was not used"
+    nonblock = getattr(os, "O_NONBLOCK", 0)
+    assert seen[0] & nonblock == nonblock
+
+
+NON_ASCII = "workflow:d\u00e9ploy-\u65e5\u672c.yml"
+
+
+def _cp1252(tmp_path, script, *argv):
+    """Run `script` (a file under hooks/scripts) with stdout and stderr forced
+    to cp1252, which cannot encode the CJK characters in `NON_ASCII`."""
+    import subprocess  # pylint: disable=import-outside-toplevel
+    import sys  # pylint: disable=import-outside-toplevel
+    home = str(tmp_path / "home")
+    os.makedirs(home, exist_ok=True)
+    env = dict(os.environ, PYTHONIOENCODING="cp1252", HOME=home, USERPROFILE=home)
+    env.pop("PYTHONUTF8", None)
+    path = os.path.join(context._ROOT, "hooks", "scripts", script)  # pylint: disable=protected-access
+    return subprocess.run([sys.executable, path, *argv], capture_output=True,
+                          env=env, check=False, timeout=120)
+
+
+def _non_utf8_reports(tmp_path):
+    root, gpath = _setup(tmp_path, machine={NON_ASCII: _entry("qa")},
+                         repo={NON_ASCII: _entry("dev")})
+    escaped = b"workflow:d\\xe9ploy-\\u65e5\\u672c.yml  qa  (listed)"
+    for argv in (["explain", NON_ASCII], ["list"], ["explain", NON_ASCII, "--json"],
+                 ["list", "--json"]):
+        out = _cp1252(tmp_path, "crew_tiers.py", *argv, "--root", root, "--global-path", gpath)
+        assert out.returncode == 0, (argv, out)
+        assert b"UnicodeEncodeError" not in out.stderr, (argv, out)
+        if "--json" in argv:
+            parsed = json.loads(out.stdout.decode("ascii"))
+            row = parsed[0] if isinstance(parsed, list) else parsed
+            assert (row["target"], row["tier"]) == (NON_ASCII, "qa"), (argv, row)
+        else:
+            assert escaped in out.stdout, (argv, out)
+    out = _cp1252(tmp_path, "crew_config.py", "--root", root, "--global-path", gpath,
+                  "--explain")
+    assert out.returncode == 0, out
+    assert escaped in out.stdout, out
+    assert b"repo asks" in out.stdout, out
+
+
+def test_text_reports_survive_a_stream_that_is_not_utf8(tmp_path):
+    """`explain workflow:<non-ASCII>` raised UnicodeEncodeError and exited 1
+    under `PYTHONIOENCODING=cp1252`; `list` and the tier rows of
+    `crew_config --explain` render the same lines."""
+    _non_utf8_reports(tmp_path)
+
+
+def test_show_is_ascii_and_one_line():
+    for text in ("a\nb", "a\u2028b", "d\u00e9ploy", "\u65e5\u672c", "x\ud800y", "a\tb", "\x7f"):
+        shown = crew_tiers.show(text)
+        assert shown.isascii() and shown.isprintable(), (text, shown)
+    assert crew_tiers.show("workflow:deploy.yml  qa  (listed)") == (
+        "workflow:deploy.yml  qa  (listed)")
+
+
 # --- sabotage (D7): each patch turns the named rows red --------------------------------
 
 def _fails(row, *args):
@@ -985,3 +1275,38 @@ def test_sabotage_without_repo_tiers_is_identity(tmp_path, monkeypatch):
 def test_sabotage_opaque_table_removed(monkeypatch):
     monkeypatch.setattr(crew_config, "_OPAQUE_TABLES", ())
     _fails(_t_w5)
+
+
+# Review round 4: one sabotage per new guard.
+
+def test_sabotage_rebuild_without_the_opaque_refusal(tmp_path, monkeypatch):
+    monkeypatch.setattr(crew_config, "_under_opaque", lambda dotted: None)
+    with pytest.raises(pytest.fail.Exception, match="DID NOT RAISE"):
+        _rebuild_from_a_split_profile(tmp_path)
+
+
+def test_sabotage_upgrade_seeds_beside_another_spelling(tmp_path, monkeypatch):
+    monkeypatch.setattr(crew_upgrade, "_spelled_otherwise", lambda cfg, key: False)
+    _fails(_upgrade_beside, tmp_path, "Tiers")
+
+
+def test_sabotage_rewrite_guard_matches_only_the_exact_key(tmp_path, monkeypatch):
+    import crew_config_files  # pylint: disable=import-outside-toplevel
+    import types  # pylint: disable=import-outside-toplevel
+    # Only crew_config_files' own name: crew_tiers keeps the real fold.
+    monkeypatch.setattr(crew_config_files, "_promote_match",
+                        types.SimpleNamespace(fold=lambda text: text))
+    with pytest.raises(pytest.fail.Exception, match="DID NOT RAISE"):
+        _repo_write_over(tmp_path, FOLDED_REPEATS[0])
+
+
+def test_sabotage_show_passes_non_ascii_through(monkeypatch):
+    monkeypatch.setattr(crew_tiers, "show", str)
+    with pytest.raises(AssertionError):
+        test_show_is_ascii_and_one_line()
+
+
+def test_sabotage_a_non_regular_file_is_read(tmp_path, monkeypatch):
+    import stat as stat_module  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(stat_module, "S_ISREG", lambda mode: True)
+    _fails(_not_regular, tmp_path, monkeypatch)

@@ -1694,8 +1694,8 @@ rules:
   refuses, and a linked worktree whose main checkout git cannot name
   (`crew_common.SOURCE_UNKNOWN`), read as unreadable, never as absent, so a
   narrowing in a file crew could not find is never dropped. Text reports escape
-  every non-printable character, so a name holding a newline cannot print as a
-  second result row.
+  every character that is not printable ASCII, so a name holding a newline
+  cannot print as a second result row.
 - **A conflict never hides a row** (review round 2). A file with two keys
   folding to `tiers` makes every target `conflicting`, and the reports list
   every target either map names (the parser keeps all twin values, not only
@@ -1717,6 +1717,17 @@ rules:
   makes a layer unreadable, like `Infinity`, so no report carries the non-JSON
   `Infinity` out. `list --json` keeps stdout a list and names an unreadable
   layer on stderr.
+- **Every path gives an answer, and no path splits a name** (review round 4).
+  `resolve` returns `invalid` for a target that is not text (`None`), not an
+  exception. The reader opens without blocking and reads only a regular file,
+  so a FIFO or a directory at a config path is unreadable instead of a hang.
+  Text reports are ASCII (a non-ASCII name is shown escaped; `--json` already
+  was), so they print on a stream that is not UTF-8. The rewrite refusal
+  covers a repeat of any spelling that folds to `tiers` (`Tiers`, `TIERS`),
+  since `crew_tiers` reads that as a conflict too. An upgrade does not seed
+  `tiers: {}` beside a key spelled another way, which would create that
+  conflict itself. `--rebuild` refuses a saved profile that holds a path
+  under `tiers`, the last write path that would have split a name on `.`.
 
 ### The ratchet is one table, not five copies
 

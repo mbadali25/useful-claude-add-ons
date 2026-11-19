@@ -4579,6 +4579,13 @@ def plan_rebuild(root, layer, use_profile=True, global_path=None):
             entry = profile.get("global")
         values = (entry or {}).get("values") or {}
         for dotted, value in values.items():
+            if _under_opaque(dotted):
+                # R-05 (D8), review round 4: a profile key UNDER `tiers` cannot
+                # be split on `.` (`workflow:deploy.yml`), so it is refused
+                # here as every other write path refuses it.
+                raise RebuildRefused(
+                    f"the profile holds {dotted!r} - {OPAQUE_REFUSAL}; fix or "
+                    "re-capture the profile (--save-profile)")
             _set_path(target, dotted.split("."), copy.deepcopy(value))
     else:
         notes.append("--no-profile: the template alone")

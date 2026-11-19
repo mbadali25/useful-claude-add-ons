@@ -48,6 +48,7 @@ import itertools
 import json
 import math
 import os
+import stat
 import sys
 
 import _promote_match
@@ -144,12 +145,23 @@ def _read_layer(path):
     unreadable, not absent, so an unknown never reads as "no file"."""
     if path is None:
         return "absent", None
+    # O_NONBLOCK (POSIX): opening a FIFO for reading blocks until a writer
+    # appears, so a FIFO at the config path would hang every caller instead of
+    # being unreadable (review round 4). The type is then checked on the open
+    # descriptor, so nothing but a regular file is ever read.
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
-        with open(path, "rb") as fh:
-            raw = fh.read()
+        fd = os.open(path, flags)
     except (FileNotFoundError, NotADirectoryError):
         return "absent", None
     except (OSError, ValueError, TypeError) as exc:
+        return "unreadable", f"{path!r}: {type(exc).__name__}: {exc}"
+    try:
+        with os.fdopen(fd, "rb") as fh:
+            if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
+                return "unreadable", f"{path!r}: not a regular file"
+            raw = fh.read()
+    except (OSError, ValueError) as exc:
         return "unreadable", f"{path!r}: {type(exc).__name__}: {exc}"
     try:
         text = raw.decode("utf-8-sig")
@@ -236,7 +248,10 @@ def _repo_read(root):
 def _lookup(layer, target):
     """`(key as written, entry)` for `target` in `layer`'s map, else None.
     Exact on the name; the kind of a listed key folds. An unparseable target
-    matches only a key written exactly as it is."""
+    matches only a key written exactly as it is, and a target that is not
+    text (`resolve(None)`) matches nothing."""
+    if not isinstance(target, str):
+        return None
     table = layer["map"]
     parsed = parse_target(target)
     if parsed is None:
@@ -261,6 +276,8 @@ def _conflict(layer, target, found):
     if layer["topTwins"]:
         return (f"{layer['label']}: the file holds more than one key folding to "
                 f"`tiers`: {', '.join(layer['topTwins'])}")
+    if not isinstance(target, str):
+        return None
     folded = _promote_match.fold(target)
     for group in _twins(layer["map"]):
         if _promote_match.fold(group[0]) == folded:
@@ -319,9 +336,13 @@ def _combine(machine_tier, repo_tier):
 def resolve_layers(machine, repo, target):
     """`{"target", "tier", "reason", "machine", "repo", "notes"}` for one
     target from two analysed layers. Pure. `machine` and `repo` are the tier
-    each layer's entry SETS (None when it lists none or its entry is invalid)."""
+    each layer's entry SETS (None when it lists none or its entry is invalid).
+    A `target` that is not text (None, a number, a list) is `invalid` like any
+    other unparseable query, never an exception (D5; review round 4); it is
+    shown as its `repr`."""
     notes = []
-    out = {"target": _norm(target), "tier": "unknown", "reason": None,
+    shown = _norm(target) if isinstance(target, str) else repr(target)
+    out = {"target": shown, "tier": "unknown", "reason": None,
            "machine": None, "repo": None, "notes": notes}
     m_found, r_found = _lookup(machine, target), _lookup(repo, target)
     m_problem = None if m_found is None else _entry_problem(*m_found)
@@ -435,10 +456,15 @@ def layer_problems(machine, repo):
 
 
 def show(text):
-    """`text` safe for one physical line: every character that is not
-    printable (a newline, a carriage return, U+2028, other controls) becomes
-    its escape, so a repo-written name cannot forge another result row."""
-    return "".join(ch if ch.isprintable() else ch.encode("unicode_escape").decode("ascii")
+    """`text` safe for one physical line on any stream: every character that
+    is not printable ASCII (a newline, a carriage return, U+2028, other
+    controls, a lone surrogate, any non-ASCII letter) becomes its escape. So a
+    repo-written name cannot forge another result row, and a report never
+    dies of UnicodeEncodeError on a stream that is not UTF-8 (cp1252 under
+    `PYTHONIOENCODING`, a Windows console; review round 4). `--json` output is
+    `json.dumps`, ASCII already."""
+    return "".join(ch if ch.isascii() and ch.isprintable()
+                   else ch.encode("unicode_escape", "backslashreplace").decode("ascii")
                    for ch in str(text))
 
 

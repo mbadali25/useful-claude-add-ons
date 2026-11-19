@@ -45,6 +45,7 @@ import crew_config_files  # pylint: disable=wrong-import-position
 import crew_dropped  # pylint: disable=wrong-import-position
 import crew_guards  # pylint: disable=wrong-import-position
 import crew_state  # pylint: disable=wrong-import-position
+import _promote_match  # pylint: disable=wrong-import-position
 
 # Not a second copy of the PM defaults. crew_state owns them because the hook
 # reads config on every session start; if an upgrade wrote defaults the hook
@@ -313,6 +314,17 @@ CONFIG_BLOCKS = (
 # mentioned them (the exception to "a block that comes back empty is not
 # written"): the R-05 tier map, whose empty value is the documented default.
 _WRITTEN_WHEN_EMPTY = ("tiers",)
+
+
+def _spelled_otherwise(cfg, key):
+    """True when `cfg` holds a key that folds to `key` but is not `key`
+    (`Tiers`). Seeding `tiers: {}` beside it would make two keys folding to
+    `tiers`, which crew_tiers reads as `conflicting` for every target: the
+    upgrade itself would break the file (review round 4). The file is left as
+    written; crew_tiers reads a lone `Tiers` as no map."""
+    folded = _promote_match.fold(key)
+    return any(isinstance(other, str) and other != key
+               and _promote_match.fold(other) == folded for other in cfg)
 
 # `{block_key: block_default}`, restricted to the whole-block globally
 # settable ones -- the lookup `_pinned_at_default` walks. Built from
@@ -713,7 +725,8 @@ def upgrade_config(cfg, accept_dropped=()):
         # decided: nothing. A block the repo DID write (`supplied` a dict,
         # even `{}`) keeps its key regardless, so a deliberate empty block
         # survives exactly as written.
-        if merged or supplied is not _ABSENT or key in _WRITTEN_WHEN_EMPTY:
+        if merged or supplied is not _ABSENT or (
+                key in _WRITTEN_WHEN_EMPTY and not _spelled_otherwise(cfg, key)):
             out[key] = merged
 
     # What each schema bump actually added to THIS config, computed from the

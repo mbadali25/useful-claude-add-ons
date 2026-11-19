@@ -38,6 +38,8 @@ import secrets
 import stat
 import time
 
+import _promote_match
+
 # How long `Lock` waits for another crew writer before refusing. A module
 # attribute read at acquire time, so a test can shorten it.
 LOCK_WAIT_SECONDS = 3.0
@@ -302,8 +304,13 @@ def tier_map_duplicates(text):
         return None
     if not isinstance(top, _Repeats):
         return None
-    if "tiers" in top.repeats:
-        return ("holds the key `tiers` more than once; a rewrite would keep only "
+    # Any spelling crew_tiers folds onto `tiers` (`Tiers`, `TIERS`): it reads a
+    # repeat of one as `conflicting` for every target, and a rewrite that kept
+    # one copy would leave a file it reads as having no conflict (round 4).
+    folded = _promote_match.fold("tiers")
+    again = sorted({key for key in top.repeats if _promote_match.fold(key) == folded})
+    if again:
+        return (f"holds the key `{again[0]}` more than once; a rewrite would keep only "
                 "one of them. Fix it by hand")
     tiers = top.get("tiers")
     if not isinstance(tiers, _Repeats):
