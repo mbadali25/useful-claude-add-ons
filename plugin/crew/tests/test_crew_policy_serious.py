@@ -19,11 +19,13 @@ Three kinds of test:
 """
 import contextlib
 import copy
+import decimal
 import hashlib
 import io
 import json
 import subprocess
 import sys
+from decimal import Decimal
 
 import pytest
 
@@ -432,16 +434,21 @@ def check_cli_reads_the_tier(m):
 def check_cli_reads_fractions_exactly(m):
     """A JSON fraction a hair over the threshold is not rounded down to it."""
     bad = []
-    for raw, want in (("50.000000000000001", ["money"]), ("50.0", []),
-                      ("49.99", []), ("50.01", ["money"]), ("1e999", ["money"]),
-                      (HUGE, ["money"]), ("-" + HUGE, ["money"]),
-                      ("1e-9999999999999999999999999999999999", [])):
+    for raw, want, cost in CLI_AMOUNTS:
         body = json.dumps({"operation": "commit", "tier": "dev",
                            "effects": fx(monthly_cost=usd(0))})
         body = body.replace('"amount": 0', '"amount": ' + raw)
         code, out = _main_out(m, body)
-        if code != 0 or json.loads(out)["classes"] != want:
-            bad.append(f"classify CLI amount {raw}: {code} {out.strip()[:80]}")
+        if code != 0 or (json.loads(out)["classes"], json.loads(out)["cost"]) != (want, cost):
+            bad.append(f"classify CLI amount {raw[:40]}: {code} {out.strip()[:80]}")
+    # D9 end to end: a negative amount too small for a Decimal must not stand
+    # in for the fact (it did, read as -0.0 and so as a cost under the
+    # threshold), where the same request with amount 10 is allowed.
+    for raw, want in (("10", "allow"), ("-" + TINY, "needs-plan")):
+        body = json.dumps(_tf("qa")).replace('"amount": 10', '"amount": ' + raw)
+        code, out = _main_out(m, body, "decide")
+        if code != 0 or json.loads(out)["outcome"] != want:
+            bad.append(f"decide CLI D9 amount {raw}: {code} {out.strip()[:80]}")
     # A number no Decimal can hold is still valid JSON: a decide request
     # without effects that carries one in an unused field is answered as
     # if the field were not there (origin/main answers it allow).
@@ -454,6 +461,66 @@ def check_cli_reads_fractions_exactly(m):
 
 
 HUGE = "1e9999999999999999999999999999999999"
+TINY = "1e-9999999999999999999999999999999999"
+LONG = "9" * 5000   # more digits than int() converts by default (4300)
+
+# (the JSON text of the amount, classes, cost) through the classify CLI.
+CLI_AMOUNTS = (
+    ("50.000000000000001", ["money"], "over"), ("50.0", [], "under"),
+    ("49.99", [], "under"), ("50.01", ["money"], "over"), ("1e999", ["money"], "over"),
+    (HUGE, ["money"], "cannot-estimate"), ("-" + HUGE, ["money"], "cannot-estimate"),
+    (TINY, [], "under"),
+    # Below zero, however small: float reads it as -0.0, which is not < 0.
+    ("-" + TINY, ["money"], "cannot-estimate"),
+    ("-1e-400", ["money"], "cannot-estimate"), ("-0.01", ["money"], "cannot-estimate"),
+    ("-1", ["money"], "cannot-estimate"),
+    # Zero written with a sign is zero, not a negative amount.
+    ("-0.0", [], "under"), ("-0", [], "under"),
+    (LONG, ["money"], "over"), ("-" + LONG, ["money"], "cannot-estimate"),
+)
+
+ALL_TRAPS = decimal.Context(traps=[
+    decimal.Clamped, decimal.DivisionByZero, decimal.Inexact, decimal.InvalidOperation,
+    decimal.Overflow, decimal.Rounded, decimal.Subnormal, decimal.Underflow,
+    decimal.FloatOperation])
+
+# (amount, cost) through classify, at the default threshold.
+COST_VALUES = (
+    (0, "under"), (50, "under"), (51, "over"), (10 ** 5000, "over"),
+    (INF, "cannot-estimate"), (-INF, "cannot-estimate"), (NAN, "cannot-estimate"),
+    (-5, "cannot-estimate"), (-0.5, "cannot-estimate"),
+    (Decimal("50"), "under"), (Decimal("50.000000000000001"), "over"),
+    (Decimal("1e1000000"), "over"), (Decimal("1e-1000000"), "under"),
+    (Decimal("-1e-1000000"), "cannot-estimate"), (Decimal("-1"), "cannot-estimate"),
+    (Decimal("Infinity"), "cannot-estimate"), (Decimal("-Infinity"), "cannot-estimate"),
+    (Decimal("NaN"), "cannot-estimate"), (Decimal("sNaN"), "cannot-estimate"),
+)
+
+
+def _label(amount):
+    """An amount for a failure line; str() of 10 ** 5000 is itself refused."""
+    if isinstance(amount, int):
+        return f"int of {amount.bit_length()} bits" if abs(amount) > 10 ** 9 else str(amount)
+    return repr(amount)
+
+
+def check_cost_values(m):
+    """The cost answer itself, not only the money class: an amount that is
+    not a finite number >= 0 cannot be estimated, it is never `over` (D5).
+    Each amount is asked twice, the second time with every decimal trap set:
+    the answer must not depend on the caller's decimal context."""
+    bad = []
+    for amount, want in COST_VALUES:
+        for traps in (None, ALL_TRAPS):
+            try:
+                with decimal.localcontext(traps):
+                    got = m.classify(fx(monthly_cost=usd(amount)), "dev")["cost"]
+            except ArithmeticError as exc:
+                got = repr(exc)
+            if got != want:
+                bad.append(f"amount {_label(amount)}"
+                           f"{' with every trap set' if traps else ''}: {got}")
+    return bad
 
 
 def check_unplaced_wording(m):
@@ -502,7 +569,8 @@ CHECKS = (check_serious_cases, check_admin_and_empty_paths, check_must_allow,
           check_union_with_own_class, check_effects_never_swap_the_account,
           check_d9, check_threshold,
           check_presence_not_value, check_cli_reads_the_tier,
-          check_cli_reads_fractions_exactly, check_unplaced_wording, check_r01_parity)
+          check_cli_reads_fractions_exactly, check_cost_values,
+          check_unplaced_wording, check_r01_parity)
 
 
 def violations(module):
@@ -791,7 +859,8 @@ MUTATIONS = (
      "    if writes is not False and (prod or writes is not True):\n",
      "    if writes is not False and prod:\n"),
     ("25 the CLI reads a fraction as a float (50.000000000000001 is 50.0)",
-     "json.loads(raw, parse_float=_json_fraction)", "json.loads(raw)"),
+     "parse_float=_json_fraction,\n                             parse_int=_json_integer",
+     "parse_int=_json_integer"),
     ("26 a Decimal amount is not a number",
      "not isinstance(value, (int, float, Decimal)):", "not isinstance(value, (int, float)):"),
     ("27 an unplaced effect on a known operation is worded as an unknown operation",
@@ -804,6 +873,19 @@ MUTATIONS = (
      "parse_float=_json_fraction", "parse_float=Decimal"),
     ("30 the money reason names the rejected threshold as applied",
      "        applied = _limit(limit)\n", "        applied = limit\n"),
+    ("31 a negative amount no Decimal can hold is read as -0.0",
+     'return float("-inf") if text.startswith("-") else float(text)', "return float(text)"),
+    ("32 a float inf amount is over, not cannot-estimate",
+     "    if value - value != 0 or value < 0:", "    if value != value or value < 0:"),
+    ("33 a Decimal Infinity amount is over, not cannot-estimate",
+     "return value if value.is_finite() and value >= 0 else None",
+     "return value if not value.is_nan() and value >= 0 else None"),
+    ("34 a Decimal amount is checked with arithmetic (raises under the Clamped trap)",
+     "        return value if value.is_finite() and value >= 0 else None\n",
+     "        return value if value.is_finite() and value - value == 0 and value >= 0 "
+     "else None\n"),
+    ("35 the CLI reads an integer with int alone (over 4300 digits is a reader error)",
+     ",\n                             parse_int=_json_integer)", ")"),
 )
 
 

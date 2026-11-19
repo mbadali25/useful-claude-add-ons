@@ -389,8 +389,12 @@ def _amount(value: Any) -> Any:
     where a float would round it to 50.0."""
     if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
         return None
-    if isinstance(value, Decimal) and not value.is_finite():
-        return None   # a Decimal NaN cannot even be compared
+    if isinstance(value, Decimal):
+        # No arithmetic on a Decimal: is_finite and a comparison with an int
+        # are exact whatever decimal context the caller has set, where
+        # value - value can raise (1e1000000 under the Clamped trap). A NaN
+        # is refused before the comparison, which it cannot take.
+        return value if value.is_finite() and value >= 0 else None
     if value - value != 0 or value < 0:   # NaN and inf fail the first test
         return None
     return value
@@ -850,11 +854,24 @@ def explain(request: Any) -> str:
 def _json_fraction(text: str) -> Any:
     """A JSON fraction, read exactly as a Decimal. One whose exponent no
     Decimal can hold (1e9999999999999999999) is read as a float instead, so
-    it is inf or 0.0 and never crashes the reader: valid JSON is a request."""
+    it is inf or 0.0 and never crashes the reader: valid JSON is a request.
+    A negative one is read as -inf whatever its size: float would round
+    -1e-9999999999999999999 to -0.0, which is not below zero, and a
+    negative amount must never pass as an estimate of nothing (D5)."""
     try:
         return Decimal(text)
     except ArithmeticError:   # decimal.InvalidOperation
-        return float(text)
+        return float("-inf") if text.startswith("-") else float(text)
+
+
+def _json_integer(text: str) -> Any:
+    """A JSON integer. One longer than int() will convert (Python refuses
+    over 4300 digits by default) is read as a Decimal, exactly, so it is
+    still a request and not a reader error."""
+    try:
+        return int(text)
+    except ValueError:
+        return Decimal(text)
 
 
 def _main(argv: list) -> int:
@@ -871,7 +888,8 @@ def _main(argv: list) -> int:
     try:
         # A fraction is read exactly, so a cost a hair over the threshold is
         # not rounded down to it (the decide answer never prints a number).
-        request = json.loads(raw, parse_float=_json_fraction)
+        request = json.loads(raw, parse_float=_json_fraction,
+                             parse_int=_json_integer)
     except ValueError as exc:
         print(f"crew_policy: request is not JSON ({exc}); no decision",
               file=sys.stderr)
