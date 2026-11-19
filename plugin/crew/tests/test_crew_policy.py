@@ -420,11 +420,29 @@ def _cases():
                     provenance="standing-plan", classified_as=hint,
                     facts=prod_apply),
             "deny" if hint == "account-creation" else "needs-plan")
+    for op in ("create-account", "admin-identity-op"):
+        for acct in ("read-verified", "write-verified"):
+            for presence in ("attended", "unattended"):
+                add(f"{op}: covered, session account {acct}, {presence}",
+                    planned(op, presence=presence, account=acct),
+                    STOP[presence])
+        for acct in ("none", GONE):
+            add(f"{op}: covered, no session account {acct!r}",
+                planned(op, account=acct), "allow")
     add("terraform-apply: prod, classifier says account-creation, need covers",
         planned("terraform-apply", "prod", presence="unattended",
                 classified_as="account-creation", admin_need="covers",
                 facts=prod_apply), "allow")
     for presence in ("attended", "unattended"):
+        add(f"sql-read: prod, classified production-write, a read account, "
+            f"{presence}",
+            planned("sql-read", "prod", presence=presence,
+                    classified_as="production-write"), STOP[presence])
+        add(f"sql-read: prod, classified production-write, write account, "
+            f"{presence}",
+            planned("sql-read", "prod", presence=presence,
+                    account="write-verified",
+                    classified_as="production-write"), "allow")
         for acct in ("none", "read-verified", GONE):
             add(f"comment: prod, classifier says production-write, account "
                 f"{acct!r}, {presence}",
@@ -1165,8 +1183,7 @@ MUTATIONS = (
     ("an emergency for another target waives the review",
      '            and emerg.get("target") == target\n', ''),
     ("an account that does not check out passes when none is required",
-     '        if other in ("mismatch", "fail", "could-not-tell"):\n',
-     '        if False:\n'),
+     "        if other in bad:\n", "        if False:\n"),
     ("a production deletion drops the stricter classes",
      "    if spec.lane == DESTRUCTIVE:\n        # The stricter classes win",
      '    if spec.lane == DESTRUCTIVE and tier == "prod":\n'
@@ -1176,7 +1193,7 @@ MUTATIONS = (
      '    if _fact(facts, "permanence", "permanent") == "met":\n',
      '    if _fact(facts, "permanence", "temporary") != "met":\n'),
     ("a production grant needs no write account",
-     'else None)\n    if access:', 'else None)\n    if spec.account:'),
+     ') else spec.account\n    if access:', ') else spec.account\n    if spec.account:'),
     ("the classifier's verdict is ignored",
      'classes = _classes(spec, tier, facts, req.get("classified_as"))',
      "classes = _classes(spec, tier, facts)"),
@@ -1188,11 +1205,15 @@ MUTATIONS = (
      "    needs_admin = spec.admin or bool(classes & {ADMIN_USE, "
      "ACCOUNT_CREATION})\n",
      "    needs_admin = spec.admin\n"),
+    ("an admin operation may run with a session read or write account",
+     '        if needs_admin:\n            bad += ("read-verified", "write-verified")\n',
+     "        if False:\n            bad += ()\n"),
     ("a classifier verdict pulls in no tier rule",
      "    if spec.tiered or classes:\n", "    if spec.tiered:\n"),
     ("a classifier verdict pulls in no write account",
-     '"write" if tier == "prod" and classes and not needs_admin',
-     '"write" if tier == "prod" and spec.prod_serious and not needs_admin'),
+     'access = "write" if (tier == "prod" and classes and not needs_admin',
+     'access = "write" if (tier == "prod" and spec.prod_serious '
+     'and not needs_admin'),
     ("an unrecognised classifier verdict counts as none",
      "        found.add(said if said in SERIOUS_CLASSES else UNPLACED)\n",
      "        if said in SERIOUS_CLASSES:\n            found.add(said)\n"),
@@ -1204,8 +1225,8 @@ MUTATIONS = (
      '        return [("noted_on_ticket", True)] if tier == "qa" else []\n',
      '        return []\n'),
     ("a production payment needs no write account",
-     'and spec.lane not in (HUMAN, NEVER) else None)',
-     'and spec.lane == GRANT else None)'),
+     "                         and spec.lane not in (HUMAN, NEVER)\n",
+     "                         and spec.lane == GRANT\n"),
     ("an unattested plan may do an attended production write",
      '        if not attested:\n            return walk.done(\n'
      '                "5", NEEDS_PLAN,\n'

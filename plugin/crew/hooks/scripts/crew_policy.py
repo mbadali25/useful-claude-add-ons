@@ -444,9 +444,11 @@ def decide(request: Any) -> dict:
                     f"machine layer is {layer} ({stop_word})")
     # A production write by any route uses the verified write account; an
     # admin operation goes through the broker instead (4.14).
-    access = spec.account or (
-        "write" if tier == "prod" and classes and not needs_admin
-        and spec.lane not in (HUMAN, NEVER) else None)
+    # A class in production asks for the write account even where the row
+    # itself would take a read account (a read classified as a write).
+    access = "write" if (tier == "prod" and classes and not needs_admin
+                         and spec.lane not in (HUMAN, NEVER)
+                         ) else spec.account
     if access:
         account = _pick(req.get("account"), ACCOUNTS)
         walk.look("2", f"account {account}, needs {access}-verified")
@@ -456,7 +458,13 @@ def decide(request: Any) -> dict:
                         f"account the tier map names ({stop_word})")
     else:
         other = _pick(req.get("account"), ACCOUNTS)
-        if other in ("mismatch", "fail", "could-not-tell"):
+        # An admin operation runs in the broker (4.14): the session holds no
+        # credential for it, so a verified read or write account in use is
+        # the wrong credential, not a pass.
+        bad = ("mismatch", "fail", "could-not-tell")
+        if needs_admin:
+            bad += ("read-verified", "write-verified")
+        if other in bad:
             walk.look("2", f"account {other} (identity does not check out)")
             return done("2", stop_outcome,
                         f"account is {other} ({stop_word})")
