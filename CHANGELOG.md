@@ -145,6 +145,13 @@ read entries under any `## [` heading.
 - crew 1.3.159: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); the accepted-value test changed plugin/crew after the number was set, so the branch moved to 1.3.160; the change is recorded under crew 1.3.160
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Added — crew 1.3.180: `crew_protected.py`, the protected-policy comparator, report-only (R-32)
+
+- **Summary.** `crew` 1.3.180 adds `crew_protected.py`, which compares the protected policy crew actually enforces before and after a change and says whether each protected key stays the same, narrows, widens or cannot be told; nothing calls it yet, so no guard or command changes.
+- **What.** `plugin/crew/hooks/scripts/crew_protected.py` maps each protected leaf (`LEAVES`) to the reader that enforces it (`READERS`, with its `path:line` and layers) and a direction kind (`DIRECTIONS`). `read_layer` reads each config layer strictly (unreadable, not UTF-8 JSON, a repeated key, not an object or a moved link target is `unknown`); `effective_protected` calls the real readers; `compare` returns `unchanged`, `narrowing`, `widening` or `unknown`, and an unknown never reads as unchanged. For `humanOnly.*` and `guards.git.allow` the raw per-layer value is compared too and the wider outcome kept. `judge_change` reads both sides in throwaway roots and never confirms; `judge_drift` reads the real paths against `<machine config dir>/protected-policy/baseline.json` and advances it only on a free result. CLI: `check`, `explain`, `keys`, `baseline --init`.
+- **Inert.** `REPORT_ONLY = True` and nothing imports it; `test_crew_protected.py` fails if any other plugin source mentions it. R-32b (harness-only: refusal, hook wiring) and R-32c (the other readers and crew's writers) switch it on after R-23's `widen-policy` receipt.
+- **Tests.** `test_crew_protected.py`: must-block and must-allow tables, a differential against each enforcing reader called by name, the coverage union, isolation, the CLI, a BOM-prefixed layer read the same as the enforcing readers, and 21 weakened copies of the module that each must turn a named case red with an `AssertionError`.
+
 ### Added — crew 1.3.179: `crew_actions.py`, the Actions schema per kind, report-only (R-30)
 
 - **Summary.** `crew` 1.3.179 adds `crew_actions.py`, one closed schema for a plan's Actions block that says whether each planned action is well formed and why not; nothing calls it yet, so no guard or command changes.
