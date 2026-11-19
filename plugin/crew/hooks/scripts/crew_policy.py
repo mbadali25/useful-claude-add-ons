@@ -27,6 +27,12 @@ Input: one request, a dict.
     prodcheck   pass | fail | unknown (the 4.5 checks, production only)
     admin_need  covers | other | none (rule 4)
     target      the target the request acts on (an emergency must name it)
+    classified_as   the classifier's verdict (R-P6): a serious class name, or
+                "none". It can only raise seriousness; an unrecognised value
+                is unplaced, hence serious. facts.estimate_under_threshold
+                (True only when an estimate was made and is under the cost
+                threshold) is what keeps an infrastructure apply from being
+                a money action
     emergency   a dict naming the owner, incident, target, action, expiry
                 and uses left (see below); anything else is no emergency
     facts       per-operation facts (ownership, protection, backup, ...)
@@ -151,6 +157,7 @@ class Op(NamedTuple):
     account: Optional[str] = None  # "read" / "write" if it uses an account
     prod_serious: bool = False     # serious when the tier is prod
     admin: bool = False            # rule 4 applies
+    cost_checked: bool = False     # infrastructure: an estimate is needed
     serious: Optional[str] = None  # SERIOUS_ALWAYS lane: its class
     facts: tuple = ()              # ((name, required value), ...)
     note: str = ""
@@ -198,7 +205,7 @@ OPERATIONS = {
                          facts=(("prior_tier_landed", True),
                                 ("smoke_pass", True))),
     "terraform-apply": Op(CONDITIONAL, tiered=True, account="write",
-                          prod_serious=True,
+                          prod_serious=True, cost_checked=True,
                           note="non-production: allow and log"),
     "grant-permission": Op(GRANT, tiered=True,
                            note="serious unless a temporary grant of a listed "
@@ -266,10 +273,35 @@ def _fact(facts: dict, name: str, wanted: Any) -> str:
     return UNKNOWN
 
 
-def _serious_class(spec: Op, tier: str, facts: dict) -> Optional[str]:
-    """The seriousness class of this request, or None if it is not serious."""
+SERIOUS_CLASSES = frozenset({MONEY, PRODUCTION_WRITE, PERMISSION_CHANGE,
+                             ACCOUNT_CREATION, ADMIN_USE, DESTROY_NOT_OWNED,
+                             IRREVERSIBLE, NO_PROVABLE_BACKUP})
+
+
+def _serious_class(spec: Op, tier: str, facts: dict,
+                   hint: Any = None) -> Optional[str]:
+    """The seriousness class of this request, or None if it is not serious.
+    `hint` is the classifier's own verdict (request field classified_as):
+    it can only raise seriousness. A class this table knows is taken; any
+    other non-empty value is a class the table cannot place, so UNPLACED."""
+    own = _own_class(spec, tier, facts)
+    if own is not None:
+        return own
+    if hint is None or hint == "none":
+        return None
+    return hint.strip().lower() if (
+        isinstance(hint, str) and hint.strip().lower() in SERIOUS_CLASSES
+    ) else UNPLACED
+
+
+def _own_class(spec: Op, tier: str, facts: dict) -> Optional[str]:
+    """The class this table derives from the operation and its facts."""
     if spec.lane == SERIOUS_ALWAYS:
         return spec.serious
+    if spec.cost_checked and _fact(facts, "estimate_under_threshold",
+                                   True) != "met":
+        # An estimate that cannot be made counts as over (4.5, Money).
+        return MONEY
     if spec.lane == DESTRUCTIVE:
         # The stricter classes win over "production write": the same facts
         # that make a dev deletion serious must not be dropped in prod.
@@ -453,7 +485,7 @@ def decide(request: Any) -> dict:
         return done("5a", DENY, "a backup that was required and whose probe "
                                 "failed always refuses; no plan excuses it")
 
-    serious = _serious_class(spec, tier, facts)
+    serious = _serious_class(spec, tier, facts, req.get("classified_as"))
     walk.look("5", f"serious class {serious or 'none'}")
     if serious:
         return _serious(req, walk, (name, spec, facts), serious, attended,

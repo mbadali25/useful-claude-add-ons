@@ -59,6 +59,8 @@ def good_facts(spec):
     if spec.lane == P.DESTRUCTIVE:
         facts.update(ownership="own", backup="provable",
                      noted_on_ticket=True)
+    if spec.cost_checked:
+        facts["estimate_under_threshold"] = True
     if spec.serious in P.IRREVERSIBLE_CLASSES:
         facts.update(irreversible_listed=True, cap_set=True,
                      preflight_ok=True)
@@ -389,6 +391,30 @@ def _cases():
             "allow")
     add("deploy: attended prod with the attestation contradicted",
         planned("start-deploy", "prod", attested=False), "needs-plan")
+    for tier in ("dev", "qa", "prod"):
+        for est in (GONE, False, None, "yes", "unknown"):
+            add(f"terraform-apply: {tier}, estimate {est!r} is a money action",
+                req("terraform-apply", tier,
+                    facts={"estimate_under_threshold": est}), "needs-plan")
+        add(f"terraform-apply: {tier}, estimate over, covered",
+            planned("terraform-apply", tier,
+                    facts={"estimate_under_threshold": False}), "allow")
+    add("terraform-apply: prod, estimate over, a standing plan is not enough",
+        planned("terraform-apply", "prod", provenance="standing-plan",
+                facts={"estimate_under_threshold": False}), "needs-plan")
+    for op in ("commit", "fetch", "terraform-apply", "sql-read"):
+        for hint, want in (("money", "needs-plan"),
+                           ("production-write", "needs-plan"),
+                           ("permission-change", "needs-plan"),
+                           ("banana", "needs-plan"), (7, "needs-plan"),
+                           ("", "needs-plan"), ("none", "allow"),
+                           (None, "allow")):
+            add(f"{op}: classifier says {hint!r}",
+                req(op, classified_as=hint), want)
+    add("payment: the classifier cannot lower it",
+        req("payment", classified_as="none"), "needs-plan")
+    add("terraform-apply: a classifier verdict still needs a plan, then allows",
+        planned("terraform-apply", classified_as="money"), "allow")
     add("delete-data: dev needs no ticket note",
         req("delete-data", "dev", facts={"noted_on_ticket": GONE}), "allow")
     add("grant-permission: a plan cannot grant admin rights",
@@ -1104,6 +1130,15 @@ MUTATIONS = (
      '    if _fact(facts, "permanence", "temporary") != "met":\n'),
     ("a production grant needs no write account",
      'else None)\n    if access:', 'else None)\n    if spec.account:'),
+    ("the classifier's verdict is ignored",
+     'serious = _serious_class(spec, tier, facts, req.get("classified_as"))',
+     "serious = _serious_class(spec, tier, facts)"),
+    ("an unrecognised classifier verdict counts as none",
+     "    ) else UNPLACED\n", "    ) else None\n"),
+    ("an apply with no cost estimate is not a money action",
+     '    if spec.cost_checked and _fact(facts, "estimate_under_threshold",\n'
+     '                                   True) != "met":',
+     "    if False:"),
     ("a QA deletion needs no ticket note",
      '        return [("noted_on_ticket", True)] if tier == "qa" else []\n',
      '        return []\n'),
