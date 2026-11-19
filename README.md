@@ -239,8 +239,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.185**: `crew_paths.py`, machine-owned run folders and the one safe delete. `crew` 1.3.185 adds one resolver for every crew run folder, read from the machine config layer only, and the single recursive delete crew will use; nothing calls it yet.
-- **crew 1.3.183**: Tracker status maps, Jira transition check and durable event ids. `crew` 1.3.183 gives every tracker kind a status map, checks a Jira transition against the issue's last seen status before it is pushed, and gives each tracker post a durable event id so a timed-out post is not posted twice.
+- **crew 1.3.186**: `crew_paths.py`, machine-owned run folders and the one safe delete. `crew` 1.3.186 adds one resolver for every crew run folder, read from the machine config layer only, and the single recursive delete crew will use; nothing calls it yet.
+- **crew 1.3.185**: `crew_never.py`, the Never-lane command tripwire and shared redactor, report-only. `crew` 1.3.185 adds `crew_never.py`, which says whether a command a model runs skips git hooks or signing or carries a secret-shaped value, and holds the one shared redactor; nothing calls it yet, so no guard or command changes.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
