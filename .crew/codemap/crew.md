@@ -1131,6 +1131,17 @@ anchor for this section: c1042aa2d
 - JUDGEMENT the upper bound 540 is the Stop row's `timeout` in `crew_hook.TABLE` (600) less `DEADLINE_MARGIN=60` in `verify-gate.sh`, so a budget spent to the last second still leaves the gate its margin; `test_verify_stop_budget_key.py` holds the three together.
 - JUDGEMENT reader and writer agreeing was a separate harness-only change (`verify-gate.sh` is in `HARNESS`, owner rule: a harness change lands alone), done in crew 1.3.167 with `test_verify_gate_stop_budget.py` holding must-accept and must-reject cases.
 
+## The policy table, report-only (R-01, crew 1.3.168)
+
+anchor for this section: 7a9400f25
+
+- DERIVED `plugin/crew/hooks/scripts/crew_policy.py:130` `OPERATIONS`: the closed registry, 52 rows over eight lanes (free, read, destructive, conditional, grant, serious, human, never); `:279` `decide` walks the revision-3 plan's 4.3 order and returns `outcome`, `reason`, `rule`, `serious` and `trace`; `:418` `explain` prints that trace; `:427` `_main` is the CLI (`decide`, `explain`, `operations`; unreadable JSON exits 2 and prints no decision).
+- DERIVED the order is the code's order: never lane (`:307`), machine layer and account (`:312`), the human-only list (`:323`), unknown tier (`:331`), admin need (`:340`), the serious class and its plan rule (`:344`, `_serious` `:377`), then reads, destructive, conditional and free. An operation not in `OPERATIONS` is serious (`UNPLACED`) and `_serious` answers it `needs-plan` even with a plan of record.
+- DERIVED every input is read through `_pick` (`:210`) or `_fact` (`:219`): a value that is missing, of the wrong type or outside its closed list is `unknown` and never takes the permissive branch. Only `ENVELOPE_OPS` (`:112`) may be unlocked by a standing plan; the operating mode is not read anywhere.
+- DERIVED nothing reaches it: `plugin/crew/tests/test_crew_policy.py::test_nothing_in_the_plugin_reaches_the_policy_table_yet` fails if any other plugin file mentions `crew_policy`, and `test_the_operating_mode_changes_no_outcome` runs all 1045 table rows with a `mode` field added. The same file holds 26 weakened copies of the module's source that each must fail.
+- JUDGEMENT it is report-only on purpose (plan section 6: every new allow ships inert, a last ticket switches it on). `crew_policy.py` is not in `HARNESS`, so it landed as feature work; the shared `sabotage*.py` files are harness paths and the module blocks nothing yet, so its sabotage lives in the test file and the switch-on ticket adds the harness-only companion.
+- JUDGEMENT where the plan is silent the module chooses and says so in its docstring: a condition that is false is `deny` while one that cannot be shown is `ask-routine`; unknown ownership cannot make a push Free; a branch known to be protected is on the human-only list; an emergency counts only when `owner-declared` and waives only the merge review condition; R-P6 and R-D2 refine the serious list and the routine classes.
+
 ## `/crew:autopilot` (T-0004, crew 1.0.41)
 
 JUDGEMENT (carried, not re-verified at `bdde58724`, L-0928): the behaviour prose in this section is as of the commit it names, not re-read at `bdde58724`; only its `name` plus line citations were re-resolved by symbol against the `bdde58724` tree, and a line cited with no name beside it was not.
