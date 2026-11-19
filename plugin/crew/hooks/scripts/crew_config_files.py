@@ -372,11 +372,34 @@ def parse_assignments(items):
         if not is_dotted(key):
             return None, f"--set: {key!r} is not a dotted path (a.b.c)"
         try:
-            updates[key] = json.loads(raw)
-        except ValueError:
+            updates[key] = json.loads(raw, parse_constant=_not_json_constant,
+                                      parse_float=_finite_float)
+        except ValueError as exc:
+            if isinstance(exc, _NonFinite):
+                return None, f"--set {key}: {exc}; JSON has no NaN or Infinity"
             return None, (f"--set {key}: {raw!r} is not JSON; a string needs "
                           f"its quotes ({key}='\"{raw}\"')")
+        except RecursionError:
+            return None, f"--set {key}: the value is nested too deeply to read"
     return updates, None
+
+
+class _NonFinite(ValueError):
+    """A `--set` value holding NaN, Infinity or a float that overflows to it."""
+
+
+def _not_json_constant(name):
+    # `json.loads` accepts NaN/Infinity by default and `json.dumps` writes them
+    # back, which no strict reader (`crew_tiers` among them) accepts: one write
+    # would turn the whole file unreadable.
+    raise _NonFinite(f"{name} is not JSON")
+
+
+def _finite_float(text):
+    value = float(text)
+    if value != value or value in (float("inf"), float("-inf")):
+        raise _NonFinite(f"{text} is not a finite number")
+    return value
 
 
 def _fsync_dir(path):

@@ -906,7 +906,9 @@ def read_global_config(path=None):
         return {}
     try:
         parsed = json.loads(text)
-    except ValueError:
+    except (ValueError, RecursionError):
+        # RecursionError: a deeply nested file. "Never raises" covers it, so
+        # `explain_config` reaches `crew_tiers`, which names the file unreadable.
         return {}
     return parsed if isinstance(parsed, dict) else {}
 

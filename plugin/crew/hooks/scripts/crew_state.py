@@ -294,7 +294,7 @@ def load_config(root):
         return {}
     try:
         parsed = json.loads(text)
-    except ValueError:
+    except (ValueError, RecursionError):  # RecursionError: a deeply nested file
         return {}
     return parsed if isinstance(parsed, dict) else {}
 

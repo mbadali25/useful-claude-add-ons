@@ -44,6 +44,7 @@ Standard library only.
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import os
 import sys
@@ -91,20 +92,26 @@ def _norm(text):
 
 class _Obj(dict):
     """A JSON object as `_pairs` builds it: the first value of each key, plus
-    `twins`, every group of keys (as written) that fold to the same text."""
+    `twins`, every group of keys (as written) that fold to the same text, and
+    `twinValues`, the folded text of each such group -> EVERY value its keys
+    held, in order (the dict itself keeps only the first)."""
 
-    __slots__ = ("twins",)
+    __slots__ = ("twins", "twinValues")
 
 
 def _pairs(pairs):
     """The D11 `object_pairs_hook`. Never raises."""
     obj = _Obj()
-    groups = {}
+    groups, values = {}, {}
     for key, value in pairs:
-        groups.setdefault(_promote_match.fold(key), []).append(key)
+        folded = _promote_match.fold(key)
+        groups.setdefault(folded, []).append(key)
+        values.setdefault(folded, []).append(value)
         if key not in obj:
             obj[key] = value
     obj.twins = [keys for keys in groups.values() if len(keys) > 1]
+    obj.twinValues = {folded: values[folded] for folded, keys in groups.items()
+                      if len(keys) > 1}
     return obj
 
 
@@ -146,11 +153,14 @@ def _read_layer(path):
 
 
 def _layer(label, status, parsed):
-    """One layer, analysed: `{"label", "status", "detail", "map", "topTwins"}`.
-    `status` is `absent`, `unreadable` or `ok`; `map` is the `tiers` object
-    (an `_Obj`, `{}` when absent); `topTwins` names keys folding to `tiers`."""
+    """One layer, analysed: `{"label", "status", "detail", "map", "topTwins",
+    "twinTargets"}`. `status` is `absent`, `unreadable` or `ok`; `map` is the
+    `tiers` object (an `_Obj`, `{}` when absent); `topTwins` names keys folding
+    to `tiers`, and `twinTargets` every target key any of THEIR maps lists, so
+    a report still names a target that only the second map holds (every one
+    of them is `conflicting`, and a dropped target would read as "no row")."""
     out = {"label": label, "status": status, "detail": None, "map": _Obj(),
-           "topTwins": None}
+           "topTwins": None, "twinTargets": []}
     out["map"].twins = []
     if status == "unreadable":
         out["detail"] = parsed
@@ -160,6 +170,9 @@ def _layer(label, status, parsed):
     for group in _twins(parsed):
         if _promote_match.fold(group[0]) == _TIERS_FOLD:
             out["topTwins"] = group
+            for value in parsed.twinValues.get(_TIERS_FOLD, []):
+                if isinstance(value, dict):
+                    out["twinTargets"].extend(value)
     if "tiers" not in parsed:
         return out
     tiers = parsed["tiers"]
@@ -320,13 +333,16 @@ def resolve_layers(machine, repo, target):
     conflict = _conflict(machine, target, m_found) or _conflict(repo, target, r_found)
     if conflict:
         return done("conflicting", conflict)
-    if parse_target(target) is None:
-        return done("invalid", m_problem or (
-            f"{target!r} is not `<kind>:<name>` with a kind of " + ", ".join(KINDS)))
+    # The machine's entry first (it is the authority), then the repo's, then
+    # the query itself: a repo-only `server:a` is the repo's bad entry (D5),
+    # not an invalid query.
     if m_problem:
         return done("invalid", f"machine: {m_problem}")
     if r_problem:
         return done("repo-invalid-entry", f"repo: {r_problem}")
+    if parse_target(target) is None:
+        return done("invalid",
+                    f"{target!r} is not `<kind>:<name>` with a kind of " + ", ".join(KINDS))
     tier = _combine(_machine_value(m_found), out["repo"])
     out[FIELD] = tier
     if m_found is None:
@@ -344,7 +360,8 @@ def resolve(target, root=None, global_path=None):
 
 
 def _targets(*layers):
-    return sorted({_norm(key) for layer in layers for key in layer["map"]})
+    return sorted({_norm(key) for layer in layers
+                   for key in itertools.chain(layer["map"], layer["twinTargets"])})
 
 
 def resolve_all(root, global_path=None):
@@ -373,7 +390,7 @@ def explain_row(root, global_path=None):
             ignored[result["target"]] = None if found is None else found[1]
     if any(r["reason"] == "narrowed-by-repo" for r in results):
         source = "repo+global"
-    elif machine["map"] or machine["status"] == "unreadable":
+    elif machine["map"] or machine["status"] == "unreadable" or machine["topTwins"]:
         source = "global"
     else:
         source = "default"
@@ -391,10 +408,17 @@ def explain_row(root, global_path=None):
 
 
 def layer_problems(machine, repo):
-    """One display line per unreadable layer, so a report with no targets
-    still says the machine (or repo) file could not be read."""
-    return [show(f"{layer['label']}-unreadable: {layer['detail']}")
-            for layer in (machine, repo) if layer["status"] == "unreadable"]
+    """One display line per unreadable layer, and per layer holding more than
+    one key folding to `tiers`, so a report still says the machine (or repo)
+    file could not be used even when it lists no target of its own."""
+    out = []
+    for layer in (machine, repo):
+        if layer["status"] == "unreadable":
+            out.append(show(f"{layer['label']}-unreadable: {layer['detail']}"))
+        elif layer["topTwins"]:
+            out.append(show(f"{layer['label']}-conflicting: more than one key folding to "
+                            f"`tiers`: {', '.join(layer['topTwins'])}; every target is unknown"))
+    return out
 
 
 def show(text):

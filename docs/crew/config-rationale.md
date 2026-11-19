@@ -1696,6 +1696,16 @@ rules:
   narrowing in a file crew could not find is never dropped. Text reports escape
   every non-printable character, so a name holding a newline cannot print as a
   second result row.
+- **A conflict never hides a row** (review round 2). A file with two keys
+  folding to `tiers` makes every target `conflicting`, and the reports list
+  every target either map names (the parser keeps all twin values, not only
+  the first) with a `<layer>-conflicting` problem line. A repo-only entry
+  whose key is not `<kind>:<name>` is `repo-invalid-entry`, like any other bad
+  repo entry. `--set` refuses `NaN`, `Infinity` and a float that overflows to
+  it, since the writer would store them and the reader rejects the file; and
+  a file nested too deeply to parse reads as `{}` in `read_global_config` and
+  `load_config` (both promise never to raise), so `--explain` still reaches
+  `crew_tiers`, which names the layer unreadable.
 
 ### The ratchet is one table, not five copies
 

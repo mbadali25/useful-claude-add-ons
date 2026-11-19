@@ -161,7 +161,11 @@ def test_t_v2_narrowing_shows_in_explain_and_merged_is_a_lower_bound(tmp_path, m
     assert crew_tiers.resolve(target, root, gpath)["tier"] == "prod"
 
 
-def test_t_v2_merged_never_wider_than_crew_tiers_on_the_grid(tmp_path, monkeypatch):
+def test_t_v2_merged_is_a_lower_bound_never_stricter_than_crew_tiers(tmp_path, monkeypatch):
+    """The merged `tiers` value is never STRICTER than `crew_tiers` (it may be
+    wider: a repo narrowing is not in it), which is why no consumer may read it
+    (D10). Renamed in review round 2: it was called `merged_never_wider`, the
+    opposite of what it asserts."""
     target = "database:orders"
     for index, (m, r) in enumerate(itertools.product(SETTABLE + (None,), SETTABLE + (None,))):
         root, gpath = _setup(_sub(tmp_path, f"g{index}"),
@@ -235,12 +239,30 @@ def test_t_c5_repo_case_twins_over_machine_dev(tmp_path):
 
 @pytest.mark.parametrize("second", ["tiers", "Tiers"])
 def test_t_c6_two_top_level_tiers_keys(tmp_path, second):
-    raw = ('{"tiers": {"host:a": {"tier": "dev"}}, "%s": {"host:a": {"tier": "dev"}}}'
+    # `host:b` only in the SECOND map (review round 2): the dict keeps the first
+    # value, so a report that enumerated only it dropped `host:b` entirely.
+    raw = ('{"tiers": {"host:a": {"tier": "dev"}}, "%s": {"host:b": {"tier": "dev"}}}'
            % second)
     root, gpath = _setup(tmp_path, machine_raw=raw)
     for target in ("host:a", "host:b"):
         got = crew_tiers.resolve(target, root, gpath)
         assert (got["tier"], got["reason"]) == ("unknown", "conflicting"), got
+    listed = {r["target"]: (r["tier"], r["reason"]) for r in crew_tiers.resolve_all(root, gpath)}
+    assert listed == {"host:a": ("unknown", "conflicting"),
+                      "host:b": ("unknown", "conflicting")}, listed
+    row = crew_tiers.explain_row(root, gpath)
+    assert row["value"] == {"host:a": "unknown", "host:b": "unknown"}, row
+    assert row["source"] == "global", row
+    assert any(p.startswith("machine-conflicting:") for p in row["problems"]), row
+
+
+def test_t_c6_twin_tiers_keys_in_the_repo_are_named(tmp_path):
+    raw = '{"tiers": {}, "Tiers": {"host:b": {"tier": "prod"}}}'
+    root, gpath = _setup(tmp_path, machine={"host:b": _entry("dev")}, repo_raw=raw)
+    listed = {r["target"]: r["reason"] for r in crew_tiers.resolve_all(root, gpath)}
+    assert listed == {"host:b": "conflicting"}, listed
+    row = crew_tiers.explain_row(root, gpath)
+    assert any(p.startswith("repo-conflicting:") for p in row["problems"]), row
 
 
 def test_t_c7_twins_elsewhere_in_the_file_change_no_tier(tmp_path):
@@ -278,6 +300,17 @@ def test_unknown_kind_is_invalid(tmp_path):
     got = crew_tiers.resolve("server:a", root, gpath)
     assert (got["tier"], got["reason"]) == ("unknown", "invalid")
     assert [r["reason"] for r in crew_tiers.resolve_all(root, gpath)] == ["invalid"]
+
+
+def test_repo_only_unknown_kind_is_repo_invalid_entry(tmp_path):
+    """D5: the repo's bad entry is `repo-invalid-entry` even when its key is
+    not `<kind>:<name>` (review round 2); a query nobody lists stays invalid."""
+    root, gpath = _setup(tmp_path, machine={}, repo={"server:a": _entry("dev")})
+    got = crew_tiers.resolve("server:a", root, gpath)
+    assert (got["tier"], got["reason"]) == ("unknown", "repo-invalid-entry"), got
+    assert got["notes"][0].startswith("repo:"), got
+    assert [r["reason"] for r in crew_tiers.resolve_all(root, gpath)] == ["repo-invalid-entry"]
+    assert crew_tiers.resolve("server:b", root, gpath)["reason"] == "invalid"
 
 
 def test_repo_invalid_entry_over_machine_dev(tmp_path):
@@ -490,6 +523,34 @@ def test_t_w4_set_tiers_to_a_non_object_is_refused(tmp_path, value):
     (D5), so the writer never stores one; `--unset tiers` removes the key."""
     with pytest.raises(crew_config.GlobalWriteRefused, match="whole map"):
         crew_config.plan_global_write({"tiers": value}, str(tmp_path / "m.json"))
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity", "1e999"])
+def test_t_w4_cli_set_a_non_finite_number_is_refused(tmp_path, capsys, value):
+    """Review round 2: `json.loads` accepts these and `json.dumps` writes them
+    back as NaN/Infinity, which `crew_tiers` rejects, so one write would make
+    every target machine-unreadable. Refused at parse, file untouched."""
+    root, gpath = _setup(tmp_path, machine={"host:a": _entry("dev")})
+    before = pathlib.Path(gpath).read_bytes()
+    raw = '{"host:a": {"tier": "dev", "weight": %s}}' % value
+    assert crew_config.main(["--root", root, "--global-path", gpath, "--set",
+                             "tiers=" + raw, "--apply"]) == 2
+    assert "NaN or Infinity" in capsys.readouterr().err
+    assert pathlib.Path(gpath).read_bytes() == before
+    assert crew_tiers.resolve("host:a", root, gpath)["reason"] == "listed"
+
+
+def test_explain_survives_a_deeply_nested_machine_file(tmp_path, monkeypatch):
+    """Review round 2: `read_global_config` caught only ValueError, so a deep
+    file raised RecursionError in `explain_config` before `crew_tiers` could
+    name it. Now the row says machine-unreadable."""
+    raw = '{"x": ' + "[" * 100000 + "]" * 100000 + ', "tiers": {}}'
+    root, gpath = _setup(tmp_path, machine_raw=raw, repo_raw=raw)
+    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", gpath)
+    row = next(r for r in crew_config.explain_config(root, gpath) if r["path"] == "tiers")
+    assert any(p.startswith("machine-unreadable:") for p in row["problems"]), row
+    assert crew_config.read_global_config(gpath) == {}
+    assert crew_state.load_config(root) == {}
 
 
 def test_t_w4_cli_set_tiers_null_is_refused(tmp_path):
