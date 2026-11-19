@@ -2285,10 +2285,10 @@ timeout in `crew_hook.TABLE` less the gate's 60 s `DEADLINE_MARGIN`, both held b
 last second still leaves the gate time to defer the rest and write its markers), else refused with the range named. The reason
 for refusing rather than clamping is the reader: `verify-gate.sh` turns a value it cannot use into
 60 without a word, so a stored `"unlimited"` or `0` would read as "tuned" while the gate kept running
-its 60 s. The writer is where the typo is visible. The reader is unchanged (a harness path) and still
-treats an unusable hand-edited value as 60, never as no limit. It is still wider than the writer (it
-accepts 0, decimals and numbers over 540); narrowing it to the writer's bounds is a separate,
-harness-only change.
+its 60 s. The writer is where the typo is visible. Since crew 1.3.167 the reader agrees with the writer (a harness-only
+change, `verify-gate.sh`): it takes a whole number from 1 to 540 and treats anything else in a
+hand-edited file (0, a negative, a decimal, a string, a boolean, null, a number over 540, or the key
+written twice) as 60, never as no limit and never as a budget the writer would have refused.
 
 **The single marker used to mean "everything passed."** Before crew 0.19.93,
 `.crew/.verify-verified-at` (the sha baseline) and `.crew/.verify-gate.fingerprint`

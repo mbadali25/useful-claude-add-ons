@@ -802,9 +802,9 @@ def _run_gate(root, flavour, ci=False):  # pylint: disable=unused-argument
 def test_stop_budget_is_inherited(tmp_path, flavour):
     """A lane with no config reads the main checkout's `verify.stopBudgetSeconds`:
     its rule is deferred exactly as a lane whose own config says the same."""
-    inherited = _run_gate(_gate_lane(tmp_path / "a", {"verify": {"stopBudgetSeconds": 0}}),
+    inherited = _run_gate(_gate_lane(tmp_path / "a", {"verify": {"stopBudgetSeconds": 1}}),
                           flavour)
-    own = _run_gate(_gate_lane(tmp_path / "b", None, {"verify": {"stopBudgetSeconds": 0}}),
+    own = _run_gate(_gate_lane(tmp_path / "b", None, {"verify": {"stopBudgetSeconds": 1}}),
                     flavour)
     default = _run_gate(_gate_lane(tmp_path / "c", None), flavour)
     assert default.returncode == 2, default.stderr

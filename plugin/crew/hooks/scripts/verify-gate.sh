@@ -1931,11 +1931,24 @@ if len(sys.argv) > 2 and sys.argv[2] in ("--all", "--ci"):
     budget = None
 else:
     try:
-        _cc = json.load(open(os.environ["CREW_REPO_CONFIG"]))
+        # The reader takes exactly what the writer (crew_state.STOP_BUDGET_BOUNDS,
+        # crew_config.value_allowed) stores: a whole number from 1 to 540 (the Stop
+        # hook's 600 s timeout less DEADLINE_MARGIN). Anything else -- 0, a negative,
+        # a decimal (60.0 and 1e2 included), a string, a boolean, null, a number over
+        # 540, or the key (or `verify`) written twice, where json keeps only the last
+        # -- leaves the 60 s default. It fails closed to the default, never to a value
+        # nobody could have set through /crew:config.
+        def _once(_pairs):
+            _names = [_k for _k, _unused in _pairs]
+            if _names.count("stopBudgetSeconds") > 1 or _names.count("verify") > 1:
+                raise ValueError("duplicate key")
+            return dict(_pairs)
+        with open(os.environ["CREW_REPO_CONFIG"], encoding="utf-8-sig") as _fh:  # a BOM (Notepad) is not part of the JSON
+            _cc = json.load(_fh, object_pairs_hook=_once)
         _v = (_cc.get("verify") or {}).get("stopBudgetSeconds")
-        if isinstance(_v, (int, float)) and not isinstance(_v, bool) and _v >= 0:
+        if type(_v) is int and 1 <= _v <= 540:  # pylint: disable=unidiomatic-typecheck
             budget = _v
-    except (OSError, ValueError, AttributeError, KeyError):
+    except (OSError, ValueError, AttributeError, KeyError, RecursionError):
         pass
 
 # A command is ONE LINE, and a command that is not is REJECTED rather than

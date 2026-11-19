@@ -343,7 +343,7 @@ def test_changing_the_map_or_the_budget_invalidates_the_skip(flavour, tmp_path):
 
     _run(flavour, root)  # settle, so the next assertion isolates the config
     (root / ".crew" / "config.json").write_text(
-        json.dumps({"verify": {"stopBudgetSeconds": 900}}), encoding="utf-8")
+        json.dumps({"verify": {"stopBudgetSeconds": 120}}), encoding="utf-8")
     assert not _skipped(_run(flavour, root)), "a changed config.json must re-run"
 
 

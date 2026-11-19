@@ -114,7 +114,8 @@ KEY_META = {
                      type_="list of"),
     "qa.fallback": _unv("Model a gone pin falls back to, on its family's provider (L-0712).",
                         "0.16.6", "commands/review.md", "model id"),
-    "qa.codex.model": _unv("Codex model for review; null passes no flag.", "0.14.6",
+    "qa.codex.model": _unv("Codex model for review; defaults to `gpt-6.2-sol` (1.3.166), "
+                           "null passes no flag.", "0.14.6",
                            "commands/review.md", "string or null"),
     "qa.codex.reasoningEffort": _row("Codex reasoning effort for review; null passes no "
                                      "flag.", "prose",
