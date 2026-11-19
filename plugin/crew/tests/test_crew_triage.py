@@ -102,14 +102,14 @@ def check_legacy_table(mod):
 
 # score -> model, built from factors that sum to the score with risk 0
 BAND_ROWS = ((0, SONNET), (2, SONNET), (3, OPUS), (5, OPUS), (6, FABLE),
-             (8, FABLE))
+             (8, FABLE))  # up to 8: the four factors at 2 and no legacy
 
 
 def _factors_for(score):
-    """Factors (risk 0) that sum to `score` <= 6; the rest comes from legacy."""
-    left = min(score, 6)
+    """Factors that sum to `score` <= 8, risk last (so risk is 0 up to 6)."""
+    left = score
     fac = {}
-    for name in ("complexity", "systems", "ambiguity"):
+    for name in ("complexity", "systems", "ambiguity", "risk"):
         fac[name] = min(2, left)
         left -= fac[name]
     return fac
@@ -120,8 +120,7 @@ def check_bands(mod):
     bad = []
     for score, model in BAND_ROWS:
         out = mod.triage(task(factors=_factors_for(score)))
-        if out["score"] != min(score, 6) or (
-                score <= 6 and out["model"] != model):
+        if out["score"] != score or out["model"] != model:
             bad.append(("band", score, out["score"], out["model"]))
     # the top of the scale: 11 = 8 factors + 3 legacy
     top = mod.triage(task(factors=_fac(complexity=2, systems=2, risk=2,
@@ -294,6 +293,16 @@ def check_unknowns(mod):
             out = mod.triage(task(**{flag: value}))
             if flag not in out["unknown"]:
                 bad.append(("flag unnamed", flag, repr(value)))
+    # a malformed flag counts as TRUE (the dearer branch), never as false
+    for value in (None, 1, 0, "true", "false", "", [], {}):
+        out = mod.triage(task(legacy=value))  # money False
+        if out["legacy_points"] != 1:
+            bad.append(("malformed legacy is not true", repr(value),
+                        out["legacy_points"]))
+        out = mod.triage(task(legacy=True, money=value))  # systems 0
+        if out["legacy_points"] != 2:
+            bad.append(("malformed money is not true", repr(value),
+                        out["legacy_points"]))
     out = mod.triage(task(legacy=GONE, money=GONE))
     if out["legacy_points"] != 2:  # legacy and money both count, systems 0
         bad.append(("missing legacy/money", out["legacy_points"]))
@@ -401,7 +410,7 @@ def _is_int(value):
 def check_output_shape(mod):
     """Table 8 (iv): every key present, typed and valued per the route table."""
     bad = []
-    for _s, _k, _d, _f, _l, _m, out in _grid(mod):
+    for size, _k, _d, _f, _l, _m, out in _grid(mod):
         route = out["route"]
         if list(out) != list(OUTPUT_KEYS):
             bad.append(("keys", route, list(out)))
@@ -440,13 +449,20 @@ def check_output_shape(mod):
                 bad.append(("score sum", route, out["score"]))
         if route == "needs-size" and out["size"] is not None:
             bad.append(("needs-size carries a size", out["size"]))
-        if route != "needs-size" and out["size"] not in ("S", "M", "L", "XL"):
-            bad.append(("size value", route, out["size"]))
+        if route != "needs-size" and out["size"] != size:
+            bad.append(("size is not the input size", route, size, out["size"]))
         if not isinstance(out["post"], str) or not out["post"].startswith(
                 POST_START[route]):
             bad.append(("post", route, out["post"]))
-        elif route != "mechanical" and "score %s" % out["score"] not in out["post"]:
-            bad.append(("post score", route, out["post"]))
+        elif route != "mechanical":
+            fac = out["factors"]
+            if isinstance(fac, dict):
+                want = (f"score {out['score']} (complexity "
+                        f"{fac.get('complexity')}, systems {fac.get('systems')}, "
+                        f"risk {fac.get('risk')}, ambiguity "
+                        f"{fac.get('ambiguity')})")
+                if want not in out["post"]:
+                    bad.append(("post breakdown", route, out["post"]))
     return bad
 
 
@@ -496,9 +512,10 @@ def test_one_legacy_row(legacy, money, systems, points):
     assert out["legacy_points"] == points and out["score"] == systems + points
 
 
-@pytest.mark.parametrize("score,model", [r for r in BAND_ROWS if r[0] <= 6])
+@pytest.mark.parametrize("score,model", BAND_ROWS)
 def test_one_band_row(score, model):
-    assert T.triage(task(factors=_factors_for(score)))["model"] == model
+    out = T.triage(task(factors=_factors_for(score)))
+    assert out["score"] == score and out["model"] == model
 
 
 def test_a_raising_factors_object_is_never_read_on_the_mechanical_route():
@@ -541,9 +558,24 @@ MUTATIONS = (
      "and task_type in MECHANICAL",
      "and any(m in task_type for m in MECHANICAL)"),
     ("mechanical before epic",
-     "if size in EPIC_SIZES:", "if size in EPIC_SIZES and not is_mech:"),
+     "if size in RUNNABLE and is_mech:",
+     "if (size in RUNNABLE or size in EPIC_SIZES) and is_mech:"),
     ("mechanical before needs-size",
-     "elif size is None:", "elif size is None and not is_mech:"),
+     "if size in RUNNABLE and is_mech:",
+     "if (size in RUNNABLE or size is None) and is_mech:"),
+    ("mechanical ignores the size",
+     "if size in RUNNABLE and is_mech:", "if is_mech:"),
+    ("mechanical returns a computed score",
+     'pick(HAIKU, "mechanical", ["mechanical"], extra)',
+     'pick(HAIKU, "mechanical", ["mechanical"], extra)\n'
+     '        out.update(score=0, factors={}, legacy_points=0)'),
+    ("a malformed flag counts as false",
+     "    return unknown_as, False", "    return bool(value), False"),
+    ("a sized route reports a fixed size",
+     "ticket_status=BACKLOG, size=size)", 'ticket_status=BACKLOG, size="L")'),
+    ("the epic post drops the factor breakdown",
+     'post=f"size {size}; {scored}; epic: break down")',
+     'post=f"size {size}; epic: break down")'),
     ("mechanical route is never taken",
      "if size in RUNNABLE and is_mech:",
      "if size in RUNNABLE and is_mech and False:"),
@@ -688,11 +720,11 @@ def _plugin_files(root, git=GIT):
 
 
 def _is_regular(path):
-    """True for a regular file; a FIFO or device would block a read."""
-    try:
-        return stat.S_ISREG(os.stat(path).st_mode)
-    except OSError:
-        return False
+    """True for a regular file; a FIFO or device would block a read.
+
+    A stat error propagates: a scan that could not look is not a scan.
+    """
+    return stat.S_ISREG(os.stat(path).st_mode)
 
 
 def mentions(root, git=GIT):
@@ -704,12 +736,9 @@ def mentions(root, git=GIT):
         path = os.path.join(root, rel)
         if not _is_regular(path):
             continue
-        try:
-            with open(path, encoding="utf-8", errors="replace") as handle:
-                if NAME in handle.read():
-                    hits.append(rel)
-        except OSError:
-            continue
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            if NAME in handle.read():
+                hits.append(rel)
     return hits
 
 
@@ -781,6 +810,31 @@ def test_a_fifo_is_not_read(tmp_path):
     getattr(os, "mkfifo")(str(tmp_path / "plugin" / "pipe.md"))
     (tmp_path / "plugin" / "a.md").write_text("crew_triage\n", encoding="utf-8")
     assert mentions(str(tmp_path), git=None) == ["plugin/a.md"]
+
+
+def test_a_stat_error_fails_the_scan(tmp_path, monkeypatch):
+    (tmp_path / "plugin").mkdir()
+    (tmp_path / "plugin" / "a.md").write_text("x\n", encoding="utf-8")
+
+    def refuse(_path, *_a, **_k):
+        raise PermissionError("simulated")
+    monkeypatch.setattr(os, "stat", refuse)
+    with pytest.raises(PermissionError):
+        mentions(str(tmp_path), git=None)
+
+
+def test_a_read_error_fails_the_scan(tmp_path, monkeypatch):
+    (tmp_path / "plugin").mkdir()
+    (tmp_path / "plugin" / "a.md").write_text("x\n", encoding="utf-8")
+    real = open
+
+    def refuse(path, *a, **k):
+        if str(path).endswith("a.md"):
+            raise PermissionError("simulated")
+        return real(path, *a, **k)
+    monkeypatch.setattr("builtins.open", refuse)
+    with pytest.raises(PermissionError):
+        mentions(str(tmp_path), git=None)
 
 
 def test_the_module_is_pure():
