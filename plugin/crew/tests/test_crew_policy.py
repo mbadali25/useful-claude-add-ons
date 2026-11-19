@@ -429,10 +429,17 @@ def _cases():
         for acct in ("none", GONE):
             add(f"{op}: covered, no session account {acct!r}",
                 planned(op, account=acct), "allow")
+    for acct in ("write-verified", "read-verified"):
+        for hint in ("admin-use", "account-creation"):
+            add(f"terraform-apply: prod, classified {hint}, session account "
+                f"{acct}",
+                planned("terraform-apply", "prod", presence="unattended",
+                        account=acct, classified_as=hint,
+                        admin_need="covers", facts=prod_apply), "deny")
     add("terraform-apply: prod, classifier says account-creation, need covers",
         planned("terraform-apply", "prod", presence="unattended",
-                classified_as="account-creation", admin_need="covers",
-                facts=prod_apply), "allow")
+                account="none", classified_as="account-creation",
+                admin_need="covers", facts=prod_apply), "allow")
     for presence in ("attended", "unattended"):
         add(f"sql-read: prod, classified production-write, a read account, "
             f"{presence}",
@@ -460,11 +467,12 @@ def _cases():
     add("terraform-apply: prod, plan of record, classifier says admin-use, "
         "no need",
         planned("terraform-apply", "prod", classified_as="admin-use",
-                admin_need="none", facts=prod_apply), "deny")
+                account="none", admin_need="none", facts=prod_apply), "deny")
     add("terraform-apply: prod, plan of record, classifier says admin-use, "
         "need covers",
         planned("terraform-apply", "prod", classified_as="admin-use",
-                admin_need="covers", facts=prod_apply), "allow")
+                account="none", admin_need="covers", facts=prod_apply),
+        "allow")
     add("terraform-apply: prod, plan of record, classifier says "
         "irreversible, not listed",
         planned("terraform-apply", "prod",
@@ -1193,7 +1201,8 @@ MUTATIONS = (
      '    if _fact(facts, "permanence", "permanent") == "met":\n',
      '    if _fact(facts, "permanence", "temporary") != "met":\n'),
     ("a production grant needs no write account",
-     ') else spec.account\n    if access:', ') else spec.account\n    if spec.account:'),
+     "    if access:\n        account = _pick",
+     "    if spec.account and access:\n        account = _pick"),
     ("the classifier's verdict is ignored",
      'classes = _classes(spec, tier, facts, req.get("classified_as"))',
      "classes = _classes(spec, tier, facts)"),
@@ -1211,9 +1220,9 @@ MUTATIONS = (
     ("a classifier verdict pulls in no tier rule",
      "    if spec.tiered or classes:\n", "    if spec.tiered:\n"),
     ("a classifier verdict pulls in no write account",
-     'access = "write" if (tier == "prod" and classes and not needs_admin',
-     'access = "write" if (tier == "prod" and spec.prod_serious '
-     'and not needs_admin'),
+     '        tier == "prod" and classes and spec.lane not in (HUMAN, NEVER)',
+     '        tier == "prod" and spec.prod_serious and spec.lane not in '
+     '(HUMAN, NEVER)'),
     ("an unrecognised classifier verdict counts as none",
      "        found.add(said if said in SERIOUS_CLASSES else UNPLACED)\n",
      "        if said in SERIOUS_CLASSES:\n            found.add(said)\n"),
@@ -1225,8 +1234,10 @@ MUTATIONS = (
      '        return [("noted_on_ticket", True)] if tier == "qa" else []\n',
      '        return []\n'),
     ("a production payment needs no write account",
-     "                         and spec.lane not in (HUMAN, NEVER)\n",
-     "                         and spec.lane == GRANT\n"),
+     '        tier == "prod" and classes and spec.lane not in (HUMAN, NEVER)\n',
+     '        tier == "prod" and classes and spec.lane == GRANT\n'),
+    ("an admin class lets the row's own account pass",
+     "    access = None if needs_admin else", "    access = None if False else"),
     ("an unattested plan may do an attended production write",
      '        if not attested:\n            return walk.done(\n'
      '                "5", NEEDS_PLAN,\n'

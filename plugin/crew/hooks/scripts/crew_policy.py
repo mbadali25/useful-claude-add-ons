@@ -446,9 +446,10 @@ def decide(request: Any) -> dict:
     # admin operation goes through the broker instead (4.14).
     # A class in production asks for the write account even where the row
     # itself would take a read account (a read classified as a write).
-    access = "write" if (tier == "prod" and classes and not needs_admin
-                         and spec.lane not in (HUMAN, NEVER)
-                         ) else spec.account
+    # An admin operation holds no session account at all (the else branch).
+    access = None if needs_admin else "write" if (
+        tier == "prod" and classes and spec.lane not in (HUMAN, NEVER)
+    ) else spec.account
     if access:
         account = _pick(req.get("account"), ACCOUNTS)
         walk.look("2", f"account {account}, needs {access}-verified")
