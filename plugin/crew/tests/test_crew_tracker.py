@@ -805,7 +805,8 @@ def test_jira_move_is_delegated_and_writes_nothing(tmp_path):
     done = _cli(root, "move", "--ticket", "ABC-12", "--to", "in-progress")
 
     assert (done.returncode, done.stdout, _snapshot(tmp_path) == before) == (
-        3, "jira: delegated: run /crew:jira-sync ABC-12 --push --to in-progress\n", True)
+        3, "jira: delegated: run /crew:jira-sync ABC-12 --push --to in-progress\njira: target: In Progress\n",
+        True)
 
 
 def test_sdp_move_is_delegated(tmp_path):
@@ -1416,9 +1417,11 @@ _BOUNDARY = "tracker: {kind} syncs at boundaries only (in-progress, done); nothi
     ("jira", "ABC-12", "direction", 0, _BOUNDARY.format(kind="jira")),
     ("jira", "ABC-12", "spec", 0, _BOUNDARY.format(kind="jira")),
     ("jira", "ABC-12", "planned", 0, _BOUNDARY.format(kind="jira")),
-    ("jira", "ABC-12", "in-progress", 3, "jira: delegated: run /crew:jira-sync ABC-12 --push --to in-progress\n"),
+    ("jira", "ABC-12", "in-progress", 3, "jira: delegated: run /crew:jira-sync ABC-12 --push --to in-progress\n"
+                                         "jira: target: In Progress\n"),
     ("jira", "ABC-12", "review", 0, _BOUNDARY.format(kind="jira")),
-    ("jira", "ABC-12", "done", 3, "jira: delegated: run /crew:jira-sync ABC-12 --push --to done\n"),
+    ("jira", "ABC-12", "done", 3, "jira: delegated: run /crew:jira-sync ABC-12 --push --to done\n"
+                                  "jira: target: Complete\n"),
     ("sdp", "SDP-40219", "spec", 0, _BOUNDARY.format(kind="sdp")),
     ("sdp", "SDP-40219", "in-progress", 3, "sdp: delegated: run /crew:sdp-sync SDP-40219 --push --to in-progress\n"),
     ("sdp", "SDP-40219", "done", 3, "sdp: delegated: run /crew:sdp-sync SDP-40219 --push --to done\n"),

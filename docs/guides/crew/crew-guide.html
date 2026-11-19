@@ -436,7 +436,10 @@ unrelated: it only toggles the display.</p>
 vault), <code>jira</code> or <code>sdp</code> (ServiceDesk Plus). <code>crew_tracker.py</code> resolves it,
 and answers <code>could not tell</code> when two config files disagree, never a guess.
 <code>/crew:obsidian-sync</code>, <code>/crew:jira-sync</code> and <code>/crew:sdp-sync</code> push ticket
-state to the board.</p>
+state to the board. Each tracker kind has a status map: a Jira push names its
+Jira status (<code>jira: target: In Progress</code>) and checks the issue's last seen
+status first, and every tracker comment carries a durable event id, so a post
+that timed out is searched for before it is ever posted again.</p>
 <p>Deeper: <a href="memory-and-obsidian.md">Memory and Obsidian</a>.</p>
 <h2 id="multi-session-work">Multi-Session Work</h2>
 <p>Source: <code>plugin/crew/hooks/scripts/crew_train.py</code> and

@@ -61,9 +61,14 @@ Never list a whole queue to find one request.
 two moves `crew_tracker.py` delegates. No `--to`, or another target: say so
 and stop — never guess. Two writes at most:
 
-1. **The status** the target means, via `sdp_transition`.
+1. **The status** the target means, via `sdp_transition`. The desk's own status
+   names (for example "Open") are resolved with `sdp_list_metadata` and are
+   never checked against crew words.
 2. **One note**, on `--to done` only — `sdp_add_note module=request id=<id>`,
-   with `public=false` always (`crew_state.SDP_NOTE_VISIBILITY` is `"private"`):
+   with `public=false` always (`crew_state.SDP_NOTE_VISIBILITY` is `"private"`).
+   Post it by `Posting once` in `${CLAUDE_PLUGIN_ROOT}/commands/jira-sync.md`,
+   event kind `done`, with `sdp_list_notes` as the marker search and
+   `sdp_add_note` as the post; the note's last line is `crew-event: <id>`:
 
    > files touched, smoke result, reviewer used (Codex or Claude), BLOCK count.
    > Two sentences.
@@ -88,14 +93,16 @@ for the next person to read.
   If the person asks you to close one, use `sdp_close` (which goes through the
   desk's closure endpoint and satisfies mandatory closure fields) rather than
   an `sdp_update` that fakes it.
-- **A failed write is simply gone.** There is no local outbox. If a note fails,
-  say so in the session rather than assuming the desk has it — and re-read with
-  `sdp_get` before retrying, so a partial success is not duplicated.
+- **A failed write is simply gone.** There is no local outbox. A timeout or a
+  missing answer is recorded `unknown`, never `failed`, and the marker search
+  runs before any repost (`Posting once`), so a partial success is not repeated.
 
 ## Sync at boundaries only
 
-Pickup and completion. Never mid-task. If one ticket causes three SDP calls, the
-cache is wrong — fix the cache rather than adding calls.
+Pickup and completion. Never mid-task. Budget per ticket: pickup 1; in-progress 2
+(`sdp_list_metadata` unless cached, `sdp_transition`); done 4 (+`sdp_list_notes`,
+`sdp_add_note`); at most 7 after one timed-out note. More calls than this budget
+means the cache or the procedure is wrong — fix that rather than adding calls.
 
 ## Configuration
 

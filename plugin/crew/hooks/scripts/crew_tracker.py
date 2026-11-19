@@ -72,6 +72,25 @@ taken. Every vault check runs before the folder moves. jira and sdp: the
 folder only. An archived ticket is still found by `read` (lane `Complete/`);
 `move` refuses it (un-archiving is by hand) and `create` treats its id as
 taken. A note or folder present in both places is `could not tell`.
+
+## Status maps and events (R-72)
+
+    python3 crew_tracker.py map        --to <word> [--kind jira] [--root .]
+    python3 crew_tracker.py transition --ticket ABC-12 --to <word> --seen "<Jira status>" [--reopen]
+    python3 crew_tracker.py event begin|record|post --ticket ABC-12 --event done [--disc <d>]
+                                       [--state posted|unknown|failed] [--ref <id>]
+    python3 crew_tracker.py events     --ticket ABC-12 [--json]
+
+`STATUS_MAP` names each kind's status for each crew word; files, obsidian and
+sdp take the crew word itself, Jira its 13-status workflow (`JIRA_STATUSES`).
+A Jira delegated push prints a second line, `jira: target: <name>`, and the
+result carries `target`; `_line` is unchanged. `transition` is Jira only: it
+compares the issue's last seen status with the target and prints `go:`,
+`unchanged:` or `refused:` (exit 0); sdp-sync resolves desk names itself.
+`event` gives each tracker post a deterministic id (crew_tracker_events.py) and
+a ledger under the git common dir, so a timed-out post is searched for by its
+`crew-event: <id>` marker before it is ever posted again. `events` is
+report-only: `/crew:done` refuses nothing on it yet (R-73).
 """
 import argparse
 import contextlib
@@ -152,6 +171,75 @@ def _crew_word_hint(status):
     """`; the crew word is <w>` for a retired INDEX word, else the empty string."""
     word = RETIRED_STATUSES.get(status)
     return f"; the crew word is {word}" if word else ""
+
+
+# R-72: each tracker kind's status map, crew word -> the name the tracker
+# itself shows. files, obsidian and sdp take the crew word as it is: for sdp
+# that is only the vocabulary of `--push --to`, and sdp-sync resolves the
+# desk's own name with `sdp_list_metadata` (desk names are per instance, so
+# crew holds no desk names and no reverse map for them). Jira's 13 statuses are
+# the owner's workflow, in its order; that order is also what `transition`
+# compares two names inside one crew word by. A word with no row has no native
+# status and nothing is invented for it (cancelled, superseded: the owner
+# closes those by hand, T-0037).
+JIRA_STATUSES = (
+    "Backlog", "Brainstorm", "Spec", "Approve", "In Progress", "Development In Review",
+    "Deployed to Development", "QA In Review", "Deployed to QA", "Production In Review",
+    "Deployed to Prod", "Blocked or Parked", "Complete",
+)
+STATUS_MAP = {
+    "files": dict(zip(KNOWN_STATUSES, KNOWN_STATUSES)),
+    "obsidian": dict(zip(KNOWN_STATUSES, KNOWN_STATUSES)),
+    "sdp": dict(zip(KNOWN_STATUSES, KNOWN_STATUSES)),
+    "jira": {
+        "direction": "Brainstorm",
+        "ready": "Spec",
+        "spec": "Approve",
+        "planned": "Approve",
+        "in-progress": "In Progress",
+        "review": "Development In Review",
+        "done": "Complete",
+        "needs-owner": "Blocked or Parked",
+    },
+}
+# Jira name -> crew word, for `transition`. The only reverse map: a name that
+# is not a key is `could not tell`, matched verbatim, never case-folded. The
+# six tier statuses past implement all read as review.
+JIRA_TO_CREW = {
+    "Backlog": "direction",
+    "Brainstorm": "direction",
+    "Spec": "ready",
+    "Approve": "spec",
+    "In Progress": "in-progress",
+    "Development In Review": "review",
+    "Deployed to Development": "review",
+    "QA In Review": "review",
+    "Deployed to QA": "review",
+    "Production In Review": "review",
+    "Deployed to Prod": "review",
+    "Blocked or Parked": "needs-owner",
+    "Complete": "done",
+}
+
+
+def native_status(kind, word):
+    """The name `kind` shows for crew word `word`, or None when it has none."""
+    return STATUS_MAP.get(kind, {}).get(word)
+
+
+def jira_crew_word(name):
+    """The crew word Jira status `name` reads as, or `could not tell`."""
+    return JIRA_TO_CREW.get(name, COULD_NOT_TELL)
+
+
+def map_status(kind, word):
+    """`(native, None)` or `(None, why)` for crew word `word` under `kind`."""
+    if word not in KNOWN_STATUSES:
+        return None, f"{word} is not a crew status{_crew_word_hint(word)}"
+    native = native_status(kind, word)
+    if native is None:
+        return None, f"no native status for {word}; the owner closes it by hand"
+    return native, None
 
 
 WRITE_TRIES = 3
@@ -2135,7 +2223,13 @@ def _folder_refusal(root, ticket):
 
 def _delegated(kind, ticket, to=None):
     command = f"{_SYNC[kind]} {ticket}" + (f" --push --to {to}" if to else "")
-    return _result(kind, DELEGATED, f"run {command}", command)
+    delegated = _result(kind, DELEGATED, f"run {command}", command)
+    # R-72: Jira's own name for the target, printed by main() on a line of its
+    # own; sdp has no fixed names, so no key.
+    native = native_status(kind, to) if kind == "jira" and to else None
+    if native:
+        delegated["target"] = native
+    return delegated
 
 
 def _push(kind, ticket, status):
@@ -2208,6 +2302,90 @@ def read(root, ticket):
     return _report(info, [_files_read(root, ticket)])
 
 
+# --- R-72: transition on the last seen Jira status -------------------------------
+
+JIRA_ONLY = ("transition: {kind} has no fixed status names; transition is for jira only "
+             "(sdp-sync resolves desk names with sdp_list_metadata)")
+
+
+def _jira_only(kind):
+    """Why `transition` does not apply to `kind`, or None for jira."""
+    return None if kind == "jira" else JIRA_ONLY.format(kind=kind)
+
+
+def _unchanged(seen, seen_word, target, to):  # pylint: disable=unused-argument
+    """Whether the issue already shows the target. Native names, never the
+    reverse-mapped words: Approve is both spec and planned."""
+    return seen == target
+
+
+def _past_in_word(seen, seen_word, target, to):
+    """Why a move inside one crew word goes backwards by Jira's own order, or
+    None; `_backwards` returns None on equal words, so it cannot see this."""
+    if seen_word != to or seen == target or seen not in JIRA_STATUSES:
+        return None
+    if JIRA_STATUSES.index(seen) > JIRA_STATUSES.index(target):
+        return f'"{seen}" is past "{target}"'
+    return None
+
+
+def transition_answer(ticket, to, seen, reopen=False):
+    """`go: <name>`, `unchanged: already <name>` or `refused: <why>` for moving
+    a Jira issue last seen at `seen` to crew word `to`. Pure: reads nothing."""
+    target = native_status("jira", to)
+    if target is None:
+        return f"refused: no native status for {to}{_crew_word_hint(to)}"
+    seen_word = jira_crew_word(seen)
+    if seen_word == COULD_NOT_TELL:
+        return f'refused: could not tell "{seen}"'
+    if _unchanged(seen, seen_word, target, to):
+        return f"unchanged: already {target}"
+    if not reopen:
+        if seen == "Complete":
+            return f"refused: closed: {seen}"
+        past = _past_in_word(seen, seen_word, target, to)
+        if past:
+            return f"refused: backwards: {past}"
+        reason = _backwards(ticket, seen_word, to)
+        if reason:
+            return f"refused: backwards: {reason}"
+    return f"go: {target}"
+
+
+def transition(root, ticket, to, seen, reopen=False):
+    """`(exit code, the one line)`: the tracker gate, then Jira only, then the
+    ticket's folder, then `transition_answer`."""
+    info = resolve(root)
+    stop = _gate(info)
+    if stop:
+        return exit_code(_report(info, [stop])), _line(stop)
+    wrong_kind = _jira_only(info["kind"])
+    if wrong_kind:
+        return 2, wrong_kind
+    refused = _folder_refusal(root, ticket)
+    if refused:
+        return 0, f"refused: {refused}"
+    if seen is None:
+        return 2, "transition needs --seen <the issue's Jira status>"
+    return 0, transition_answer(ticket, to, seen, reopen)
+
+
+def _event_cli(root, args):
+    """`(exit code, lines)` for `event` and `events` (crew_tracker_events.py)."""
+    import crew_tracker_events as events  # pylint: disable=import-outside-toplevel
+    info = resolve(root)
+    stop = _gate(info)
+    if stop:
+        return exit_code(_report(info, [stop])), [_line(stop)]
+    common = _common_dir(root)
+    if common is None:
+        return 1, [f"{COULD_NOT_TELL}: git gave no common dir, so there is no event ledger"]
+    ledger = events.ledger_dir(common, args.ticket)
+    if args.action == "events":
+        return events.list_cli(ledger, args.json)
+    return events.event_cli(ledger, repo_id(root), info["kind"], args)
+
+
 # --- CLI -------------------------------------------------------------------------
 
 def _line(result):
@@ -2231,7 +2409,10 @@ def describe(info):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="crew's one tracker interface")
-    parser.add_argument("action", choices=("resolve", "create", "move", "read", "archive"))
+    parser.add_argument("action", choices=("resolve", "create", "move", "read", "archive",
+                                           "map", "transition", "event", "events"))
+    parser.add_argument("op", nargs="?", choices=("begin", "record", "post"),
+                        help="event only: begin a post, record its outcome, or post a local event")
     parser.add_argument("--root", default=".")
     parser.add_argument("--ticket")
     parser.add_argument("--title")
@@ -2239,15 +2420,45 @@ def main(argv=None):
     parser.add_argument("--reopen", action="store_true",
                         help="allow a move backwards by STATUS_ORDER (done -> in-progress), "
                              "or out of done, cancelled or superseded")
+    parser.add_argument("--kind", choices=KINDS, help="map only: the tracker kind (default: resolved)")
+    parser.add_argument("--seen", help="transition only: the issue's Jira status as last read")
+    parser.add_argument("--event", help="event only: approved-spec, progress, review-round, fix, "
+                                        "done, land or clean-up")
+    parser.add_argument("--disc", help="event only: what tells two events of one kind apart")
+    parser.add_argument("--state", help="event record only: posted, unknown or failed")
+    parser.add_argument("--ref", help="event record only: the remote comment or note id")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     root = os.path.abspath(args.root)
+    if (args.op is not None) != (args.action == "event"):
+        parser.error("begin, record and post go with event, and event needs one of them")
     if args.action == "resolve":
         info = resolve(root)
         print(json.dumps(info, indent=2, sort_keys=True) if args.json else "tracker " + describe(info))
         return 1 if info["kind"] == COULD_NOT_TELL else 0
+    if args.action == "map":
+        if not args.status:
+            parser.error("map needs --to <status>")
+        kind = args.kind or resolve(root)["kind"]
+        if kind in (COULD_NOT_TELL, NOT_CONFIGURED):
+            print(f"map: tracker kind {kind}; pass --kind")
+            return 1
+        native, why = map_status(kind, args.status)
+        print(f"{kind}: {args.status} -> {native}" if native else f"{kind}: refused: {why}")
+        return 0 if native else 1
     if not args.ticket or not _TICKET_ID.match(args.ticket):
         parser.error("--ticket must be a ticket id like T-0042 or L-0509")
+    if args.action == "transition":
+        if not args.status:
+            parser.error("transition needs --to <status>")
+        code, line = transition(root, args.ticket, args.status, args.seen, args.reopen)
+        print(line)
+        return code
+    if args.action in ("event", "events"):
+        code, lines = _event_cli(root, args)
+        for line in lines:
+            print(line)
+        return code
     if args.action == "create":
         if not args.title:
             parser.error("create needs --title")
@@ -2265,6 +2476,8 @@ def main(argv=None):
     else:
         for result in report["results"]:
             print(_line(result))
+            if result.get("target"):
+                print(f"{result['backend']}: target: {result['target']}")
     return exit_code(report)
 
 
