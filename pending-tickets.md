@@ -194,6 +194,7 @@ Priorities are proposed by the recording agent (P1 correctness or safety, P2 rel
 | _none yet_ | Document PowerShell for gh/git (Git Bash hangs) | P2 | [document-powershell-for-gh-git-git-bash-hangs.md](docs/tickets/pending/document-powershell-for-gh-git-git-bash-hangs.md) | needs ticket |
 | _none yet_ | Standards export digest wrong in a CRLF checkout | P2 | [standards-export-digest-wrong-in-crlf-checkout.md](docs/tickets/pending/standards-export-digest-wrong-in-crlf-checkout.md) | needs ticket |
 | _none yet_ | Verify CREW_HOOK_POSIX_TMP with a live Stop trace | P2 | [verify-crew-hook-posix-tmp-with-live-stop-trace.md](docs/tickets/pending/verify-crew-hook-posix-tmp-with-live-stop-trace.md) | needs ticket |
+| _none yet_ | verify-gate.sh: a repeated `verify` or `stopBudgetSeconds` key at any depth resets the Stop budget to 60 s | P3 | [verify-gate-stop-budget-nested-duplicate-key.md](docs/tickets/pending/verify-gate-stop-budget-nested-duplicate-key.md) | needs ticket |
 
 ## Summary
 
