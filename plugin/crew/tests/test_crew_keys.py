@@ -698,6 +698,13 @@ def test_a_blank_layer_definition_stops_the_generator(monkeypatch):  # B10
         module.Model()
 
 
+def test_a_none_layer_definition_stops_the_generator(monkeypatch):  # B10b
+    module = _load_config_reference()
+    monkeypatch.setattr(module, "LAYER_TERMS", (("repo", None),) + module.LAYER_TERMS[1:])
+    with pytest.raises(RuntimeError, match="repo"):
+        module.Model()
+
+
 def test_values_alone_or_type_alone_is_allowed():  # A3, A4
     assert crew_keys.KEY_META["dev.provider"]["type"] is None
     assert crew_keys.KEY_META["qa.fallback"]["values"] is None
