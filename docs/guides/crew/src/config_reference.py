@@ -512,6 +512,68 @@ to end by a resumed child. Keep the class off on a machine where that matters
 more than the convenience.
 """
 
+TIER_MAP_SECTION = """\
+## Tier map (`tiers`, R-05)
+
+One answer to "which tier is this target in: `dev`, `qa`, `prod` or
+`unknown`?". **Report-only until R-01**: crew computes and shows the answer,
+and nothing acts on it yet. Read it with `/crew:config --show` (the `tiers` row,
+one line per target) or `python3 plugin/crew/hooks/scripts/crew_tiers.py
+explain <kind>:<name>` (`list` for every target, `--json` for either).
+
+**The machine file owns the map; a repo can only narrow it.** Strictness runs
+`dev` < `qa` < `prod` < `unknown`. The tier in force is the stricter of the
+machine value and the repo value. A target the machine file does not list has
+machine value `unknown`, so a repo entry cannot lift it out of `unknown`, and
+a repo that says nothing imposes nothing. A repo entry that asks for less than
+the machine (or names a target the machine does not list) is shown as ignored.
+
+**Targets** are `<kind>:<name>`, kind one of `workspace`, `workflow`,
+`database`, `account`, `host`. The kind is read ignoring case. The name is
+matched exactly: `workflow:deploy.yml` does not match a listed
+`workflow:Deploy.yml` (that target is `unknown`, noted `case-mismatch`), so a
+case slip always lands on the strictest value. Two keys in one map that differ
+only by case (or repeat exactly) are case twins, and every target in that group
+is `unknown`. There are no globs: `workflow:*` names only a target called `*`.
+An entry is `{"tier": "dev" | "qa" | "prod"}`; `unknown` is a result, never a
+setting. `application` and `accounts` are accepted and not read until R-A1.
+
+The machine file, `~/.claude/crew/config.json`:
+
+```json
+{"tiers": {"workflow:deploy.yml": {"tier": "dev"},
+           "host:api.example.com": {"tier": "qa"}}}
+```
+
+The repo file, `.crew/config.json`:
+
+```json
+{"tiers": {"workflow:deploy.yml": {"tier": "prod"},
+           "host:api.example.com": {"tier": "dev"}}}
+```
+
+Here `workflow:deploy.yml` is `prod` (`narrowed-by-repo`) and
+`host:api.example.com` stays `qa` (`listed`; the repo's `dev` is ignored).
+
+**Reasons**, checked in this order: `machine-unreadable` and `repo-unreadable`
+(a file that exists and is not a JSON object, or whose `tiers` is not an object:
+every target is `unknown`), `conflicting` (case twins, two keys folding to
+`tiers`, or twins of `tier` in an entry), `invalid` (a bad machine entry),
+`repo-invalid-entry` (a bad repo entry: `unknown` even over a machine `dev`),
+`unlisted`, then `narrowed-by-repo` or `listed`. An absent file is not a
+problem: no machine file means every target is `unlisted`.
+
+**Writing it.** `tiers` is written whole, because a target name may hold `.`:
+`python3 plugin/crew/hooks/scripts/crew_config.py --set
+'tiers={"workflow:deploy.yml":{"tier":"qa"}}' [--repo] --apply`. A path under
+it (`--set tiers.<target>...`) is refused, and `--unset tiers` removes the map.
+
+**Consumers read `crew_tiers` only.** The merged config (`resolve_config`)
+carries the machine map alone, never the repo's, so it is a lower bound and
+never wider than the machine; it is a display surface. Anything that decides
+by tier (R-01, R-35, R-A1, R-36) calls `crew_tiers.resolve`.
+"""
+
 INTRO = """\
 # crew 1.0 - configuration reference
 
@@ -529,7 +591,7 @@ crew reads two JSON files:
 - `.crew/config.json` - the **repo** file. Facts about one checkout: the
   tracker, the board, scope enforcement, production declarations.
 
-The repo file wins over the machine file, which wins over crew's defaults. Four
+The repo file wins over the machine file, which wins over crew's defaults. Five
 exceptions, each named in the Layer column below:
 
 - A **repo-only** key in the machine file takes effect nowhere. It is pruned on
@@ -544,6 +606,9 @@ exceptions, each named in the Layer column below:
   stricter of the layers that set it; a layer that says nothing imposes
   nothing. A machine value is your default for every repo, which a repo may
   narrow and never widen.
+- The **tier map** (`tiers`) belongs to the machine file: a repo entry can only
+  make a target stricter, and a target the machine does not list is `unknown`
+  (see "Tier map" below).
 
 A `null` in the repo file over a machine value inherits the machine value. The
 `/crew:init` template writes every key except the personal ones, so it does not
@@ -599,7 +664,8 @@ def render_reference(model=None):
     model = model or Model()
     keys = model.keys
     total, machine, repo_only = model.counts()
-    out = [INTRO, HUMAN_ONLY_SECTION, RUN_APPROVAL_SECTION, "## Reference (generated)", "",
+    out = [INTRO, HUMAN_ONLY_SECTION, RUN_APPROVAL_SECTION, TIER_MAP_SECTION,
+           "## Reference (generated)", "",
            f"Generated from the code by `{COMMAND}`. Do not edit by hand:",
            "`python3 scripts/check-marketplace.py` fails when this file is stale.",
            "",
@@ -658,9 +724,8 @@ def render_reference(model=None):
 CONFIG_PREAMBLE = """\
 # crew configuration reference
 
-Generated from the code by `{command}`. Do not edit by hand:
-`python3 scripts/check-marketplace.py` fails when this file is stale. The
-reasoning behind the keys is in `{rationale}`.
+Generated from the code by `{command}`. Do not edit by hand: `python3 scripts/check-marketplace.py` fails when this file is stale.
+The reasoning behind the keys is in `{rationale}`.
 
 {total} keys: {machine} settable in the machine-global file, {repo_only} repo-only.
 

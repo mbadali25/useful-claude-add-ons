@@ -1,10 +1,9 @@
 # crew configuration reference
 
-Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
-`python3 scripts/check-marketplace.py` fails when this file is stale. The
-reasoning behind the keys is in `docs/crew/config-rationale.md`.
+Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand: `python3 scripts/check-marketplace.py` fails when this file is stale.
+The reasoning behind the keys is in `docs/crew/config-rationale.md`.
 
-102 keys: 63 settable in the machine-global file, 39 repo-only.
+103 keys: 64 settable in the machine-global file, 39 repo-only.
 
 ## The two layers
 
@@ -438,7 +437,7 @@ SessionStart notice).
 | `core` | 27 |
 | `providers` | 18 |
 | `guards` | 3 |
-| `cloud` | 13 |
+| `cloud` | 14 |
 | `trackers` | 5 |
 | `autopilot` | 15 |
 | `context` | 11 |
@@ -509,7 +508,7 @@ SessionStart notice).
 | `guards.overrides` | both, ratchet | `{}` | object of guard name to tier (checked in `hooks/scripts/crew_guards.py`) | `guards.overrides.<guard>`: one guard's tier, replacing the profile's value for it. Each entry is checked against that guard's own tiers; a bad one reads as the floor. |
 | `guards.git.allow` | both | `null` | null, `"off"`, `"all"` or a list of git subcommand names (coerced in `hooks/scripts/crew_gitallow.py`) | The owner's switch that stops crew's command guards blocking or asking on git commands: `"all"` lets a line of only plain git commands past the force-push rule and the promote gate (unless a declared deploy is itself a git command); a list of subcommands (`["commit", "push"]`) lets only those through, with every option they take (listing `push` lets `push --force` through). null or `"off"` changes nothing. Machine file only, and only after `/crew:confirm-config` twice (`crew_confirm_config.py propose --key guards.git.allow --value ...`); a value written any other way, or any later change to the machine file outside crew's config writer, reads as off, and a repo `"off"` or unreadable repo file vetoes it. FAIL-CLOSED ALLOWLIST: a line is exempt only when it is ONE command, exactly `git` with plain literal words (no `$`, backtick, glob, brace, leading `~`, parenthesis, PowerShell expression or `%NAME%`; no separator, redirection, heredoc, continuation or comment, so a chain is judged as before); a git command carrying `-c`, a command to run (`rebase --exec`, `push --receive-pack`, `submodule foreach`, ...) or a `git config` write is never exempt. |
 
-## `cloud` keys (13)
+## `cloud` keys (14)
 
 | Key | Layer | Default | Values | Summary |
 |---|---|---|---|---|
@@ -522,6 +521,7 @@ SessionStart notice).
 | `environments.prodUnattended` | both, ratchet | `false` | `false` \| `true` (ratchet: narrower layer wins; listed narrowest first) | Whether production terraform may run unattended; `true` only when both layers say so. |
 | `environments.workflows` | repo | `{}` | not validated - read by `hooks/scripts/crew_config.py` (expects object of glob to string) | Deploy workflow globs, each mapped to its environment or `input:<name>`. |
 | `environments.preProduction` | repo | `{}` | not validated - read by `hooks/scripts/crew_preprod.py` (expects object of exact name to {reason, targets}) | Environments labelled production that are not live yet: exact name -> `reason` (+ optional exact `targets`); judged non-production by the cloud guard, with an audit line. |
+| `tiers` | both, ratchet | `{}` | object of `<kind>:<name>` to {tier} (checked in `hooks/scripts/crew_tiers.py`) | Machine-owned tier per target (`<kind>:<name>` -> `{"tier": "dev"\|"qa"\|"prod"}`); dev < qa < prod < unknown, an unlisted target is `unknown`, and a repo entry may only narrow. Written whole (`--set tiers=<map>`). Read through `crew_tiers` only, never the merged value; report-only until R-01. |
 | `unattendedCloud.aws.readOnly.profile` | machine-only | `null` | profile name, or null (coerced in `hooks/scripts/crew_unattended.py`) | The AWS profile an unattended run exports credentials from (`aws configure export-credentials`); it must yield temporary credentials. Machine file only. |
 | `unattendedCloud.aws.readOnly.identity` | machine-only | `null` | ARN prefix ending in `/`, or null (coerced in `hooks/scripts/crew_unattended.py`) | The assumed-role ARN prefix STS must report for that profile, ending in `/`; null refuses every launch. Machine file only. |
 | `unattendedCloud.aws.readOnly.region` | machine-only | `null` | region, or null (coerced in `hooks/scripts/crew_unattended.py`) | The AWS region the unattended run gets; null is `us-east-1`. Machine file only. |

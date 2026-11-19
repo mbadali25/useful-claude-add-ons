@@ -3,8 +3,8 @@ plus the two `humanOnly` keys crew 1.3.9 added, the `worktrees.root` key crew 1.
 the `environments.preProduction` key crew 1.3.23 added,
 the `promote.deadlineSeconds` key crew 1.3.41 added, the eight
 `reaper.*` keys crew 1.3.50 added and the repo-only `verify.stopBudgetSeconds`
-key crew 1.3.158 added:
-102, 98 and 63) and the
+key crew 1.3.158 added, and the 	iers map R-05 added:
+103, 99 and 64) and the
 60 keys it drops. Generated once from the reviewed Disposition in
 `.work/tickets/L-0725/spec.md`; changing a key here is a spec amendment, not a
 test fix. `guards.profile` and `guards.overrides` replace the twelve
@@ -107,6 +107,7 @@ L0725_KEYS = frozenset((
     "secondOpinion.model",
     "secondOpinion.provider",
     "tickets.baseBranch",
+    "tiers",  # R-05, the machine-owned tier map
     "tracker",
     "unattendedCloud.aws.nonProd",
     "unattendedCloud.aws.readOnly.identity",
@@ -212,6 +213,7 @@ L0725_REPO_KEYS = frozenset((
     "secondOpinion.model",
     "secondOpinion.provider",
     "tickets.baseBranch",
+    "tiers",  # R-05, the machine-owned tier map
     "tracker",
     "verify.stopBudgetSeconds",  # crew 1.3.158, the Stop row's verify budget (repo only)
     "verifyGate",
@@ -277,6 +279,7 @@ L0725_MACHINE_KEYS = frozenset((
     "secondOpinion.mode",
     "secondOpinion.model",
     "secondOpinion.provider",
+    "tiers",  # R-05, the machine-owned tier map
     "unattendedCloud.aws.nonProd",
     "unattendedCloud.aws.readOnly.identity",
     "unattendedCloud.aws.readOnly.profile",

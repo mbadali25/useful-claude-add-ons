@@ -376,6 +376,11 @@ def default_config():
         # REPO ONLY too: which workflow file deploys where is a fact about
         # this checkout.
         "environments": copy.deepcopy(crew_state.ENVIRONMENTS_DEFAULTS),
+        # R-05: the machine-owned tier map, an open table written WHOLE
+        # (`_OPAQUE_TABLES`). Both layers, but a repo entry may only narrow, and
+        # `resolve_config` drops the repo copy (`_without_repo_tiers`): consumers
+        # read `crew_tiers.resolve`, never this merged value. Report-only.
+        "tiers": copy.deepcopy(crew_state.TIERS_DEFAULTS),
         # `/crew:change`. Both layers, like `install` and `guards` and for the
         # same two reasons: `requireForProduction` ratchets across them, and a
         # key that existed only globally would fail `is_global_path`'s rule
@@ -600,6 +605,9 @@ def default_global_config():
         # one repo's `staging` must never become every repo's.
         "environments": {
             "prodUnattended": crew_state.ENVIRONMENTS_DEFAULTS["prodUnattended"]},
+        # R-05: the tier map. THIS layer is its authority; a repo entry may only
+        # narrow it (`crew_tiers`).
+        "tiers": copy.deepcopy(crew_state.TIERS_DEFAULTS),
         # The whole `change` block, and every key in it earns the global layer
         # on its own terms. `requester` and `implementor` are the person:
         # somebody who files changes under one name files them under that name
@@ -700,16 +708,25 @@ def global_template_config():
     return _without_paths(default_global_config(), PERSONAL_PATHS)
 
 
+# R-05 (D8): top-level open tables written WHOLE, never descended into. A target
+# name in `tiers` may hold `.` (`workflow:deploy.yml`), so a dotted path under it
+# would split into the wrong levels when read back. `--set tiers=<the whole map>`
+# is the write form, and `leaf_paths` stops here, so every walker built on it
+# (the profile, `_diff_changes`, `merged_problems`) sees `tiers` as one leaf.
+_OPAQUE_TABLES = ("tiers",)
+
+
 def leaf_paths(node, prefix=()):
     """Every dotted path to a non-dict value in `node`, in declaration order.
 
     A list is a leaf: `qa.order` and `notify.events` are single settings that
-    are replaced wholesale, not blocks to descend into.
+    are replaced wholesale, not blocks to descend into. So is a top-level
+    `_OPAQUE_TABLES` map (R-05), whole.
     """
     out = []
     for key, value in node.items():
         here = prefix + (key,)
-        if isinstance(value, dict) and value:
+        if isinstance(value, dict) and value and not (not prefix and key in _OPAQUE_TABLES):
             out.extend(leaf_paths(value, here))
         else:
             out.append(".".join(here))
@@ -954,7 +971,7 @@ def resolve_config(root):
     # /crew:init template spells out every nullable key, so without this the
     # machine-global layer was inert for every repo crew had ever set up.
     repo_cfg = without_null_shadows(repo_cfg, global_cfg)
-    repo_cfg = _without_machine_only(repo_cfg)
+    repo_cfg = _without_repo_tiers(_without_machine_only(repo_cfg))
     merged = crew_state.merge_defaults(default_config(), global_cfg)
     merged = crew_state.merge_defaults(merged, repo_cfg)
     if "schema" in repo_cfg:
@@ -2010,6 +2027,16 @@ def _is_machine_only_block_path(dotted):
     return dotted.split(".", 1)[0] in crew_state.UNATTENDED_CLOUD_MACHINE_ONLY
 
 
+def _without_repo_tiers(repo_cfg):
+    """`repo_cfg` minus its `tiers` map (R-05, D1). Does not mutate. Not
+    `_without_machine_only`: the repo copy is not ignored -- `crew_tiers` reads
+    it, and it may narrow -- but a merge by precedence would let it WIDEN, so
+    the merged config carries the machine map alone, a lower bound."""
+    if not isinstance(repo_cfg, dict) or "tiers" not in repo_cfg:
+        return repo_cfg
+    return {key: value for key, value in repo_cfg.items() if key != "tiers"}
+
+
 def explain_config(root, path=None, all_keys=False):
     """Every globally-settable key, with its effective value and its source.
 
@@ -2055,7 +2082,7 @@ def explain_config(root, path=None, all_keys=False):
     # column would credit `repo` for a value the run took from `global`.
     repo_cfg = without_null_shadows(repo_cfg, global_cfg, defaults)
     raw_repo = repo_cfg if isinstance(repo_cfg, dict) else {}
-    repo_cfg = _without_machine_only(repo_cfg)
+    repo_cfg = _without_repo_tiers(_without_machine_only(repo_cfg))
     resolved = crew_state.merge_defaults(
         crew_state.merge_defaults(defaults, global_cfg), repo_cfg)
 
@@ -2076,6 +2103,14 @@ def explain_config(root, path=None, all_keys=False):
             continue
         from_global = _layer_supplies(global_cfg, parts, defaults)
         value = _dig(resolved, parts)
+        if dotted == "tiers":
+            # R-05: the effective tier per target, from `crew_tiers` (the one
+            # reader), never the merged map. Imported HERE so the SessionStart
+            # path through `resolve_config` never loads it (D6).
+            import crew_tiers  # pylint: disable=import-outside-toplevel
+            rows.append(crew_tiers.explain_row(
+                root, GLOBAL_CONFIG_PATH if path is None else path))
+            continue
         if _is_machine_only_block_path(dotted):
             # T-0044: `crew_unattended.py` reads `unattendedCloud` from the
             # machine file alone. Judge the global layer against the block's
@@ -3351,12 +3386,23 @@ def enum_values(dotted):
     return None
 
 
+# R-05 (D8): why a path UNDER an `_OPAQUE_TABLES` map is refused.
+OPAQUE_REFUSAL = ("`tiers` is written whole: `--set tiers=<the whole map as JSON>`; "
+                  "target names may contain `.`")
+
+
+def _under_opaque(dotted):
+    """The opaque table `dotted` sits UNDER (not the table itself), or None."""
+    return next((t for t in _OPAQUE_TABLES if dotted.startswith(t + ".")), None)
+
+
 def leaf_updates(updates):
     """`(dotted, value)` for every LEAF of `updates`, to any depth, so a refused
-    key cannot ride past either writer inside a block; `{}` stays a leaf."""
+    key cannot ride past either writer inside a block; `{}` stays a leaf, and so
+    does an `_OPAQUE_TABLES` map, whole."""
     out = []
     for dotted, value in updates.items():
-        if isinstance(value, dict) and value:
+        if isinstance(value, dict) and value and dotted not in _OPAQUE_TABLES:
             out.extend(leaf_updates(
                 {f"{dotted}.{key}": inner for key, inner in value.items()}))
         else:
@@ -3376,7 +3422,7 @@ def assignments(updates):
     leaf), an open role table to its entries, each pin whole; else itself."""
     out = []
     for dotted, value in updates.items():
-        if isinstance(value, dict) and value and (
+        if isinstance(value, dict) and value and dotted not in _OPAQUE_TABLES and (
                 _shape(dotted) == "block" or _is_open_table(dotted)):
             out.extend(assignments(
                 {f"{dotted}.{key}": inner for key, inner in value.items()}))
@@ -3468,7 +3514,9 @@ def _guard_path_refusal(dotted):
 
 
 def _layer_path_refusal(dotted, layer, value):
-    reason = (_guard_path_refusal(dotted) or crew_humanonly.write_refusal(dotted, layer, value)
+    if _under_opaque(dotted):
+        return OPAQUE_REFUSAL
+    reason =(_guard_path_refusal(dotted) or crew_humanonly.write_refusal(dotted, layer, value)
               or crew_gitallow.write_refusal(dotted, layer, value))
     if reason is not None:
         return reason
@@ -3494,6 +3542,9 @@ def value_allowed(dotted, layer, value):
     reason = _layer_path_refusal(dotted, layer, value)
     if reason is not None:
         return f"{dotted} - {reason}"
+    if dotted in _OPAQUE_TABLES and value is not None and not isinstance(value, dict):
+        return (f"{dotted} = {value!r} - takes the whole map as a JSON object; "
+                f"--unset {dotted} removes it")
     shape = _shape(dotted)
     if shape == "under":
         return f"{dotted} - under a key that takes a value, not keys; set that key to one of its values"
@@ -4595,12 +4646,29 @@ def apply_restore(root, layer, stamp, global_path=None, force_invalid=False):
 # --- CLI -------------------------------------------------------------------
 
 
+def _print_tiers_row(row, width):
+    """R-05: the `tiers` row, one line per target with its EFFECTIVE tier and
+    the reason (`crew_tiers`); a repo entry that asked for less is named."""
+    count = len(row["tiers"])
+    print(f"{'tiers'.ljust(width)}  {row['source'].ljust(8)}  "
+          + (f"{count} target(s), report-only" if count else
+             "no targets: every target is unknown (report-only)"))
+    for line in row["lines"]:  # `target  tier  (reason)`, rendered by crew_tiers
+        print(f"  {line}")
+    for target, entry in (row.get("repoIgnored") or {}).items():
+        print(f"  ! {target}: repo asks {json.dumps(entry)}; a repo may only narrow "
+              "the machine's tier, so it is ignored")
+
+
 def _print_explain(rows, root=".", all_keys=False, findings=None):
     print(_repo_layer_line(root))
     width = max((len(r["path"]) for r in rows), default=4)
     print(f"{'key'.ljust(width)}  source    value")
     narrowed, ignored = [], []
     for row in rows:
+        if row["path"] == "tiers" and "tiers" in row:
+            _print_tiers_row(row, width)
+            continue
         marks = (["repo-only"] if row.get("repoOnly") else []) + (
             [f"held down by {row['heldDownBy']}"] if row.get("heldDownBy") else [])
         print(f"{row['path'].ljust(width)}  {row['source'].ljust(8)}  "
@@ -5026,6 +5094,12 @@ def main(argv=None):
                        "--expect-global", args.expect_global))
         if problem is None and args.expect_global is not None and not args.repo:
             problem = "--expect-global goes with --repo"
+        # R-05 (D8): a path under `tiers` is refused before it is parsed or
+        # planned -- a target name may hold `.`, so it cannot be split.
+        opaque = [p for p in [item.split("=", 1)[0].strip() for item in args.set]
+                  + list(args.unset) if _under_opaque(p)]
+        if problem is None and opaque:
+            problem = f"refused, nothing written: {opaque[0]} - {OPAQUE_REFUSAL}"
         updates, parse_problem = crew_config_files.parse_assignments(args.set)
         for dotted in args.unset:
             if not crew_config_files.is_dotted(dotted):

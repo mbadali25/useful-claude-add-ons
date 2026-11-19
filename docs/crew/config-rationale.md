@@ -1644,6 +1644,49 @@ load, so the launcher refuses while it sets `sandbox.excludedCommands`,
 that is a glob or sits at or under a credential store. Move such an entry to a
 settings file the unattended run does not need, or run that tool attended.
 
+### `tiers` — the machine-owned tier map (R-05, report-only)
+
+One answer to "which tier is this target in", read by `crew_tiers.resolve` and
+by nothing that decides anything yet (R-01 arms it). The reasons behind its
+rules:
+
+- **Exact names, no globs.** A tier is a promise about one target. A glob
+  (`workflow:deploy*`) would silently cover a target added later, so `*` is a
+  literal character and each target is named.
+- **Lookup is case-exact, but twins fold.** On a case-insensitive filesystem
+  `Deploy.yml` and `deploy.yml` are one file; on a provider they may be two.
+  Matching names exactly means a case slip finds nothing and lands on
+  `unknown` (noted `case-mismatch`), never on another target's tier. Folding
+  is used only to find two keys that differ by case (or repeat exactly), and a
+  twin group resolves `unknown` (`conflicting`): folding can only ever produce
+  `unknown`, never a tier.
+- **`unknown` ranks strictest.** `dev` < `qa` < `prod` < `unknown`. Whatever
+  crew cannot tell - an unreadable file, a bad entry, a twin, an unlisted
+  target - must be treated as at least as dangerous as production, so every
+  uncertainty collapses to the top of the order and keeps its reason.
+- **The repo only narrows.** The repo file arrives inside a clone written by
+  someone else. If it could lower a tier it could talk crew into treating
+  production as `dev`. Taking the stricter of the two layers, with an
+  unlisted machine target counting as `unknown`, gives both halves of the
+  acceptance rule from one comparison: a repo can tighten what the machine
+  says and can never loosen it or invent a target.
+- **The merged config drops the repo copy.** `resolve_config` merges by
+  precedence, which cannot express "stricter of two". Merging the repo's map
+  would show a widened tier in every view built on it, so
+  `_without_repo_tiers` drops it and the merged `tiers` is the machine map, a
+  lower bound. The tier in force is `crew_tiers`', and consumers read it there
+  (`tests/test_crew_tiers.py` T-I1/T-I2 scan for any other reader).
+- **Written whole.** A target name may hold `.` (`workflow:deploy.yml`,
+  `host:api.example.com`), and every config path is dotted, so a path under
+  `tiers` would split into the wrong levels. `tiers` is an opaque table:
+  `--set tiers=<the whole map>` is one write, a path under it is refused, and
+  `leaf_paths` (the profile, the rebuild, the diff) treats it as one leaf.
+- **Its own reader.** `read_global_config` and `load_config` turn a broken
+  file into `{}`, which here would read as "no map" rather than "could not
+  tell"; `crew_gitallow.strict_pairs` refuses the whole file for one twin
+  anywhere. `crew_tiers._read_layer` reports a broken file as unreadable and
+  consults twins only where they decide a tier.
+
 ### The ratchet is one table, not five copies
 
 `install.policy` shipped its ratchet as a bespoke `effective_install_policy`

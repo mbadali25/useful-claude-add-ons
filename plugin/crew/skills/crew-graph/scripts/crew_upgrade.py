@@ -128,6 +128,9 @@ _ABSENT = object()
 # this set.
 _GLOBAL_WHOLE_BLOCKS = frozenset((
     "pm", "qa", "dev", "install", "change",
+    # R-05: settable whole in the machine file. Its default is `{}`, so there is
+    # no default leaf to prune or to report as pinned; named for the parity test.
+    "tiers",
 ))
 
 
@@ -298,6 +301,11 @@ CONFIG_BLOCKS = (
     # Repo-only for the same reason: the cloud guard's identity pins.
     ("cloud", crew_state.CLOUD_DEFAULTS),
     ("change", CHANGE_BLOCK),
+    # R-05: the tier map. An upgraded repo file gains `tiers: {}`; a map it
+    # already holds is kept as written (an empty default merges nothing in), and
+    # an absent one stays absent (a block that comes back empty is not written).
+    # In `_GLOBAL_WHOLE_BLOCKS` too, which prunes nothing here (no default leaf).
+    ("tiers", crew_state.TIERS_DEFAULTS),
 )
 
 # `{block_key: block_default}`, restricted to the whole-block globally

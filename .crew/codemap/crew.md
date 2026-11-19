@@ -1131,6 +1131,18 @@ anchor for this section: c1042aa2d
 - JUDGEMENT the upper bound 540 is the Stop row's `timeout` in `crew_hook.TABLE` (600) less `DEADLINE_MARGIN=60` in `verify-gate.sh`, so a budget spent to the last second still leaves the gate its margin; `test_verify_stop_budget_key.py` holds the three together.
 - JUDGEMENT reader and writer agreeing was a separate harness-only change (`verify-gate.sh` is in `HARNESS`, owner rule: a harness change lands alone), done in crew 1.3.167 with `test_verify_gate_stop_budget.py` holding must-accept and must-reject cases.
 
+## The tier map, report-only (R-05)
+
+anchor for this section: 7a9400f25 (base); the line numbers below are the R-05 branch's
+
+- DERIVED `plugin/crew/hooks/scripts/crew_tiers.py:265` `resolve_layers` is the one answer to "which tier is this target in": `dev` < `qa` < `prod` < `unknown` (`:53`), the stricter of the machine and repo values (`_combine`, `:258`), an unlisted target `unknown` (`_machine_value`, `:250`); reasons are checked unreadable, conflicting, invalid, repo-invalid-entry, unlisted, then narrowed-by-repo or listed.
+- DERIVED `crew_tiers.py:114` `_read_layer` reads bytes, decodes `utf-8-sig` and parses with `_pairs` (`:98`), which never raises, keeps a key's first value and records fold twins per object; `:138` `_layer` consults only the top-level `tiers` twins, the `tiers` map's twins and each entry's `tier` twins. It never calls `read_global_config`, `load_config` or `strict_pairs`.
+- DERIVED `crew_tiers.py:182` `_lookup` is exact on the name and folds only the kind (`parse_target`, `:71`); `:196` `_case_mismatch` adds the `case-mismatch:` note for an unlisted target.
+- DERIVED `plugin/crew/hooks/scripts/crew_config.py:2030` `_without_repo_tiers` drops the repo copy in `resolve_config` and `explain_config`, so the merged `tiers` is the machine map alone (a lower bound); `:2110` `explain_config` imports `crew_tiers` inside the function for the `tiers` row (`crew_tiers.explain_row`, `crew_tiers.py:336`), so the SessionStart path never loads it.
+- DERIVED `crew_config.py:716` `_OPAQUE_TABLES = ("tiers",)`: `leaf_paths`, `leaf_updates` and `assignments` keep the map whole; `:3389` `OPAQUE_REFUSAL` refuses a path under it in `_layer_path_refusal` and in `main` before parsing (`:5099`).
+- DERIVED `plugin/crew/hooks/scripts/crew_state.py:610` `TIERS_DEFAULTS = {}`; `plugin/crew/skills/crew-graph/scripts/crew_upgrade.py:308` carries it in `CONFIG_BLOCKS`; `crew_keys.py:453` is its row and `:682` labels it `both, ratchet`.
+- JUDGEMENT consumers (R-01, R-35, R-A1, R-36) must call `crew_tiers.resolve`, never read a merged `tiers`; `tests/test_crew_tiers.py` holds that (T-I1 import scan, T-I2 AST read scan) and proves each property red by sabotage.
+
 ## `/crew:autopilot` (T-0004, crew 1.0.41)
 
 JUDGEMENT (carried, not re-verified at `bdde58724`, L-0928): the behaviour prose in this section is as of the commit it names, not re-read at `bdde58724`; only its `name` plus line citations were re-resolved by symbol against the `bdde58724` tree, and a line cited with no name beside it was not.

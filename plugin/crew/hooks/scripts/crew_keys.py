@@ -448,6 +448,15 @@ KEY_META = {
     "environments.workflows": _unv("Deploy workflow globs, each mapped to its environment "
                                    "or `input:<name>`.", "1.1.16", _S + "crew_config.py",
                                    "object of glob to string"),
+    # R-05. `since` is None ("unreleased") until the land step sets it to the
+    # version it bumps to; the row moves with that bump, not before.
+    "tiers": _row("Machine-owned tier per target (`<kind>:<name>` -> `{\"tier\": "
+                  "\"dev\"|\"qa\"|\"prod\"}`); dev < qa < prod < unknown, an unlisted "
+                  "target is `unknown`, and a repo entry may only narrow. Written whole "
+                  "(`--set tiers=<map>`). Read through `crew_tiers` only, never the merged "
+                  "value; report-only until R-01.", "open-table", since=None,
+                  source=_S + "crew_tiers.py",
+                  type_="object of `<kind>:<name>` to {tier}"),
     # --- change requests
     "change.requireForProduction": _rat("Require an approved change request before "
                                         "`/crew:promote production`: a repo may turn it "
@@ -573,7 +582,7 @@ _FAMILY_OF_KEY = {
 _FAMILY_OF_SEGMENT = {
     "qa": "providers", "dev": "providers", "secondOpinion": "providers",
     "guards": "guards",
-    "cloud": "cloud", "production": "cloud", "unattendedCloud": "cloud",
+    "cloud": "cloud", "production": "cloud", "unattendedCloud": "cloud", "tiers": "cloud",
     "jira": "trackers", "obsidian": "trackers", "sdp": "trackers",
     "bitbucket": "trackers", "github": "trackers",
     "autopilot": "autopilot",
@@ -669,6 +678,8 @@ def layer_of(key):
     if crew_guards.ratchet_spec(key) is not None:
         return "both, ratchet"
     if key in ("guards.profile", "guards.overrides"):
+        return "both, ratchet"
+    if key == "tiers":  # R-05: the machine map is the authority; a repo may only narrow
         return "both, ratchet"
     if key in crew_config._RATCHETED:  # pylint: disable=protected-access
         return "both, widening warned"
