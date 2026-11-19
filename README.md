@@ -239,8 +239,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.178**: `crew_actions.py`, the Actions schema per kind, report-only. `crew` 1.3.178 adds `crew_actions.py`, one closed schema for a plan's Actions block that says whether each planned action is well formed and why not; nothing calls it yet, so no guard or command changes.
 - **crew 1.3.177**: `crew_triage.py`, size route, difficulty score and starting model, report-only. `crew` 1.3.177 adds `crew_triage.py`, which says for one task whether it is an epic, needs a size, is mechanical or docs-only, or which model it would start on and why; nothing calls it yet, so no model choice anywhere changes.
-- **crew 1.3.176**: Every config key must carry its four facts (R-C1). `crew` 1.3.176: the key registry check now fails when a config key has no plain-language line, no allowed values, no layer class or no arrival version, so the Configuration Guide cannot ship a key it cannot explain.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
