@@ -26,6 +26,7 @@ Run: python3 scripts/_test/gate-runner.py
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import os
 import shutil
@@ -1863,10 +1864,11 @@ def write_changed(tmp: str, *paths: str) -> str:
 
 
 def run_map_cli(tmp: str, root: str, *args: str, changed=("a/x.txt",), heavy: str = "none",
-                env_extra: dict | None = None, stdin: str | None = None):
+                env_extra: dict | None = None, stdin: str | None = None,
+                out_dir: str | None = None):
     """(rc, stdout, stderr, status-or-None) of a map-mode CLI run."""
     _RUN_N[0] += 1
-    out = os.path.join(tmp, f"out{_RUN_N[0]}")
+    out = out_dir or os.path.join(tmp, f"out{_RUN_N[0]}")
     argv = [sys.executable, TARGET, "--root", root, "--out", out, "--grace", "1",
             "--map", ".crew/verify.json"]
     if changed is not None and "--base" not in args:
@@ -2211,11 +2213,17 @@ def case_map_status_records_candidate_identity(tmp: str) -> None:
         assert st["head"] and m["head"] == st["head"], m
         keys.add((m["head"], m["changed_digest"], m["map_digest"], m["partition_digest"]))
         mine = [u["id"] for u in m["units"] if u["run_here"]]
+        part_of = {u["id"]: u["slice"] for u in m["units"]}
+        assert part_of == {u["id"]: u["slice"] for u in full["units"]}, part_of
+        assert sorted(mine) == sorted(i for i, k2 in part_of.items() if k2 == k), (k, mine)
         seen.append(set(mine))
         covered += mine
     assert len(keys) == 1, keys
     assert len(covered) == len(set(covered)), covered
     assert set(covered) == set(unit_ids(full)), (covered, unit_ids(full))
+    for i, a_set in enumerate(seen):
+        for b_set in seen[i + 1:]:
+            assert not (a_set & b_set), (a_set, b_set)
 
 
 def case_map_refuses_missing_or_duplicate_rule_ids(tmp: str) -> None:
@@ -2299,10 +2307,89 @@ def case_map_invalid_cover_declarations_get_own_unit(tmp: str) -> None:
         "different env": [sup(env={"A": "1"}), rule("sub", ["a/**"], ["echo sub"], coveredBy="sup")],
         "shared command": [sup(), rule("other", ["a/**"], ["echo sub"]),
                            rule("sub", ["a/**"], ["echo sub"], coveredBy="sup")],
+        "two supersets": [sup("sup"), sup("sup2"),
+                          rule("sub", ["a/**"], ["echo sub"], coveredBy="sup"),
+                          rule("sub2", ["a/**"], ["echo sub"], coveredBy="sup2")],
     }
     for label, rules in bad.items():
         units = units_for(rules)
         assert alone(units, "sub"), (label, [(u["id"], u["rules"]) for u in units])
+        if label == "two supersets":
+            assert alone(units, "sub2"), (label, [(u["id"], u["rules"]) for u in units])
+
+
+def case_map_credit_never_outranks_the_subsets_own_exclusions(tmp: str) -> None:
+    sup = rule("sup", ["a/**"], [echo_to(tmp, "sup")], seconds=50)
+    net = rule("net", ["a/**"], [echo_to(tmp, "net")], seconds=5, coveredBy="sup", reach="network")
+    root = mk_root(tmp, {"unmapped": "ignore", "rules": [sup, net]}, name="x1")
+    _r, _o, _e, st = run_map_cli(tmp, root)
+    got = recs(st)
+    assert got["net"]["state"] == "SKIP" and got["net"]["credited_by"] is None, got
+    assert read_lines(tmp) == ["sup"], read_lines(tmp)
+    os.remove(trace(tmp))
+    need = rule("need", ["a/**"], [echo_to(tmp, "need")], seconds=5, coveredBy="sup",
+                requiresCleanTree=True)
+    root = mk_root(tmp, {"unmapped": "ignore", "rules": [sup, need]}, name="x2")
+    write(os.path.join(root, "dirty.txt"), "x")
+    _r, _o, _e, st = run_map_cli(tmp, root)
+    got = recs(st)
+    assert got["need"]["state"] == "SKIP" and got["need"]["credited_by"] is None, got
+    os.remove(trace(tmp))
+    root = mk_root(tmp, {"unmapped": "ignore", "rules": [sup, need]}, name="x3")
+    _r, _o, _e, st = run_map_cli(tmp, root)
+    assert recs(st)["need"]["credited_by"] == "sup", recs(st)["need"]
+
+
+def case_map_clean_tree_is_sampled_when_the_rule_starts(tmp: str) -> None:
+    dirtier = rule("dirtier", ["a/**"], ['echo x > made-dirty.txt'], seconds=200)
+    need = rule("need", ["a/**"], [echo_to(tmp, "need")], seconds=5, requiresCleanTree=True)
+    root = mk_root(tmp, {"unmapped": "ignore", "rules": [dirtier, need]})
+    _r, _o, _e, st = run_map_cli(tmp, root, "--slice", "1/1")
+    got = recs(st)
+    assert got["dirtier"]["state"] == "PASS", got
+    assert got["need"]["state"] == "SKIP" and "clean working tree" in got["need"]["reason"], got
+    assert read_lines(tmp) == [], read_lines(tmp)
+
+
+def case_map_a_worker_that_raises_is_could_not_tell(tmp: str) -> None:
+    runner = load_runner()
+    a = rule("fa", ["a/**"], ["true"], seconds=5)
+    b = rule("fb", ["a/**"], ["true"], seconds=5)
+    root = mk_root(tmp, {"unmapped": "ignore", "rules": [a, b]})
+    write_timings(root, runner, [(a, 1), (b, 1)])
+    real = runner.run_unit
+
+    def boom(unit, ctx):
+        if unit["id"] == "fa":
+            raise OSError("log not openable")
+        return real(unit, ctx)
+
+    runner.run_unit = boom
+    out = os.path.join(tmp, "wout")
+    old = sys.stdout
+    try:
+        sys.stdout = io.StringIO()
+        rc = runner.main(["--root", root, "--out", out, "--map", ".crew/verify.json",
+                          "--changed-file", write_changed(tmp, "a/x.txt"), "--workers", "2"])
+    finally:
+        sys.stdout = old
+    got = recs(read_json_file(os.path.join(out, "status.json")))
+    assert rc == 3 and got["fa"]["state"] == "COULD-NOT-TELL", (rc, got)
+    assert "log not openable" in got["fa"]["reason"] and got["fb"]["state"] == "PASS", got
+
+
+def case_map_changed_file_keeps_names_exactly(tmp: str) -> None:
+    root = mk_root(tmp, {"unmapped": "fail", "rules": [rule("r", ["a/**"], ["true"])]})
+    one = plan_of(tmp, root, changed=("a/x.txt", "b/y"))
+    two = plan_of(tmp, root, changed=("a/x.txt", "b/y "))
+    assert one["changed_digest"] != two["changed_digest"], (one, two)
+    assert two["unmapped"] == ["b/y "], two["unmapped"]
+    raw = os.path.join(tmp, "raw-changed.bin")
+    with open(raw, "wb") as fh:
+        fh.write(b"a/x.txt\nb/caf\xe9.txt\r\n")
+    rc, out, err, _ = run_map_cli(tmp, root, "--plan", "--changed-file", raw, changed=None)
+    assert rc == 0, (rc, err)
+    assert len(json.loads(out)["unmapped"]) == 1, out
 
 
 # 8 -------------------------------------------------------------------------
@@ -2315,6 +2402,10 @@ def case_map_tier_is_a_measurement_on_this_machine(tmp: str) -> None:
     cfg = {"unmapped": "ignore", "rules": [r30, r200, r10]}
     root = mk_root(tmp, cfg)
     write_timings(root, runner, [(r30, 30), (r200, 200)])
+    nocache = mk_root(tmp, cfg, name="nocache")
+    plan = plan_of(tmp, nocache)
+    assert all(u["tier"] == "heavy" for u in plan["units"]), plan["units"]
+    assert any("timings" in n and "missing" in n for n in plan["notices"]), plan["notices"]
     plan = plan_of(tmp, root)
     tiers = {u["id"]: u for u in plan["units"]}
     assert tiers["t30"]["tier"] == "fast" and tiers["t200"]["tier"] == "heavy", tiers
@@ -2428,6 +2519,15 @@ def case_map_heavy_units_go_through_one_heavy_run_call(tmp: str) -> None:
     quit_early = fake_heavy_run(tmp, "exit 0\n")
     rc, _o, _e, st = run_map_cli(tmp, root, "--tier", "heavy", heavy=quit_early)
     assert recs(st)["hv"]["state"] == "COULD-NOT-TELL", st["steps"]
+    # a reused --out: the earlier run's PASS must not stand in for a unit that never ran
+    reuse = os.path.join(tmp, "reused-out")
+    good = fake_heavy_run(tmp)  # the helper reuses one path: this overwrites quit_early
+    rc, _o, _e, st = run_map_cli(tmp, root, "--tier", "heavy", heavy=good, out_dir=reuse)
+    assert rc == 0 and recs(st)["hv"]["state"] == "PASS", (rc, st["steps"])
+    quit_early = fake_heavy_run(tmp, "exit 0\n")
+    rc, _o, _e, st = run_map_cli(tmp, root, "--tier", "heavy", heavy=quit_early, out_dir=reuse)
+    assert rc == 3 and recs(st)["hv"]["state"] == "COULD-NOT-TELL", (rc, st["steps"])
+    assert st["overall"] != "PASS", st["overall"]
     # HEAVY_RUN=none runs directly and says so; an unusable one is a usage error
     rc, out, _e, _s = run_map_cli(tmp, root, "--tier", "heavy", heavy="none")
     assert rc == 0 and "heavy_run: absent (uncapped)" in out, out
@@ -2608,6 +2708,10 @@ CASES = [
     case_map_refuses_missing_or_duplicate_rule_ids,
     case_map_covered_subset_credited_only_on_superset_pass,
     case_map_invalid_cover_declarations_get_own_unit,
+    case_map_credit_never_outranks_the_subsets_own_exclusions,
+    case_map_clean_tree_is_sampled_when_the_rule_starts,
+    case_map_a_worker_that_raises_is_could_not_tell,
+    case_map_changed_file_keeps_names_exactly,
     case_map_tier_is_a_measurement_on_this_machine,
     case_map_reach_and_clean_tree_exclusions_never_run,
     case_map_rule_states,

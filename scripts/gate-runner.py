@@ -132,6 +132,7 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -1628,11 +1629,11 @@ def select_rules(cfg: dict, changed: list, root: str, helpers: Helpers) -> dict:
 
 
 def read_timings(root: str):
-    """({rule_key: seconds}, notice or None). A missing cache is not a notice;
-    a present one of the wrong shape is (all heavy)."""
+    """({rule_key: seconds}, notice or None). A missing cache and a present one
+    of the wrong shape both give every rule heavy and one notice (D4)."""
     path = os.path.join(root, TIMINGS_FILE)
     if not os.path.exists(path):
-        return {}, None
+        return {}, f"gate-runner map: {TIMINGS_FILE} is missing - every rule is heavy"
     data = read_json(path)
     if isinstance(data, dict) and isinstance(data.get("rules"), dict):
         return data["rules"], None
@@ -1842,13 +1843,17 @@ def changed_set(args, root: str) -> list:
     if args.changed_file:
         try:
             if args.changed_file == "-":
-                text = sys.stdin.read()
+                raw = sys.stdin.buffer.read()
             else:
-                with open(args.changed_file, encoding="utf-8") as fh:
-                    text = fh.read()
+                with open(args.changed_file, "rb") as fh:
+                    raw = fh.read()
         except OSError as exc:
             raise Refusal(f"--changed-file {args.changed_file}: {exc}") from exc
-        return [ln.strip() for ln in text.split("\n") if ln.strip()]
+        # surrogateescape: a name that is not UTF-8 survives; only the line
+        # terminator is removed, never other whitespace a name may contain.
+        text = raw.decode("utf-8", "surrogateescape")
+        lines = [ln[:-1] if ln.endswith("\r") else ln for ln in text.split("\n")]
+        return [ln for ln in lines if ln]
     diff = _git(root, "-c", "core.quotePath=false", "diff", "--name-only", "-z",
                 f"{args.base}...HEAD")
     status = _git(root, "-c", "core.quotePath=false", "status", "--porcelain", "-z")
@@ -1873,7 +1878,9 @@ def build_plan(args, root: str) -> dict:
     helpers = load_helpers(root)
     cfg, map_sha = load_map(args.map, root)
     changed = changed_set(args, root)
-    changed_digest = hashlib.sha256("\n".join(sorted(set(changed))).encode("utf-8")).hexdigest()
+    # NUL-joined: a path can hold a newline but never a NUL, so no two sets collide.
+    changed_digest = hashlib.sha256(
+        "\0".join(sorted(set(changed))).encode("utf-8", "surrogateescape")).hexdigest()
     sel = select_rules(cfg, changed, root, helpers)
     rules = cfg.get("rules", []) or []
     units = build_units(cfg, sel, root, helpers)
@@ -1991,6 +1998,27 @@ def _fold(record: dict) -> None:
     record["state"], record["rc"] = PASS, 0
 
 
+def tree_dirty_now(ctx: Context):
+    """True/False/None (could not tell) for the working tree right now. Paths
+    under this run's own --out are the runner's logs, not the tree's change."""
+    porcelain = _git(ctx.root, "status", "--porcelain", "-z")
+    if porcelain is None:
+        return None
+    try:
+        rel = os.path.relpath(ctx.out, ctx.root).replace(os.sep, "/")
+    except ValueError:
+        rel = None
+    own = rel is not None and rel != "." and not rel.startswith("..")
+    for tok in porcelain.split("\0"):
+        if not tok:
+            continue
+        path = tok[3:] if len(tok) > 3 else tok
+        if own and (path == rel or path.startswith(rel.rstrip("/") + "/")):
+            continue
+        return True
+    return False
+
+
 def run_member(spec: dict, unit_id: str, ctx: Context) -> dict:
     rec = _record(spec["id"], unit_id)
     if spec["fail_paths"] is not None:
@@ -2003,10 +2031,11 @@ def run_member(spec: dict, unit_id: str, ctx: Context) -> dict:
         rec["reason"] = f"NOT VERIFIED - {spec['exclusion'][0]}: {spec['exclusion'][1]}"
         return rec
     if spec["requires_clean_tree"]:
-        if ctx.tree_dirty is None:
+        dirty = tree_dirty_now(ctx)  # sampled now: an earlier rule may have dirtied it
+        if dirty is None:
             rec["state"], rec["reason"] = CNT, "could not tell whether the working tree is clean"
             return rec
-        if ctx.tree_dirty:
+        if dirty:
             rec["state"], rec["reason"] = SKIP, "NOT VERIFIED - requires a clean working tree"
             return rec
     if not spec["commands"]:
@@ -2044,7 +2073,12 @@ def run_unit(unit: dict, ctx: Context) -> list:
     credit = (sup["state"] == PASS and not os.environ.get("PYTEST_ADDOPTS", "")
               and snap0 is not None and snap0 == snap1)
     for spec in specs[1:]:
-        if credit and spec["credit_to"]:
+        # A credit never outranks the subset's own exclusions (D6/D10): a reach
+        # exclusion or a tree that is not known clean sends it to run_member,
+        # which records SKIP / COULD-NOT-TELL instead of a PASS.
+        blocked = bool(spec["exclusion"]) or (
+            spec["requires_clean_tree"] and tree_dirty_now(ctx) is not False)
+        if credit and spec["credit_to"] and not blocked:
             rec = _record(spec["id"], unit["id"])
             rec["state"], rec["rc"], rec["credited_by"] = PASS, None, spec["credit_to"]
             rec["reason"] = f"covered by {spec['credit_to']}, PASS this run"
@@ -2107,7 +2141,7 @@ def run_map_inner(part: str, plan_file: str, digest: str, ctx: Context) -> int:
     plan = json.loads(raw.decode("utf-8"))
     ctx.tree_dirty = plan.get("tree_dirty")
     ctx.helpers = load_helpers(ctx.root)
-    data = {"started": time.time(), "pid": os.getpid(),
+    data = {"started": time.time(), "pid": os.getpid(), "nonce": plan.get("nonce"),
             "slot": os.environ.get("HEAVY_RUN_SLOT") or None, "units": {}}
     write_status(part, data)
     for unit in plan["units"]:
@@ -2211,7 +2245,10 @@ def run_map(args) -> int:
                     if not queue:
                         return
                     unit = queue.pop(0)
-                by_unit[unit["id"]] = run_unit(unit, ctx)
+                try:
+                    by_unit[unit["id"]] = run_unit(unit, ctx)
+                except Exception as exc:  # pylint: disable=broad-exception-caught
+                    by_unit[unit["id"]] = _cnt_records(unit, f"worker raised {type(exc).__name__}: {exc}")
                 save()
 
         threads = [threading.Thread(target=worker) for _ in range(min(workers[0], len(direct)))]
@@ -2225,6 +2262,9 @@ def run_map(args) -> int:
             save()
     elif heavy:
         _run_heavy(args, plan, heavy, ctx, hr, by_unit, save)
+    for unit in plan["run_units"]:  # a unit with no result is never a silent PASS
+        if unit["id"] not in by_unit:
+            by_unit[unit["id"]] = _cnt_records(unit, "no result was recorded for this unit")
     save()
     results = [r for u in plan["run_units"] for r in by_unit.get(u["id"], [])]
     state, code = overall(results)
@@ -2246,12 +2286,26 @@ def run_map(args) -> int:
     return code
 
 
+def _cnt_records(unit: dict, why: str) -> list:
+    recs = []
+    for spec in unit["specs"]:
+        rec = _record(spec["id"], unit["id"])
+        rec["state"], rec["reason"] = CNT, why
+        recs.append(rec)
+    return recs
+
+
 def _run_heavy(args, plan: dict, heavy: list, ctx: Context, hr: dict, by_unit: dict, save) -> None:
     plan_file = os.path.join(ctx.out, "plan.json")
-    write_status(plan_file, {"tree_dirty": ctx.tree_dirty, "units": heavy})
+    nonce = uuid.uuid4().hex
+    part = os.path.join(ctx.out, "heavy-part.json")
+    try:
+        os.remove(part)  # a result left by an earlier run in this --out is not this run's
+    except FileNotFoundError:
+        pass
+    write_status(plan_file, {"tree_dirty": ctx.tree_dirty, "nonce": nonce, "units": heavy})
     with open(plan_file, "rb") as fh:
         digest = hashlib.sha256(fh.read()).hexdigest()
-    part = os.path.join(ctx.out, "heavy-part.json")
     cmd = [sys.executable, os.path.abspath(__file__), "--map-inner", part, "--plan-file",
            plan_file, "--plan-digest", digest, "--root", ctx.root, "--out", ctx.out,
            "--grace", f"{ctx.grace:g}"]
@@ -2261,7 +2315,7 @@ def _run_heavy(args, plan: dict, heavy: list, ctx: Context, hr: dict, by_unit: d
     def take_part() -> dict:
         got = read_json(part)
         units = got.get("units") if isinstance(got, dict) else None
-        if not isinstance(units, dict):
+        if not isinstance(units, dict) or got.get("nonce") != nonce:
             return {}, None, None
         good = {uid: res["records"] for uid, res in units.items()
                 if uid in wanted and _unit_valid(wanted[uid], res)}
@@ -2302,12 +2356,7 @@ def _run_heavy(args, plan: dict, heavy: list, ctx: Context, hr: dict, by_unit: d
         if unit["id"] in recorded:
             by_unit[unit["id"]] = recorded[unit["id"]]
         elif unit["id"] not in by_unit:
-            recs = []
-            for spec in unit["specs"]:
-                rec = _record(spec["id"], unit["id"])
-                rec["state"], rec["reason"] = CNT, f"{why} before this unit recorded a result"
-                recs.append(rec)
-            by_unit[unit["id"]] = recs
+            by_unit[unit["id"]] = _cnt_records(unit, f"{why} before this unit recorded a result")
     save()
 
 
