@@ -68,7 +68,7 @@ def req(op, tier="dev", presence="attended", facts=None, **top):
     """A request that satisfies the op's own conditions; override to break."""
     spec = P.OPERATIONS.get(op)
     out = {"operation": op, "tier": tier, "presence": presence,
-           "machine_layer": "clear"}
+           "machine_layer": "clear", "target": "repo"}
     if spec is not None:
         if spec.account:
             out["account"] = spec.account + "-verified"
@@ -300,6 +300,54 @@ def _cases():
                 "deny")
     add("grant-permission: production", req("grant-permission", "prod"),
         "needs-plan")
+    for tier in ("dev", "prod"):
+        for presence in ("attended", "unattended"):
+            # In dev a temporary listed grant is not serious: a fact that
+            # cannot be shown asks (attended) or is refused (unattended).
+            unknown_is = (STOP[presence] if tier == "prod" else
+                          "ask-routine" if presence == "attended" else "deny")
+            for fact, bad, want in (
+                    ("crew_account_exists", False, "deny"),
+                    ("provider_ticket", False, "deny"),
+                    ("ownership", "other", "deny"),
+                    ("expiry_provable", False, "deny"),
+                    ("within_ceiling", False, "deny"),
+                    ("crew_account_exists", GONE, unknown_is),
+                    ("expiry_provable", GONE, unknown_is)):
+                add(f"grant-permission: covered {tier}, {presence}, "
+                    f"{fact}={bad!r}",
+                    planned("grant-permission", tier, presence=presence,
+                            facts={fact: bad}),
+                    want)
+    add("grant-permission: a covered permanent grant needs no expiry facts",
+        planned("grant-permission", "prod",
+                facts={"permanence": "permanent", "expiry_provable": GONE,
+                       "within_ceiling": GONE}), "allow")
+    for acct in ("mismatch", "fail", "could-not-tell"):
+        for presence in ("attended", "unattended"):
+            add(f"grant-permission: covered, account {acct}, {presence}",
+                planned("grant-permission", "prod", presence=presence,
+                        account=acct), STOP[presence])
+            add(f"commit: account {acct}, {presence}",
+                req("commit", presence=presence, account=acct), STOP[presence])
+    add("delete-data: prod, ownership unknown, covered but not listed",
+        planned("delete-data", "prod", facts={"ownership": GONE}),
+        "needs-plan")
+    add("delete-data: prod, no backup, covered but not listed",
+        planned("delete-data", "prod", facts={"backup": "none"}),
+        "needs-plan")
+    add("delete-data: prod, no backup, listed with a cap, preflight fails",
+        planned("delete-data", "prod", facts={
+            "backup": "none", "irreversible_listed": True, "cap_set": True,
+            "preflight_ok": False}), "deny")
+    add("delete-data: prod, provable backup, covered",
+        planned("delete-data", "prod"), "allow")
+    add("merge-pr: an emergency for another target does not waive it",
+        req("merge-pr", facts={"review_clean": False}, target="repo#2",
+            emergency=emergency(target="repo#1")), "deny")
+    add("merge-pr: an emergency with no request target does not waive it",
+        req("merge-pr", facts={"review_clean": False}, target=GONE,
+            emergency=emergency()), "deny")
     add("grant-permission: a plan cannot grant admin rights",
         planned("grant-permission", "prod", facts={"makes_admin": True}),
         "deny")
@@ -996,8 +1044,20 @@ MUTATIONS = (
      '        if _fact(facts, "preflight_ok", True) != "met":\n',
      '        if False:\n'),
     ("the lane's own conditions are dropped under a plan",
-     '    if spec.facts:\n        verdicts, bad, unknown = _verdicts(list(spec.facts), facts)',
-     '    if False:\n        verdicts, bad, unknown = _verdicts(list(spec.facts), facts)'),
+     '    if lane_facts:\n        verdicts, bad, unknown = _verdicts(lane_facts, facts)',
+     '    if False:\n        verdicts, bad, unknown = _verdicts(lane_facts, facts)'),
+    ("an emergency for another target waives the review",
+     '            and emerg.get("target") == target\n', ''),
+    ("an account that does not check out passes when none is required",
+     '        if other in ("mismatch", "fail", "could-not-tell"):\n',
+     '        if False:\n'),
+    ("a production deletion drops the stricter classes",
+     "    if spec.lane == DESTRUCTIVE:\n        # The stricter classes win",
+     '    if spec.lane == DESTRUCTIVE and tier == "prod":\n'
+     "        return PRODUCTION_WRITE\n"
+     "    if spec.lane == DESTRUCTIVE:\n        # The stricter classes win"),
+    ("a grant's expiry facts are not required for a temporary grant",
+     '        return list(GRANT_FACTS)\n', '        return []\n'),
     ("an unattended grant that cannot be proved only asks",
      '    if unknown and spec.lane == GRANT and not attended:\n',
      '    if False:\n'),

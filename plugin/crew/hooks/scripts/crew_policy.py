@@ -20,9 +20,13 @@ Input: one request, a dict.
                 an account, and only the exact access level passes
     provenance  plan-of-record | standing-plan | decider-approved-plan |
                 record | none
-    plan_covers, attested     True only if shown (see rule 5)
+    plan_covers, attested     True only if shown (see rule 5). plan_covers
+                means the plan covers THIS action in its exact form (an
+                envelope only for ENVELOPE_OPS under a standing plan); the
+                caller that certifies it owns that check, not this table
     prodcheck   pass | fail | unknown (the 4.5 checks, production only)
     admin_need  covers | other | none (rule 4)
+    target      the target the request acts on (an emergency must name it)
     emergency   a dict naming the owner, incident, target, action, expiry
                 and uses left (see below); anything else is no emergency
     facts       per-operation facts (ownership, protection, backup, ...)
@@ -260,15 +264,17 @@ def _serious_class(spec: Op, tier: str, facts: dict) -> Optional[str]:
     """The seriousness class of this request, or None if it is not serious."""
     if spec.lane == SERIOUS_ALWAYS:
         return spec.serious
-    if spec.prod_serious and tier == "prod":
-        return PRODUCTION_WRITE
     if spec.lane == DESTRUCTIVE:
+        # The stricter classes win over "production write": the same facts
+        # that make a dev deletion serious must not be dropped in prod.
         if _fact(facts, "ownership", "own") != "met":
             return DESTROY_NOT_OWNED
         backup = facts.get("backup")
         if not (isinstance(backup, str)
                 and backup.strip().lower() == "provable"):
             return NO_PROVABLE_BACKUP
+    if spec.prod_serious and tier == "prod":
+        return PRODUCTION_WRITE
     if spec.lane == GRANT:
         permanence = _fact(facts, "permanence", "temporary")
         profile = _fact(facts, "profile", "listed")
@@ -280,6 +286,17 @@ def _serious_class(spec: Op, tier: str, facts: dict) -> Optional[str]:
 GRANT_FACTS = (("expiry_provable", True), ("within_ceiling", True),
                ("crew_account_exists", True), ("provider_ticket", True),
                ("ownership", "own"))
+
+
+def _lane_facts(spec: Op, facts: dict) -> list:
+    """The conditions of the operation's own lane. A grant's expiry facts
+    apply to a temporary grant only; the rest apply to every grant."""
+    if spec.lane != GRANT:
+        return list(spec.facts)
+    if _fact(facts, "permanence", "temporary") == "met":
+        return list(GRANT_FACTS)
+    return [f for f in GRANT_FACTS
+            if f[0] not in ("expiry_provable", "within_ceiling")]
 
 
 def _verdicts(needed: list, facts: dict) -> tuple:
@@ -296,9 +313,12 @@ def _emergency(req: dict, name: str) -> bool:
     if not isinstance(emerg, dict):
         return False
     uses = emerg.get("uses_left")
+    target = req.get("target")
     return (emerg.get("declared_by") == "owner"
-            and all(isinstance(emerg.get(k), str) and emerg.get(k).strip()
-                    for k in ("incident", "target"))
+            and isinstance(emerg.get("incident"), str)
+            and emerg.get("incident").strip() != ""
+            and isinstance(target, str) and target.strip() != ""
+            and emerg.get("target") == target
             and emerg.get("action") == name
             and emerg.get("expired") is False
             and isinstance(uses, int) and not isinstance(uses, bool)
@@ -371,6 +391,12 @@ def decide(request: Any) -> dict:
             return done("2", stop_outcome,
                         f"account is {account}, not the verified {spec.account} "
                         f"account the tier map names ({stop_word})")
+    else:
+        other = _pick(req.get("account"), ACCOUNTS)
+        if other in ("mismatch", "fail", "could-not-tell"):
+            walk.look("2", f"account {other} (identity does not check out)")
+            return done("2", stop_outcome,
+                        f"account is {other} ({stop_word})")
 
     if spec.lane == HUMAN:
         walk.look("human", "one-way list")
@@ -422,7 +448,7 @@ def decide(request: Any) -> dict:
         return done("6", ALLOW, "read with a verified read account")
     if spec.lane == DESTRUCTIVE:
         return done("7", ALLOW, "own data with a provable backup")
-    needed = list(GRANT_FACTS if spec.lane == GRANT else spec.facts)
+    needed = _lane_facts(spec, facts)
     if name == "merge-pr" and _emergency(req, name):
         needed = [f for f in needed if f[0] != "review_clean"]
         walk.look("8", "an owner-declared emergency for this action waives "
@@ -496,8 +522,9 @@ def _serious(req: dict, walk: _Walk, subject: tuple, serious: str,
             return walk.done(
                 "5", stop_outcome,
                 f"production checks are {check} ({stop_word})", serious)
-    if spec.facts:
-        verdicts, bad, unknown = _verdicts(list(spec.facts), facts)
+    lane_facts = _lane_facts(spec, facts)
+    if lane_facts:
+        verdicts, bad, unknown = _verdicts(lane_facts, facts)
         walk.look("5", "the lane's own conditions still hold: " + ", ".join(
             f"{n}={v}" for n, v in verdicts))
         if bad:
