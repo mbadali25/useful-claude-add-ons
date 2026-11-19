@@ -920,6 +920,20 @@ def _json_integer(text: str) -> Any:
         return Decimal(text)
 
 
+def _json_object(pairs: list) -> dict:
+    """A JSON object. A name given twice ({"amount": 60, "amount": 10}) is
+    two answers to one question, and the default reader would silently keep
+    the last: an estimate of 60 would pass as 10. Which one the caller meant
+    cannot be told, so the request is unreadable (ValueError), wherever in
+    it the repeat is."""
+    found = {}
+    for name, value in pairs:
+        if name in found:
+            raise ValueError(f"the name {name[:40]!r} is given twice in one object")
+        found[name] = value
+    return found
+
+
 def _main(argv: list) -> int:
     cmd = argv[1] if len(argv) > 1 else ""
     if cmd == "operations":
@@ -930,12 +944,15 @@ def _main(argv: list) -> int:
         print("usage: crew_policy.py decide|explain|classify <json|-> | "
               "operations", file=sys.stderr)
         return 2
-    raw = sys.stdin.read() if argv[2] == "-" else argv[2]
     try:
+        # Read inside the try: stdin that is not text in its encoding raises
+        # UnicodeDecodeError (a ValueError) here, before any JSON is parsed.
+        raw = sys.stdin.read() if argv[2] == "-" else argv[2]
         # A fraction is read exactly, so a cost a hair over the threshold is
         # not rounded down to it (the decide answer never prints a number).
         request = json.loads(raw, parse_float=_json_fraction,
-                             parse_int=_json_integer)
+                             parse_int=_json_integer,
+                             object_pairs_hook=_json_object)
     except (ValueError, RecursionError) as exc:
         # RecursionError is not a ValueError: JSON nested deeper than the
         # reader's stack is unreadable too, and must not leave a traceback

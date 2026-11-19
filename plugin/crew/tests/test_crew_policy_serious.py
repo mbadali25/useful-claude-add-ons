@@ -23,6 +23,7 @@ import decimal
 import hashlib
 import io
 import json
+import os
 import subprocess
 import sys
 from decimal import Decimal
@@ -453,6 +454,77 @@ def check_cli_refuses_json_nested_too_deeply(m):
     return bad
 
 
+def _raw_tf(cost, **top):
+    """Raw JSON of a dev terraform-apply whose monthly_cost is the text `cost`
+    (json.dumps cannot write a name twice, so the object is spliced in)."""
+    return json.dumps(_tf("dev", cost="@COST@", **top)).replace('"@COST@"', cost)
+
+
+ONE_AMOUNT = '{"amount": 10, "currency": "USD", "period": "month"}'
+# Raw JSON in which one object gives a name twice: (label, text).
+TWICE = (
+    ("amount 60 then 10",
+     _raw_tf('{"amount": 60, "amount": 10, "currency": "USD", "period": "month"}')),
+    ("amount 10 then 60",
+     _raw_tf('{"amount": 10, "amount": 60, "currency": "USD", "period": "month"}')),
+    ("amount 10 then 10",
+     _raw_tf('{"amount": 10, "currency": "USD", "period": "month", "amount": 10}')),
+    ("currency EUR then USD",
+     _raw_tf('{"amount": 10, "currency": "EUR", "currency": "USD", "period": "month"}')),
+    ("effects twice, serious then benign",
+     _raw_tf('{"amount": 60, "currency": "USD", "period": "month"}')[:-1]
+     + ', "effects": ' + json.dumps(BENIGN) + "}"),
+    ("tier twice", _raw_tf(ONE_AMOUNT)[:-1] + ', "tier": "dev"}'),
+    ("a name twice in an object no rule reads",
+     _raw_tf(ONE_AMOUNT)[:-1] + ', "note": {"a": 1, "a": 2}}'),
+)
+
+
+def check_cli_refuses_a_name_given_twice(m):
+    """Two answers to one question are no answer: exit 2, nothing on stdout.
+    The default reader keeps the last, so amount 60 would pass as 10."""
+    bad = []
+    for verb, want in (("decide", '"allow"'), ("classify", '"under"')):
+        code, out = _main_out(m, _raw_tf(ONE_AMOUNT), verb)
+        if code != 0 or want not in out:   # the same request, each name once
+            bad.append(f"{verb} CLI, one amount: {code} {out.strip()[:80]}")
+    for label, body in TWICE:
+        for verb in ("classify", "decide", "explain"):
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                code, out = _main_out(m, body, verb)
+            if (code, out) != (2, "") or "no decision" not in err.getvalue():
+                bad.append(f"{verb} CLI, {label}: {code} {out.strip()[:80]}")
+    return bad
+
+
+# Bytes on stdin that are not text in its encoding: (label, bytes, encoding).
+NOT_TEXT = (("0xff as UTF-8", b"\xff", "utf-8"),
+            ("a request cut inside a character",
+             '{"operation": "commit", "note": "é"}'.encode("utf-8")[:-3], "utf-8"),
+            ("0x80 as ASCII", b'{"operation": "commit\x80"}', "ascii"))
+
+
+def check_cli_refuses_stdin_that_is_not_text(m):
+    """Stdin the reader cannot decode gets no verdict either: exit 2, nothing
+    on stdout, one line on stderr; never a traceback and exit 1."""
+    bad = []
+    for label, data, encoding in NOT_TEXT:
+        for verb in ("classify", "decide", "explain"):
+            err = io.StringIO()
+            kept = sys.stdin
+            sys.stdin = io.TextIOWrapper(io.BytesIO(data), encoding=encoding,
+                                         errors="strict")
+            try:
+                with contextlib.redirect_stderr(err):
+                    code, out = _main_out(m, "-", verb)
+            finally:
+                sys.stdin = kept
+            if (code, out) != (2, "") or "no decision" not in err.getvalue():
+                bad.append(f"{verb} CLI, stdin {label}: {code} {out.strip()[:80]}")
+    return bad
+
+
 def check_cli_reads_the_tier(m):
     """The classify verb reads the request's tier (D4, D11)."""
     bad = []
@@ -716,6 +788,8 @@ CHECKS = (check_serious_cases, check_admin_and_empty_paths, check_must_allow,
           check_d9, check_threshold,
           check_presence_not_value, check_cli_reads_the_tier,
           check_cli_refuses_json_nested_too_deeply,
+          check_cli_refuses_a_name_given_twice,
+          check_cli_refuses_stdin_that_is_not_text,
           check_cli_reads_fractions_exactly, check_cost_values,
           check_mixed_number_types, check_a_threshold_too_long_to_print,
           check_unplaced_wording, check_r01_parity)
@@ -908,12 +982,27 @@ def test_the_cli_classifies_a_request_without_effects_as_unplaced(body):
 @pytest.mark.parametrize("args,stdin", [
     (("classify", "{not json"), None), (("classify", "-"), "nope"), (("classify",), None),
     (("classify", "-"), TOO_DEEP[0][1]), (("classify", "-"), TOO_DEEP[1][1]),
-    (("decide", "-"), TOO_DEEP[2][1]), (("explain", "-"), TOO_DEEP[0][1])],
+    (("decide", "-"), TOO_DEEP[2][1]), (("explain", "-"), TOO_DEEP[0][1]),
+    (("decide", "-"), TWICE[0][1]), (("classify", TWICE[0][1]), None),
+    (("explain", "-"), TWICE[1][1])],
     ids=["not json", "stdin not json", "no request", "deep valid array",
-         "deep invalid array", "decide deep effects", "explain deep array"])
+         "deep invalid array", "decide deep effects", "explain deep array",
+         "decide amount twice", "classify amount twice", "explain amount twice"])
 def test_the_cli_prints_no_verdict_for_a_request_it_cannot_read(args, stdin):
     done = _cli(*args, stdin=stdin)
     assert done.returncode == 2 and done.stdout == "" and done.stderr.strip()
+    assert "Traceback" not in done.stderr
+
+
+@pytest.mark.parametrize("verb", ["classify", "decide", "explain"])
+@pytest.mark.parametrize("label,data,encoding", NOT_TEXT, ids=[n[0] for n in NOT_TEXT])
+def test_the_cli_prints_no_verdict_for_stdin_that_is_not_text(verb, label, data, encoding):
+    """The real process, strict decoding: exit 2 and a reason, not a traceback."""
+    env = dict(os.environ, PYTHONIOENCODING=f"{encoding}:strict")
+    done = subprocess.run([sys.executable, T.MODULE, verb, "-"], input=data, env=env,
+                          capture_output=True, check=False, timeout=60)
+    assert done.returncode == 2 and done.stdout == b"", label
+    assert b"no decision" in done.stderr and b"Traceback" not in done.stderr
 
 
 def test_the_cli_ignores_facts_classified_as_and_threshold():
@@ -1035,7 +1124,7 @@ MUTATIONS = (
      "        return value if value.is_finite() and value - value == 0 and value >= 0 "
      "else None\n"),
     ("35 the CLI reads an integer with int alone (over 4300 digits is a reader error)",
-     ",\n                             parse_int=_json_integer)", ")"),
+     ",\n                             parse_int=_json_integer,", ","),
     ("36 a Decimal is compared with a float directly (raises under FloatOperation)",
      "    return OVER if _exceeds(amount, limit) else UNDER\n",
      "    return OVER if amount > limit else UNDER\n"),
@@ -1066,6 +1155,19 @@ MUTATIONS = (
     ("48 a money effect on a prod cloud read swaps the read account for the write one",
      "(base, classes) if classes != base else (classes,)",
      "(base, classes) if classes != base and MONEY not in classes else (classes,)"),
+    ("49 the CLI keeps the last of a name given twice (amount 60, amount 10 is 10)",
+     ",\n                             object_pairs_hook=_json_object)", ")"),
+    ("50 the CLI keeps the first of a name given twice",
+     "        if name in found:\n            raise ValueError(",
+     "        if name in found:\n            continue\n        if False:\n"
+     "            raise ValueError("),
+    ("51 only a name given twice with two values is refused",
+     "        if name in found:\n", "        if name in found and found[name] != value:\n"),
+    ("52 stdin is read before the try (bytes that are not text are a traceback)",
+     '    try:\n        # Read inside the try: stdin that is not text in its encoding raises\n'
+     '        # UnicodeDecodeError (a ValueError) here, before any JSON is parsed.\n'
+     '        raw = sys.stdin.read() if argv[2] == "-" else argv[2]\n',
+     '    raw = sys.stdin.read() if argv[2] == "-" else argv[2]\n    try:\n'),
 )
 
 
