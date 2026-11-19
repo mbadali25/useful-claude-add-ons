@@ -3544,11 +3544,6 @@ def value_allowed(dotted, layer, value):
     reason = _layer_path_refusal(dotted, layer, value)
     if reason is not None:
         return f"{dotted} - {reason}"
-    if dotted in _OPAQUE_TABLES and not isinstance(value, dict):
-        # `null` too (D5): the reader treats a present non-map `tiers` as
-        # unreadable, so the writer never stores one; `--unset` removes the key.
-        return (f"{dotted} = {value!r} - takes the whole map as a JSON object; "
-                f"--unset {dotted} removes it")
     shape = _shape(dotted)
     if shape == "under":
         return f"{dotted} - under a key that takes a value, not keys; set that key to one of its values"
@@ -3558,6 +3553,15 @@ def value_allowed(dotted, layer, value):
                     "under it; set its keys one at a time")
         return (f"{dotted} - a block; a {type(value).__name__} here is "
                 "discarded on read, so set its keys one at a time")
+    # Below the shape rules, not above them: `tests/sabotage_config.py` anchors a
+    # mutation on the lines from `_layer_path_refusal`'s tail to `if shape ==
+    # "block":`, and a line between them orphans it (R-05 review round 6). An
+    # opaque table's shape is `open`, so neither rule above answers for it.
+    if dotted in _OPAQUE_TABLES and not isinstance(value, dict):
+        # `null` too (D5): the reader treats a present non-map `tiers` as
+        # unreadable, so the writer never stores one; `--unset` removes the key.
+        return (f"{dotted} = {value!r} - takes the whole map as a JSON object; "
+                f"--unset {dotted} removes it")
     if shape == "leaf" and isinstance(value, dict):
         return f"{dotted} = {value!r} is an object; this key takes a value, not keys"
     allowed = enum_values(dotted)
