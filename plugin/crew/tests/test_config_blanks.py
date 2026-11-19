@@ -723,3 +723,124 @@ def test_machine_blank_passes_check_global(tmp_path):
     copied = json.loads((tmp_path / "home" / ".claude" / "crew" / "config.json")
                         .read_text(encoding="utf-8"))
     assert value_problems("machine", copied) == []
+
+
+# --- the mutations this suite must catch (the spec's sabotage rows, committed) ---------
+#
+# Each row breaks one thing the probe depends on, in memory only (monkeypatch
+# restores it), and asserts the check that should notice goes red. A row that
+# stays green means that check has gone vacuous. The file-level rows (a one-byte
+# edit, a deleted file, a dropped exclusion) are in scripts/_test/config-reference.py.
+
+THIS = sys.modules[__name__]
+
+
+def goes_red(check, *args):
+    with pytest.raises(AssertionError):
+        check(*args)
+
+
+def test_mutation_null_shadows_disabled_is_caught(probe, monkeypatch):
+    """Without `null_shadows`, the repo blank's nulls beat the machine values."""
+    monkeypatch.setattr(crew_config, "null_shadows", lambda *_a, **_k: [])
+    key = "qa.codex.reasoningEffort"
+    machine = nest(key, MACHINE_FIXTURES[key])
+    changed = diff(probe.policy(None, machine), probe.policy(committed_blank("repo"), machine))
+    assert ("explain", True, key) in changed, changed
+    goes_red(test_repo_blank_over_one_machine_value, key, probe)
+    goes_red(test_repo_blank_over_every_machine_value, probe)
+
+
+def test_mutation_humanonly_null_read_as_true_is_caught(probe, monkeypatch):
+    """`crew_humanonly._layer_value` reading a blank's `null` as `true`: red in
+    both directions, and only because the opt-out is receipt-backed."""
+    real = crew_humanonly._layer_value  # pylint: disable=protected-access
+
+    def null_is_true(cfg, key):
+        block = cfg.get("humanOnly") if isinstance(cfg, dict) else None
+        if isinstance(block, dict) and key in block and block[key] is None:
+            return True
+        return real(cfg, key)
+
+    monkeypatch.setattr(crew_humanonly, "_layer_value", null_is_true)
+    opt_out = {"humanOnly": {"approve": False}}
+    entry = ("humanonly", "approve")
+    assert entry in diff(probe.policy(None, opt_out),
+                         probe.policy(committed_blank("repo"), opt_out))
+    assert entry in diff(probe.policy(repo_file(opt_out), None),
+                         probe.policy(repo_file(opt_out), committed_blank("machine")))
+    goes_red(test_seeded_machine_opt_out_resolves_false, probe)
+    goes_red(test_seeded_repo_opt_out_resolves_false, probe)
+
+
+def test_mutation_autocycle_null_read_as_false_is_caught(probe, monkeypatch):
+    """`crew_autocycle.settings` reading a repo `enabled: null` as `false`."""
+    real = crew_autocycle._block  # pylint: disable=protected-access
+
+    def null_is_false(*args):
+        block = real(*args)
+        if "enabled" in block and block["enabled"] is None:
+            block = dict(block, enabled=False)
+        return block
+
+    monkeypatch.setattr(crew_autocycle, "_block", null_is_false)
+    machine = nest("context.autoClear.enabled", True)
+    changed = diff(probe.policy(None, machine), probe.policy(committed_blank("repo"), machine))
+    assert changed == [("autocycle", "enabled")], changed
+
+
+def test_mutation_no_receipts_seeded_is_caught(probe, monkeypatch):
+    """Unseeded, `resolve` answers human-only whatever the files say, so its
+    policy() entry would be a constant that proves nothing."""
+    monkeypatch.setattr(THIS, "seed_receipts", lambda *_a, **_k: None)
+    goes_red(test_seeded_machine_opt_out_resolves_false, probe)
+    goes_red(test_seeded_repo_opt_out_resolves_false, probe)
+    for layer, cfgs in (("machine", (None, nest("humanOnly.approve", False))),
+                        ("repo", (repo_file(nest("humanOnly.approve", False)), None))):
+        base = probe.policy(None, None) if layer == "machine" else probe.policy(repo_file(), None)
+        entries = diff(base, probe.policy(*cfgs))
+        assert not any(entry[0] == "humanonly" for entry in entries), (layer, entries)
+
+
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_mutation_humanonly_fixture_true_is_caught(layer, probe):
+    """A `humanOnly.*` fixture of `true` never reaches `crew_humanonly.resolve`
+    (it resolves like the default), which is why both tables hold `false`."""
+    def policy(value):
+        cfg = None if value is None else nest("humanOnly.approve", value)
+        if layer == "machine":
+            return probe.policy(None, cfg)
+        return probe.policy(repo_file(cfg), None)
+
+    assert FIXTURES[layer]["humanOnly.approve"] is False
+    assert ("humanonly", "approve") in diff(policy(None), policy(False))
+    assert ("humanonly", "approve") not in diff(policy(None), policy(True))
+
+
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_mutation_dropped_fixture_is_caught(layer, monkeypatch):
+    monkeypatch.delitem(FIXTURES[layer], "reaper.spinCpuPct")
+    goes_red(test_fixture_coverage, layer)
+
+
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_mutation_fixture_at_its_default_is_caught(layer, monkeypatch):
+    found, default = crew_keys.layer_default(layer, "reaper.spinCpuPct")
+    assert found
+    monkeypatch.setitem(FIXTURES[layer], "reaper.spinCpuPct", default)
+    goes_red(test_fixture_values_are_valid, layer)
+
+
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+@pytest.mark.parametrize("key", sorted(INERT_ALONE))
+def test_mutation_inert_alone_entry_removed_is_caught(layer, key, effects, probe, monkeypatch):
+    monkeypatch.delitem(INERT_ALONE, key)
+    goes_red(test_fixture_has_an_effect, layer, key, effects, probe)
+
+
+def test_mutation_invalid_blank_value_is_caught():
+    """`crew_config.py --check` exits 0 on a bogus value; `value_problems` does not."""
+    blank = committed_blank("repo")
+    blank["qa"]["codex"]["reasoningEffort"] = "bogus"
+    assert any(line.startswith("qa.codex.reasoningEffort:")
+               for line in value_problems("repo", blank))
