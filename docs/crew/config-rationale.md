@@ -1728,6 +1728,24 @@ rules:
   `tiers: {}` beside a key spelled another way, which would create that
   conflict itself. `--rebuild` refuses a saved profile that holds a path
   under `tiers`, the last write path that would have split a name on `.`.
+- **The remaining writers hold the same line** (review round 5). `crew_migrate`
+  plans its writes from the parsed config, so both of its paths (the repo's
+  in-place upgrade plus `crew.json`, and `--global`) now record a conflict and
+  plan nothing from a file that repeats a tier key, instead of writing the
+  one value `json.loads` kept. `--rebuild` makes the whole-map check `--set`
+  makes: a saved profile whose `tiers` is `null` or any other non-object is
+  refused, where it used to replace a valid map with one the reader calls
+  unreadable. A config path that is a symlink leading nowhere (or sits in a
+  directory that is one) is unreadable, not absent; a path with nothing at it
+  is still absent. One existing operation is deliberately withheld on tier
+  data: `crew_platform`'s SessionStart refresh of `platform.os` skips its
+  write, and says so, when the repo file repeats a tier key. It reads
+  `crew_config_files`, never `crew_tiers`, so the report-only rule (D6: nothing
+  that decides imports the resolver) holds; the cost is a stale `platform`
+  block until the file is fixed by hand. Known and not changed here, because
+  it predates R-05 and is outside the tier reader: `crew_config --explain`
+  reads the config with an ordinary blocking `open` before `crew_tiers` runs,
+  so a FIFO at the config path can still hang that command on POSIX.
 
 ### The ratchet is one table, not five copies
 

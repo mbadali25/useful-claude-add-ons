@@ -20,6 +20,7 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_config
+import crew_migrate
 import crew_state
 import crew_tiers
 import crew_upgrade
@@ -1228,6 +1229,166 @@ def test_show_is_ascii_and_one_line():
         "workflow:deploy.yml  qa  (listed)")
 
 
+# --- review round 5: migrate, rebuild's whole-map check, a dangling link ----------------
+
+# A legacy `tier` key gives migrate something to rewrite; the repeated target is
+# what the rewrite (from the parsed dict, last value kept) would erase.
+LEGACY_REPEAT = '"tiers": {"host:a": {"tier": "prod"}, "host:a": {"tier": "dev"}}'
+MIGRATE_REPEATS = [
+    LEGACY_REPEAT,
+    '"tiers": {"host:a": {"tier": "prod"}}, "tiers": {}',
+    '"tiers": {"host:a": {"tier": "prod", "tier": "dev"}}',
+]
+
+
+def _still_conflicting(path, before, root, gpath):
+    assert pathlib.Path(path).read_bytes() == before
+    got = crew_tiers.resolve("host:a", root, gpath)
+    assert (got["tier"], got["reason"]) == ("unknown", "conflicting"), got
+
+
+def _migrate_global_over(tmp, body):
+    gpath = pathlib.Path(tmp) / "home" / "config.json"
+    _write(gpath, '{"tier": "x", ' + body + "}")
+    before = gpath.read_bytes()
+    _still_conflicting(gpath, before, None, str(gpath))
+    plan = crew_migrate.build_global_plan(str(gpath))
+    assert plan["writes"] == [], plan["writes"]
+    assert any("Fix it by hand" in line for line in plan["conflicts"]), plan
+    with pytest.raises(crew_migrate.MigrateError, match="Fix it by hand"):
+        crew_migrate.apply_plan(plan)
+    _still_conflicting(gpath, before, None, str(gpath))
+
+
+def _migrate_repo_over(tmp, body):
+    root, gpath = _setup(tmp, machine={"host:a": _entry("dev")},
+                         repo_raw='{"schema": 2, "tier": "x", ' + body + "}")
+    repo_file = pathlib.Path(root) / ".crew" / "config.json"
+    before = repo_file.read_bytes()
+    _still_conflicting(repo_file, before, root, gpath)
+    plan = crew_migrate.build_plan(root)
+    assert not [w["path"] for w in plan["writes"] if w["path"].startswith(".crew/c")], plan
+    assert any("Fix it by hand" in line for line in plan["conflicts"]), plan
+    assert crew_migrate.main(["--root", root, "--apply"]) == 1
+    assert not (pathlib.Path(root) / ".crew" / "crew.json").exists()
+    _still_conflicting(repo_file, before, root, gpath)
+
+
+@pytest.mark.parametrize("body", MIGRATE_REPEATS)
+def test_a_global_migrate_cannot_erase_a_tier_conflict(tmp_path, body):
+    """`--global --apply` planned `{"tiers": {"host:a": {"tier": "dev"}}}` from
+    a file whose two `host:a` entries (prod, then dev) read `conflicting`."""
+    _migrate_global_over(tmp_path, body)
+
+
+@pytest.mark.parametrize("body", MIGRATE_REPEATS)
+def test_a_repo_migrate_cannot_erase_a_tier_conflict(tmp_path, capsys, body):
+    """The repo path rewrote config.json in place (the pre-0.20 upgrade) and
+    built crew.json from the same parsed dict."""
+    _migrate_repo_over(tmp_path, body)
+    assert "Fix it by hand" in capsys.readouterr().err
+
+
+def test_migrate_still_rewrites_a_file_with_no_repeat(tmp_path):
+    """Must-allow: one `host:a` is no conflict, so both paths plan their write
+    and the map is carried whole."""
+    one = {"host:a": _entry("prod"), "workflow:deploy.yml": _entry("qa")}
+    gpath = tmp_path / "home" / "config.json"
+    _write(gpath, {"tier": "x", "tiers": one})
+    plan = crew_migrate.build_global_plan(str(gpath))
+    assert plan["conflicts"] == [] and len(plan["writes"]) == 1, plan
+    assert json.loads(plan["writes"][0]["data"])["tiers"] == one
+    root, _gpath = _setup(_sub(tmp_path, "r"),
+                          repo_raw=json.dumps({"schema": 2, "tier": "x", "tiers": one}))
+    plan = crew_migrate.build_plan(root)
+    assert plan["conflicts"] == [], plan
+    written = {w["path"]: w["data"] for w in plan["writes"]}
+    assert json.loads(written[".crew/config.json"])["tiers"] == one
+    # Case twins are distinct keys and survive a rewrite: not refused.
+    _write(gpath, '{"tier": "x", "tiers": {"host:a": {"tier": "prod"}, "host:A": {"tier": "dev"}}}')
+    plan = crew_migrate.build_global_plan(str(gpath))
+    assert plan["conflicts"] == [] and len(plan["writes"]) == 1, plan
+
+
+def _rebuild_from_a_profile_value(tmp, layer, value):
+    """A saved profile whose `tiers` is `value`, over a file with a valid map."""
+    good = {"host:a": _entry("prod")}
+    root, gpath = _setup(tmp, machine=good, repo=good)
+    entry = {"saved_at": "2026-11-19T00:00:00Z", "values": {"tiers": value}}
+    empty = {"saved_at": "2026-11-19T00:00:00Z", "values": {}}
+    repos = {crew_config.profile_key(root): entry} if layer == "repo" else {}
+    _write(pathlib.Path(crew_config.profile_path(gpath)), {
+        "schema": crew_config.PROFILE_SCHEMA, "repos": repos,
+        "saved_at": "2026-11-19T00:00:00Z",
+        "global": entry if layer == "machine" else empty})
+    path = pathlib.Path(gpath if layer == "machine" else
+                        os.path.join(root, ".crew", "config.json"))
+    before = path.read_bytes()
+    with pytest.raises(crew_config.RebuildRefused, match="not a JSON object"):
+        crew_config.plan_rebuild(root, layer, global_path=gpath)
+    flag = "--global" if layer == "machine" else "--repo"
+    assert crew_config.main(["--root", root, "--global-path", gpath, "--rebuild",
+                             flag, "--apply"]) != 0
+    assert path.read_bytes() == before
+    got = crew_tiers.resolve("host:a", root, gpath)
+    assert (got["tier"], got["reason"]) == ("prod", "listed"), got
+
+
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+@pytest.mark.parametrize("value", [None, [], "prod", 3, True],
+                         ids=["null", "list", "text", "number", "bool"])
+def test_rebuild_refuses_a_profile_tiers_that_is_not_a_map(tmp_path, capsys, layer, value):
+    """`--set tiers=null` is refused (`value_allowed`), but a saved profile
+    holding `tiers: null` planned `"tiers": null` over a valid map."""
+    _rebuild_from_a_profile_value(tmp_path, layer, value)
+    assert "not a JSON object" in capsys.readouterr().err
+
+
+def _link(target, link):
+    try:
+        os.symlink(str(target), str(link), target_is_directory=os.path.isdir(str(target)))
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"cannot create a symlink here: {exc}")
+
+
+def _dangling_links(tmp):
+    tmp = pathlib.Path(tmp)
+    root, gpath = _setup(tmp, machine={"host:a": _entry("dev")})
+    _link(tmp / "nowhere.json", pathlib.Path(root) / ".crew" / "config.json")
+    got = crew_tiers.resolve("host:a", root, gpath)
+    assert (got["tier"], got["reason"]) == ("unknown", "repo-unreadable"), got
+    assert "leads nowhere" in got["notes"][0], got
+    _link(tmp / "nowhere.json", tmp / "link.json")
+    got = crew_tiers.resolve("host:a", None, str(tmp / "link.json"))
+    assert (got["tier"], got["reason"]) == ("unknown", "machine-unreadable"), got
+    # The directory holding the file is the dangling link.
+    _link(tmp / "nodir", tmp / "linkdir")
+    got = crew_tiers.resolve("host:a", None, str(tmp / "linkdir" / "config.json"))
+    assert (got["tier"], got["reason"]) == ("unknown", "machine-unreadable"), got
+
+
+def test_a_dangling_symlink_at_a_config_path_is_unreadable(tmp_path):
+    """A `.crew/config.json` link whose target is gone read as `absent`, so
+    the repo "said nothing" and a narrowing behind the link was dropped."""
+    _dangling_links(tmp_path)
+
+
+def test_an_absent_path_and_a_live_link_are_not_unreadable(tmp_path):
+    """Controls for the row above: no file is still `absent`, and a link that
+    leads somewhere is read through."""
+    read = crew_tiers._read_layer  # pylint: disable=protected-access
+    assert read(str(tmp_path / "none.json")) == ("absent", None)
+    assert read(str(tmp_path / "nodir" / "none.json")) == ("absent", None)
+    real = tmp_path / "real.json"
+    _write(real, {"tiers": {"host:a": _entry("qa")}})
+    _link(real, tmp_path / "live.json")
+    got = crew_tiers.resolve("host:a", None, str(tmp_path / "live.json"))
+    assert (got["tier"], got["reason"]) == ("qa", "listed"), got
+    (tmp_path / "realdir").mkdir()
+    _link(tmp_path / "realdir", tmp_path / "livedir")
+    assert read(str(tmp_path / "livedir" / "config.json")) == ("absent", None)
+
+
 # --- sabotage (D7): each patch turns the named rows red --------------------------------
 
 def _fails(row, *args):
@@ -1310,3 +1471,22 @@ def test_sabotage_a_non_regular_file_is_read(tmp_path, monkeypatch):
     import stat as stat_module  # pylint: disable=import-outside-toplevel
     monkeypatch.setattr(stat_module, "S_ISREG", lambda mode: True)
     _fails(_not_regular, tmp_path, monkeypatch)
+
+
+# Review round 5: one sabotage per new guard.
+
+def test_sabotage_migrate_without_the_repeat_check(tmp_path, monkeypatch):
+    monkeypatch.setattr(crew_migrate, "_tier_repeat", lambda plan, label, raw: False)
+    _fails(_migrate_global_over, _sub(tmp_path, "g"), LEGACY_REPEAT)
+    _fails(_migrate_repo_over, _sub(tmp_path, "r"), LEGACY_REPEAT)
+
+
+def test_sabotage_rebuild_without_the_whole_map_check(tmp_path, monkeypatch):
+    monkeypatch.setattr(crew_config, "_OPAQUE_TABLES", ())
+    with pytest.raises(pytest.fail.Exception, match="DID NOT RAISE"):
+        _rebuild_from_a_profile_value(tmp_path, "machine", None)
+
+
+def test_sabotage_a_dangling_link_reads_as_absent(tmp_path, monkeypatch):
+    monkeypatch.setattr(crew_tiers, "_dangling", lambda path: False)
+    _fails(_dangling_links, tmp_path)

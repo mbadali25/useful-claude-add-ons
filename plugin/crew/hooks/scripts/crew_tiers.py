@@ -139,6 +139,18 @@ def _finite_float(text):
     return value
 
 
+def _dangling(path):
+    """True when `path`, or the directory holding it, is a symlink whose
+    target does not exist. Never raises."""
+    try:
+        if os.path.islink(path):
+            return True  # called only after `open` found nothing behind it
+        parent = os.path.dirname(path)
+        return bool(parent) and os.path.islink(parent) and not os.path.exists(parent)
+    except (OSError, ValueError, TypeError):
+        return False
+
+
 def _read_layer(path):
     """`("absent", None)`, `("unreadable", detail)` or `("ok", parsed)`.
     Never raises: a path `open` refuses (an embedded NUL, a wrong type) is
@@ -152,7 +164,11 @@ def _read_layer(path):
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
         fd = os.open(path, flags)
-    except (FileNotFoundError, NotADirectoryError):
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        if _dangling(path):
+            # A link that leads nowhere is a file crew could not read, not "no
+            # file": a narrowing behind it must not be dropped (review round 5).
+            return "unreadable", f"{path!r}: a symlink that leads nowhere ({type(exc).__name__})"
         return "absent", None
     except (OSError, ValueError, TypeError) as exc:
         return "unreadable", f"{path!r}: {type(exc).__name__}: {exc}"

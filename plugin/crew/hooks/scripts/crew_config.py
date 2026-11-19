@@ -4586,6 +4586,13 @@ def plan_rebuild(root, layer, use_profile=True, global_path=None):
                 raise RebuildRefused(
                     f"the profile holds {dotted!r} - {OPAQUE_REFUSAL}; fix or "
                     "re-capture the profile (--save-profile)")
+            if dotted in _OPAQUE_TABLES and not isinstance(value, dict):
+                # Review round 5: the whole-map type check `--set` makes
+                # (`value_allowed`). A profile `tiers: null` would otherwise
+                # replace a valid map with one the reader calls unreadable.
+                raise RebuildRefused(
+                    f"the profile holds {dotted} = {value!r}, not a JSON object; "
+                    "fix or re-capture the profile (--save-profile)")
             _set_path(target, dotted.split("."), copy.deepcopy(value))
     else:
         notes.append("--no-profile: the template alone")
