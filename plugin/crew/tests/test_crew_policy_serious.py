@@ -114,6 +114,18 @@ SERIOUS_CASES = [
      [P.PRODUCTION_WRITE], True),
     ("production-write: writes missing in prod", fx(writes=GONE), "prod",
      [P.PRODUCTION_WRITE], True),
+    # D3: only a known False is benign; an unreadable answer is a production
+    # write whatever the tier (True stays tied to the tier, see MUST_ALLOW).
+    ("production-write: writes missing in dev", fx(writes=GONE), "dev",
+     [P.PRODUCTION_WRITE], True),
+    ("production-write: writes missing in qa", fx(writes=GONE), "qa",
+     [P.PRODUCTION_WRITE], True),
+    ("production-write: writes 'yes' in dev", fx(writes="yes"), "dev",
+     [P.PRODUCTION_WRITE], True),
+    ("production-write: writes null in qa", fx(writes=None), "qa",
+     [P.PRODUCTION_WRITE], True),
+    ("production-write: writes 1 in qa", fx(writes=1), "qa",
+     [P.PRODUCTION_WRITE], True),
     # decide stops an unknown tier at rule 3, so classify only (D4).
     ("production-write: writes True, tier staging", fx(writes=True), "staging",
      [P.PRODUCTION_WRITE], False),
@@ -183,6 +195,7 @@ MUST_ALLOW = [
     # rule, so it is the listed value "provable" and is not serious.
     ("backup 'Provable ' read as provable", T.req("commit"), fx(backup="Provable "), "dev"),
     ("writes True in dev", T.req("commit"), fx(writes=True), "dev"),
+    ("writes True in QA", T.req("commit", tier="qa"), fx(writes=True), "qa"),
 ]
 
 D9_LINE = "stands in for facts.estimate_under_threshold"
@@ -235,9 +248,9 @@ def check_admin_and_empty_paths(m):
         done = brief(m.decide(dict(base, account="none", admin_need="covers")))
         if done != ("needs-plan", "5", P.NO_PROVABLE_BACKUP):
             bad.append(f"empty effects, admin need covers, {presence}: {done}")
-    # Production-write is tied to the tier (schema row `writes`), so in dev an
-    # empty object gives every class but unplaced and production-write.
-    want = {"dev": sorted(P.SERIOUS_CLASSES - {P.PRODUCTION_WRITE}),
+    # An empty object answers nothing, so every class but unplaced applies in
+    # every tier: a missing `writes` is a production write in dev too (D3).
+    want = {"dev": sorted(P.SERIOUS_CLASSES), "qa": sorted(P.SERIOUS_CLASSES),
             "prod": sorted(P.SERIOUS_CLASSES)}
     for tier, classes in want.items():
         got = m.classify({}, tier)
@@ -251,6 +264,16 @@ def check_admin_and_empty_paths(m):
                            "effects": partial}))
     if done != ("needs-plan", "5", P.DESTROY_NOT_OWNED):
         bad.append(f"partial object without destroys: {done}")
+    # An admin effect moves the account check to the broker (4.14), so a
+    # dev cloud-read with no account goes from ask-owner at rule 2 to
+    # needs-plan at rule 5: still no allow without a covering plan.
+    read = {"operation": "cloud-read", "tier": "dev", "presence": "attended",
+            "machine_layer": "clear", "account": "none", "admin_need": "covers"}
+    if brief(P.decide(read))[:2] != ("ask-owner", "2"):
+        bad.append(f"cloud-read without effects moved: {brief(P.decide(read))}")
+    done = brief(m.decide(dict(read, effects=fx(admin_use="other"))))
+    if done != ("needs-plan", "5", P.ADMIN_USE):
+        bad.append(f"cloud-read with admin-use effects: {done}")
     return bad
 
 
@@ -368,6 +391,32 @@ def check_cli_reads_the_tier(m):
     return bad
 
 
+def check_cli_reads_fractions_exactly(m):
+    """A JSON fraction a hair over the threshold is not rounded down to it."""
+    bad = []
+    for raw, want in (("50.000000000000001", ["money"]), ("50.0", []),
+                      ("49.99", []), ("50.01", ["money"]), ("1e999", ["money"])):
+        body = json.dumps({"operation": "commit", "tier": "dev",
+                           "effects": fx(monthly_cost=usd(0))})
+        body = body.replace('"amount": 0', '"amount": ' + raw)
+        code, out = _main_out(m, body)
+        if code != 0 or json.loads(out)["classes"] != want:
+            bad.append(f"classify CLI amount {raw}: {code} {out.strip()[:80]}")
+    return bad
+
+
+def check_unplaced_wording(m):
+    """The unplaced reason names what could not be placed."""
+    bad = []
+    known = m.decide(ask(fx(sends_email=True)))["reason"]
+    if "effect has no question" not in known or "not in the closed table" in known:
+        bad.append(f"a known operation with an unplaced effect: {known}")
+    unknown = m.decide(ask(BENIGN, op="mystery"))["reason"]
+    if "operation is not in the closed table" not in unknown:
+        bad.append(f"an unknown operation: {unknown}")
+    return bad
+
+
 # sha256 of json.dumps([decide(row) for every R-01 row], sort_keys=True), the
 # full result and trace of each row, measured with the R-01 module (origin/main
 # 75088d6aa, before R-P6). Row ids are left out: some hold an object's address,
@@ -391,7 +440,8 @@ def check_r01_parity(m):
 
 CHECKS = (check_serious_cases, check_admin_and_empty_paths, check_must_allow,
           check_union_with_own_class, check_d9, check_threshold,
-          check_presence_not_value, check_cli_reads_the_tier, check_r01_parity)
+          check_presence_not_value, check_cli_reads_the_tier,
+          check_cli_reads_fractions_exactly, check_unplaced_wording, check_r01_parity)
 
 
 def violations(module):
@@ -627,8 +677,8 @@ MUTATIONS = (
      "    return OVER if amount > limit else UNDER\n",
      "    return OVER if amount >= limit else UNDER\n"),
     ("7 a bool amount is a number",
-     "    if isinstance(value, bool) or not isinstance(value, (int, float)):\n",
-     "    if not isinstance(value, (int, float)):\n"),
+     "    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):\n",
+     "    if not isinstance(value, (int, float, Decimal)):\n"),
     ("8 NaN or inf is a number", "    if value - value != 0 or value < 0:",
      "    if value < 0:"),
     ("9a an invalid threshold falls back to a large value",
@@ -676,6 +726,15 @@ MUTATIONS = (
     ("23 a request without effects gets a new trace line",
      'if "effects" in req else None\n',
      'if "effects" in req else None\n    walk.look("-", "classifier off")\n'),
+    ("24 a missing or non-bool writes is benign in dev and QA",
+     "    if writes is not False and (prod or writes is not True):\n",
+     "    if writes is not False and prod:\n"),
+    ("25 the CLI reads a fraction as a float (50.000000000000001 is 50.0)",
+     "json.loads(raw, parse_float=Decimal)", "json.loads(raw)"),
+    ("26 a Decimal amount is not a number",
+     "not isinstance(value, (int, float, Decimal)):", "not isinstance(value, (int, float)):"),
+    ("27 an unplaced effect on a known operation is worded as an unknown operation",
+     "if walk.unplaced\n                or", "if True\n                or"),
 )
 
 

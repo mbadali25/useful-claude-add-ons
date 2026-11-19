@@ -104,6 +104,7 @@ from __future__ import annotations
 
 import json
 import sys
+from decimal import Decimal
 from typing import Any, NamedTuple, Optional
 
 REPORT_ONLY = True
@@ -380,10 +381,14 @@ OVER = "over"
 CANNOT_ESTIMATE = "cannot-estimate"
 
 
-def _amount(value: Any) -> Optional[float]:
-    """A finite number >= 0 that is not a bool, else None."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+def _amount(value: Any) -> Any:
+    """A finite number >= 0 that is not a bool, else None. A Decimal is how
+    the CLI reads a JSON fraction, exactly: 50.000000000000001 stays over 50
+    where a float would round it to 50.0."""
+    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
         return None
+    if isinstance(value, Decimal) and not value.is_finite():
+        return None   # a Decimal NaN cannot even be compared
     if value - value != 0 or value < 0:   # NaN and inf fail the first test
         return None
     return value
@@ -448,9 +453,13 @@ def classify(effects: Any, tier: Any, threshold: Any = None) -> dict:
     cost = _cost_over(effects.get("monthly_cost"), limit)
     if cost != UNDER:
         add(MONEY, f"monthly cost is {cost} (threshold {limit!r} USD a month)")
-    if effects.get("writes") is not False and prod:
-        add(PRODUCTION_WRITE, "writes is True, missing or not a bool, and the "
-                              "tier is not dev or qa")
+    # Only a known False is benign in every tier. True is tied to the tier
+    # (a dev or QA write is not a production write); an answer that cannot
+    # be read is a production write in every tier (D3: could not tell).
+    writes = effects.get("writes")
+    if writes is not False and (prod or writes is not True):
+        add(PRODUCTION_WRITE, "writes is True and the tier is not dev or qa"
+            if writes is True else "writes is missing or not a bool")
     perm = _pick(effects.get("permission_change"), PERMISSION_CHANGES)
     if perm not in ("none", "temporary-listed") or (prod and perm != "none"):
         add(PERMISSION_CHANGE, f"permission change is {perm}"
@@ -715,10 +724,13 @@ def _serious(req: dict, walk: _Walk, subject: tuple, serious: str,
     name, spec, facts, classes = subject
     stop_outcome, stop_word = stop
     if UNPLACED in classes:
+        what = ("the operation is not in the closed table" if walk.unplaced
+                or "effects" not in req else
+                "an effect has no question in the closed effects schema")
         return walk.done(
             "5", NEEDS_PLAN,
-            "the operation is not in the closed table, and a plan of record "
-            "cannot list a form the schema does not know", serious)
+            f"{what}, and a plan of record cannot list a form the schema does "
+            "not know", serious)
     prov = _pick(req.get("provenance"), PROVENANCE)
     covers = req.get("plan_covers") is True
     attested = req.get("attested") is True
@@ -804,7 +816,9 @@ def _main(argv: list) -> int:
         return 2
     raw = sys.stdin.read() if argv[2] == "-" else argv[2]
     try:
-        request = json.loads(raw)
+        # A fraction is read exactly, so a cost a hair over the threshold is
+        # not rounded down to it (the decide answer never prints a number).
+        request = json.loads(raw, parse_float=Decimal)
     except ValueError as exc:
         print(f"crew_policy: request is not JSON ({exc}); no decision",
               file=sys.stderr)

@@ -1098,7 +1098,8 @@ def test_the_module_imports_only_the_standard_library():
             names.update(a.name.split(".")[0] for a in node.names)
         elif isinstance(node, ast.ImportFrom):
             names.add((node.module or "").split(".")[0])
-    assert names <= {"__future__", "json", "sys", "typing"}, names
+    # decimal (R-P6): the CLI reads a JSON fraction exactly.
+    assert names <= {"__future__", "decimal", "json", "sys", "typing"}, names
 
 
 def test_the_module_declares_itself_report_only():
