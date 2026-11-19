@@ -409,6 +409,29 @@ def _limit(threshold: Any) -> Any:
     return limit
 
 
+def _exceeds(amount: Any, limit: Any) -> bool:
+    """amount > limit for two finite numbers, exact in any decimal context.
+    A float beside a Decimal is converted first: comparing the two directly
+    raises under the FloatOperation trap, and from_float is exact and never
+    signals. Every other pair Python already compares exactly."""
+    if isinstance(amount, Decimal) and isinstance(limit, float):
+        limit = Decimal.from_float(limit)
+    elif isinstance(amount, float) and isinstance(limit, Decimal):
+        amount = Decimal.from_float(amount)
+    return amount > limit
+
+
+def _shown(value: Any) -> str:
+    """A threshold for a reason line. An int longer than str() will convert
+    (4300 digits by default) is described, not printed: the reason must never
+    cost the verdict."""
+    try:
+        return repr(value) if isinstance(value, str) else str(value)
+    except ValueError:
+        return (f"{'a negative' if value < 0 else 'an'} integer of "
+                f"{value.bit_length()} bits")
+
+
 def _cost_over(estimate: Any, threshold: Any) -> str:
     """UNDER, OVER or CANNOT_ESTIMATE for one monthly cost estimate.
 
@@ -426,7 +449,7 @@ def _cost_over(estimate: Any, threshold: Any) -> str:
     period = _pick(estimate.get("period"), ("month",))
     if amount is None or currency != "usd" or period != "month":
         return CANNOT_ESTIMATE
-    return OVER if amount > limit else UNDER
+    return OVER if _exceeds(amount, limit) else UNDER
 
 
 def _verdict(found: dict, cost: str) -> dict:
@@ -466,9 +489,10 @@ def classify(effects: Any, tier: Any, threshold: Any = None) -> dict:
     if cost != UNDER:
         # The threshold named is the one applied, not the one given (D6).
         applied = _limit(limit)
-        add(MONEY, f"monthly cost is {cost} (threshold {applied} USD a month"
-            + ("" if applied is limit else f"; the given threshold {limit!r} "
-               "is not a finite number >= 0, so 0 applies") + ")")
+        add(MONEY, f"monthly cost is {cost} (threshold {_shown(applied)} USD "
+            "a month" + ("" if applied is limit else "; the given threshold "
+                         f"{_shown(limit)} is not a finite number >= 0, so 0 "
+                         "applies") + ")")
     # Only a known False is benign in every tier. True is tied to the tier
     # (a dev or QA write is not a production write); an answer that cannot
     # be read is a production write in every tier (D3: could not tell).
@@ -857,10 +881,14 @@ def _json_fraction(text: str) -> Any:
     it is inf or 0.0 and never crashes the reader: valid JSON is a request.
     A negative one is read as -inf whatever its size: float would round
     -1e-9999999999999999999 to -0.0, which is not below zero, and a
-    negative amount must never pass as an estimate of nothing (D5)."""
+    negative amount must never pass as an estimate of nothing (D5). Zero is
+    zero whatever its sign and exponent (-0e9999999999999999999): it is read
+    as 0, never as a negative amount."""
     try:
         return Decimal(text)
     except ArithmeticError:   # decimal.InvalidOperation
+        if not text.lower().partition("e")[0].strip("-0."):
+            return 0   # every digit of the mantissa is 0: exactly zero
         return float("-inf") if text.startswith("-") else float(text)
 
 

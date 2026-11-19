@@ -444,7 +444,9 @@ def check_cli_reads_fractions_exactly(m):
     # D9 end to end: a negative amount too small for a Decimal must not stand
     # in for the fact (it did, read as -0.0 and so as a cost under the
     # threshold), where the same request with amount 10 is allowed.
-    for raw, want in (("10", "allow"), ("-" + TINY, "needs-plan")):
+    # A zero no Decimal can hold is still zero: it stands in like any other.
+    for raw, want in (("10", "allow"), ("-" + TINY, "needs-plan"), ("-" + ZERO, "allow"),
+                      (ZERO, "allow")):
         body = json.dumps(_tf("qa")).replace('"amount": 10', '"amount": ' + raw)
         code, out = _main_out(m, body, "decide")
         if code != 0 or json.loads(out)["outcome"] != want:
@@ -463,6 +465,7 @@ def check_cli_reads_fractions_exactly(m):
 HUGE = "1e9999999999999999999999999999999999"
 TINY = "1e-9999999999999999999999999999999999"
 LONG = "9" * 5000   # more digits than int() converts by default (4300)
+ZERO = "0e99999999999999999999"   # exactly zero, with an exponent no Decimal holds
 
 # (the JSON text of the amount, classes, cost) through the classify CLI.
 CLI_AMOUNTS = (
@@ -476,6 +479,11 @@ CLI_AMOUNTS = (
     ("-1", ["money"], "cannot-estimate"),
     # Zero written with a sign is zero, not a negative amount.
     ("-0.0", [], "under"), ("-0", [], "under"),
+    # ... whatever its exponent: the reader's fallback must not see the sign
+    # alone and call an exact zero a negative amount.
+    (ZERO, [], "under"), ("-" + ZERO, [], "under"),
+    ("-0.000E+99999999999999999999", [], "under"),
+    ("-0.001e-99999999999999999999", ["money"], "cannot-estimate"),
     (LONG, ["money"], "over"), ("-" + LONG, ["money"], "cannot-estimate"),
 )
 
@@ -520,6 +528,72 @@ def check_cost_values(m):
             if got != want:
                 bad.append(f"amount {_label(amount)}"
                            f"{' with every trap set' if traps else ''}: {got}")
+    return bad
+
+
+# (amount, threshold, cost): a Decimal beside a float, either way round. A
+# float 0.1 is 0.1000000000000000055511..., so the comparison must be exact.
+MIXED_VALUES = (
+    (Decimal(10), 50.0, "under"), (Decimal("50.5"), 50.0, "over"),
+    (Decimal("50"), 50.0, "under"), (10.5, Decimal(50), "under"),
+    (60.0, Decimal(50), "over"), (50.0, Decimal(50), "under"),
+    (Decimal("0.1"), 0.1, "under"), (Decimal("0.1000000000000000056"), 0.1, "over"),
+    (0.1, Decimal("0.1"), "over"), (0.1, Decimal("0.1000000000000000056"), "under"),
+    (Decimal("1e1000000"), 50.0, "over"), (1e308, Decimal("1e1000000"), "under"),
+)
+
+
+def check_mixed_number_types(m):
+    """A Decimal amount against a float threshold (and the reverse) is
+    answered exactly, with every decimal trap set too: FloatOperation, when
+    trapped, refuses the direct comparison."""
+    bad = []
+    for amount, threshold, want in MIXED_VALUES:
+        for traps in (None, ALL_TRAPS):
+            try:
+                with decimal.localcontext(traps):
+                    got = m.classify(fx(monthly_cost=usd(amount)), "dev", threshold)["cost"]
+            except ArithmeticError as exc:
+                got = repr(exc)
+            if got != want:
+                bad.append(f"amount {amount!r} against threshold {threshold!r}"
+                           f"{' with every trap set' if traps else ''}: {got}")
+    return bad
+
+
+BIG = 10 ** 5000   # str() and repr() of it are refused (over 4300 digits)
+
+# (estimate, threshold, classes, cost, text the money reason must hold).
+BIG_THRESHOLDS = (
+    (GONE, BIG, ["money"], "cannot-estimate", "integer of 16610 bits"),
+    (60, BIG, [], "under", None),
+    (60.5, BIG, [], "under", None),
+    (Decimal("1e1000000"), BIG, ["money"], "over", "integer of 16610 bits"),
+    (60, -BIG, ["money"], "over", "threshold 0 USD a month; the given threshold a negative "
+                                  "integer of 16610 bits"),
+    (0, -BIG, [], "under", None),
+)
+
+
+def check_a_threshold_too_long_to_print(m):
+    """D5 and D6: a threshold int() will not print still gets a verdict, and
+    the reason describes it instead of raising."""
+    bad = []
+    for amount, threshold, classes, cost, text in BIG_THRESHOLDS:
+        effects = fx() if amount is GONE else fx(monthly_cost=usd(amount))
+        if amount is GONE:
+            effects.pop("monthly_cost")
+        sign = "-" if threshold < 0 else ""
+        label = f"amount {'missing' if amount is GONE else amount!r}, threshold {sign}10**5000"
+        try:
+            got = m.classify(effects, "dev", threshold)
+        except (ArithmeticError, ValueError) as exc:
+            bad.append(f"{label}: {exc!r}"[:160])
+            continue
+        if (got["classes"], got["cost"]) != (classes, cost):
+            bad.append(f"{label}: {got['classes']} {got['cost']}")
+        elif text is not None and text not in got["reasons"].get(P.MONEY, ""):
+            bad.append(f"{label}: the reason is {got['reasons'].get(P.MONEY, '')[:160]}")
     return bad
 
 
@@ -570,6 +644,7 @@ CHECKS = (check_serious_cases, check_admin_and_empty_paths, check_must_allow,
           check_d9, check_threshold,
           check_presence_not_value, check_cli_reads_the_tier,
           check_cli_reads_fractions_exactly, check_cost_values,
+          check_mixed_number_types, check_a_threshold_too_long_to_print,
           check_unplaced_wording, check_r01_parity)
 
 
@@ -800,11 +875,9 @@ MUTATIONS = (
      "    if not isinstance(estimate, dict):\n        return UNDER\n"),
     ("5 another currency is accepted at face value", ' or currency != "usd"', ""),
     ("6a a small overrun passes (50.01 is under)",
-     "    return OVER if amount > limit else UNDER\n",
-     "    return OVER if amount > limit + 1 else UNDER\n"),
+     "    return amount > limit\n", "    return amount > limit + 1\n"),
     ("6b exactly the threshold is over",
-     "    return OVER if amount > limit else UNDER\n",
-     "    return OVER if amount >= limit else UNDER\n"),
+     "    return amount > limit\n", "    return amount >= limit\n"),
     ("7 a bool amount is a number",
      "    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):\n",
      "    if not isinstance(value, (int, float, Decimal)):\n"),
@@ -886,6 +959,19 @@ MUTATIONS = (
      "else None\n"),
     ("35 the CLI reads an integer with int alone (over 4300 digits is a reader error)",
      ",\n                             parse_int=_json_integer)", ")"),
+    ("36 a Decimal is compared with a float directly (raises under FloatOperation)",
+     "    return OVER if _exceeds(amount, limit) else UNDER\n",
+     "    return OVER if amount > limit else UNDER\n"),
+    ("37 a Decimal amount is rounded to a float beside a float threshold",
+     "        limit = Decimal.from_float(limit)\n", "        amount = float(amount)\n"),
+    ("38 the money reason prints the threshold applied (over 4300 digits raises)",
+     "(threshold {_shown(applied)} USD", "(threshold {applied} USD"),
+    ("39 the money reason prints the threshold given (over 4300 digits raises)",
+     'f"{_shown(limit)} is not a finite', 'f"{limit!r} is not a finite'),
+    ("40 a zero no Decimal can hold is read by its sign (-0e9999... is -inf)",
+     '        if not text.lower().partition("e")[0].strip("-0."):\n', "        if False:\n"),
+    ("41 any amount no Decimal can hold is read as zero",
+     '.strip("-0."):\n', '.strip("-0.123456789"):\n'),
 )
 
 
