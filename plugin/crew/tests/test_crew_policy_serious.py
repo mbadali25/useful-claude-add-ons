@@ -438,9 +438,15 @@ def check_cli_reads_fractions_exactly(m):
         body = json.dumps({"operation": "commit", "tier": "dev",
                            "effects": fx(monthly_cost=usd(0))})
         body = body.replace('"amount": 0', '"amount": ' + raw)
-        code, out = _main_out(m, body)
-        if code != 0 or (json.loads(out)["classes"], json.loads(out)["cost"]) != (want, cost):
-            bad.append(f"classify CLI amount {raw[:40]}: {code} {out.strip()[:80]}")
+        # The reader's answer must not depend on the caller's decimal
+        # context: with InvalidOperation untrapped Decimal(text) returns NaN
+        # where it would raise, and an in-process caller may have set that.
+        for name, traps in CONTEXTS:
+            with decimal.localcontext(traps):
+                code, out = _main_out(m, body)
+            if code != 0 or (json.loads(out)["classes"],
+                             json.loads(out)["cost"]) != (want, cost):
+                bad.append(f"classify CLI amount {raw[:40]}{name}: {code} {out.strip()[:80]}")
     # D9 end to end: a negative amount too small for a Decimal must not stand
     # in for the fact (it did, read as -0.0 and so as a cost under the
     # threshold), where the same request with amount 10 is allowed.
@@ -448,9 +454,11 @@ def check_cli_reads_fractions_exactly(m):
     for raw, want in (("10", "allow"), ("-" + TINY, "needs-plan"), ("-" + ZERO, "allow"),
                       (ZERO, "allow")):
         body = json.dumps(_tf("qa")).replace('"amount": 10', '"amount": ' + raw)
-        code, out = _main_out(m, body, "decide")
-        if code != 0 or json.loads(out)["outcome"] != want:
-            bad.append(f"decide CLI D9 amount {raw}: {code} {out.strip()[:80]}")
+        for name, traps in CONTEXTS:
+            with decimal.localcontext(traps):
+                code, out = _main_out(m, body, "decide")
+            if code != 0 or json.loads(out)["outcome"] != want:
+                bad.append(f"decide CLI D9 amount {raw}{name}: {code} {out.strip()[:80]}")
     # A number no Decimal can hold is still valid JSON: a decide request
     # without effects that carries one in an unused field is answered as
     # if the field were not there (origin/main answers it allow).
@@ -471,7 +479,11 @@ ZERO = "0e99999999999999999999"   # exactly zero, with an exponent no Decimal ho
 CLI_AMOUNTS = (
     ("50.000000000000001", ["money"], "over"), ("50.0", [], "under"),
     ("49.99", [], "under"), ("50.01", ["money"], "over"), ("1e999", ["money"], "over"),
-    (HUGE, ["money"], "cannot-estimate"), ("-" + HUGE, ["money"], "cannot-estimate"),
+    # A positive amount no Decimal can hold is still a finite number over the
+    # threshold: over, not cannot-estimate (D5). Only the class is the same.
+    (HUGE, ["money"], "over"), ("1e99999999999999999999", ["money"], "over"),
+    ("0.001E+99999999999999999999", ["money"], "over"),
+    ("-" + HUGE, ["money"], "cannot-estimate"),
     (TINY, [], "under"),
     # Below zero, however small: float reads it as -0.0, which is not < 0.
     ("-" + TINY, ["money"], "cannot-estimate"),
@@ -491,6 +503,11 @@ ALL_TRAPS = decimal.Context(traps=[
     decimal.Clamped, decimal.DivisionByZero, decimal.Inexact, decimal.InvalidOperation,
     decimal.Overflow, decimal.Rounded, decimal.Subnormal, decimal.Underflow,
     decimal.FloatOperation])
+
+# (label, context) the CLI reader is asked in: the caller's own, every trap
+# set, and no trap set.
+CONTEXTS = (("", None), (" with every trap set", ALL_TRAPS),
+            (" with no trap set", decimal.Context(traps=[])))
 
 # (amount, cost) through classify, at the default threshold.
 COST_VALUES = (
@@ -563,6 +580,13 @@ def check_mixed_number_types(m):
 
 BIG = 10 ** 5000   # str() and repr() of it are refused (over 4300 digits)
 
+
+class Unprintable:
+    """A threshold whose str() raises something other than ValueError."""
+
+    def __str__(self):
+        raise RuntimeError("no text for this value")
+
 # (estimate, threshold, classes, cost, text the money reason must hold).
 BIG_THRESHOLDS = (
     (GONE, BIG, ["money"], "cannot-estimate", "integer of 16610 bits"),
@@ -572,6 +596,17 @@ BIG_THRESHOLDS = (
     (60, -BIG, ["money"], "over", "threshold 0 USD a month; the given threshold a negative "
                                   "integer of 16610 bits"),
     (0, -BIG, [], "under", None),
+    # A container holding such an int is not a number: 0 applies (D6), and
+    # the reason describes it, where str() of it is refused too.
+    (60, [BIG], ["money"], "over", "threshold 0 USD a month; the given threshold a value "
+                                   "of type list that cannot be printed"),
+    (60, (BIG,), ["money"], "over", "the given threshold a value of type tuple that "
+                                    "cannot be printed"),
+    (60, {"usd": BIG}, ["money"], "over", "the given threshold a value of type dict that "
+                                          "cannot be printed"),
+    (0, [BIG], [], "under", None),
+    (GONE, [BIG], ["money"], "cannot-estimate", "a value of type list that cannot be printed"),
+    (60, Unprintable(), ["money"], "over", "a value of type Unprintable that cannot be printed"),
 )
 
 
@@ -583,11 +618,12 @@ def check_a_threshold_too_long_to_print(m):
         effects = fx() if amount is GONE else fx(monthly_cost=usd(amount))
         if amount is GONE:
             effects.pop("monthly_cost")
-        sign = "-" if threshold < 0 else ""
-        label = f"amount {'missing' if amount is GONE else amount!r}, threshold {sign}10**5000"
+        shown = (f"{'-' if threshold < 0 else ''}10**5000" if isinstance(threshold, int)
+                 else f"a {type(threshold).__name__}")
+        label = f"amount {'missing' if amount is GONE else amount!r}, threshold {shown}"
         try:
             got = m.classify(effects, "dev", threshold)
-        except (ArithmeticError, ValueError) as exc:
+        except (ArithmeticError, ValueError, TypeError, RuntimeError) as exc:
             bad.append(f"{label}: {exc!r}"[:160])
             continue
         if (got["classes"], got["cost"]) != (classes, cost):
@@ -947,7 +983,7 @@ MUTATIONS = (
     ("30 the money reason names the rejected threshold as applied",
      "        applied = _limit(limit)\n", "        applied = limit\n"),
     ("31 a negative amount no Decimal can hold is read as -0.0",
-     'return float("-inf") if text.startswith("-") else float(text)', "return float(text)"),
+     '    if text.startswith("-"):\n        return float("-inf")\n', ""),
     ("32 a float inf amount is over, not cannot-estimate",
      "    if value - value != 0 or value < 0:", "    if value != value or value < 0:"),
     ("33 a Decimal Infinity amount is over, not cannot-estimate",
@@ -969,9 +1005,21 @@ MUTATIONS = (
     ("39 the money reason prints the threshold given (over 4300 digits raises)",
      'f"{_shown(limit)} is not a finite', 'f"{limit!r} is not a finite'),
     ("40 a zero no Decimal can hold is read by its sign (-0e9999... is -inf)",
-     '        if not text.lower().partition("e")[0].strip("-0."):\n', "        if False:\n"),
+     '    if not mantissa.strip("-0."):\n', "    if False:\n"),
     ("41 any amount no Decimal can hold is read as zero",
      '.strip("-0."):\n', '.strip("-0.123456789"):\n'),
+    ("42 a positive amount no Decimal can hold is read as inf (cannot-estimate, not over)",
+     'return 0.0 if exponent.startswith("-") else _LARGEST',
+     'return 0.0 if exponent.startswith("-") else float("inf")'),
+    ("43 the CLI trusts Decimal to raise (NaN with InvalidOperation untrapped)",
+     "    if value is not None and not value.is_nan():\n", "    if value is not None:\n"),
+    ("44 only an int that will not print is described (a list of one raises TypeError)",
+     "        if isinstance(value, int):\n", "        if True:\n"),
+    ("45 only a ValueError from str() is caught",
+     "    except Exception:  # pylint: disable=broad-except  # noqa: BLE001\n",
+     "    except ValueError:\n"),
+    ("46 a positive amount too small for a Decimal is read as the largest",
+     'return 0.0 if exponent.startswith("-") else _LARGEST', "return _LARGEST"),
 )
 
 

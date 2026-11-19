@@ -106,7 +106,7 @@ from __future__ import annotations
 
 import json
 import sys
-from decimal import Decimal
+from decimal import MAX_EMAX, Decimal
 from typing import Any, NamedTuple, Optional
 
 REPORT_ONLY = True
@@ -423,13 +423,16 @@ def _exceeds(amount: Any, limit: Any) -> bool:
 
 def _shown(value: Any) -> str:
     """A threshold for a reason line. An int longer than str() will convert
-    (4300 digits by default) is described, not printed: the reason must never
-    cost the verdict."""
+    (4300 digits by default) is described, not printed, and so is any other
+    value that will not print (a list holding such an int, an object whose
+    __str__ raises): the reason must never cost the verdict."""
     try:
         return repr(value) if isinstance(value, str) else str(value)
-    except ValueError:
-        return (f"{'a negative' if value < 0 else 'an'} integer of "
-                f"{value.bit_length()} bits")
+    except Exception:  # pylint: disable=broad-except  # noqa: BLE001
+        if isinstance(value, int):
+            return (f"{'a negative' if value < 0 else 'an'} integer of "
+                    f"{value.bit_length()} bits")
+        return f"a value of type {type(value).__name__} that cannot be printed"
 
 
 def _cost_over(estimate: Any, threshold: Any) -> str:
@@ -875,21 +878,36 @@ def explain(request: Any) -> str:
     return "\n".join(lines)
 
 
+# The largest power of ten a Decimal holds. It stands for a JSON number above
+# it: finite, and over any threshold below it.
+_LARGEST = Decimal((0, (9,), MAX_EMAX))
+
+
 def _json_fraction(text: str) -> Any:
     """A JSON fraction, read exactly as a Decimal. One whose exponent no
-    Decimal can hold (1e9999999999999999999) is read as a float instead, so
-    it is inf or 0.0 and never crashes the reader: valid JSON is a request.
-    A negative one is read as -inf whatever its size: float would round
-    -1e-9999999999999999999 to -0.0, which is not below zero, and a
-    negative amount must never pass as an estimate of nothing (D5). Zero is
-    zero whatever its sign and exponent (-0e9999999999999999999): it is read
-    as 0, never as a negative amount."""
+    Decimal can hold never crashes the reader: valid JSON is a request.
+    Zero is zero whatever its sign and exponent (-0e9999999999999999999): it
+    is read as 0, never as a negative amount. A negative one is read as -inf
+    whatever its size: float would round -1e-9999999999999999999 to -0.0,
+    which is not below zero, and a negative amount must never pass as an
+    estimate of nothing (D5). A positive one too large
+    (1e9999999999999999999) is a finite amount, so it is read as _LARGEST
+    and is over, not inf, which cannot be estimated (D5); one too small is
+    read as 0.0. The caller's decimal context does not change any of this:
+    with InvalidOperation untrapped Decimal returns NaN instead of raising,
+    and a JSON number is never NaN."""
     try:
-        return Decimal(text)
+        value = Decimal(text)
     except ArithmeticError:   # decimal.InvalidOperation
-        if not text.lower().partition("e")[0].strip("-0."):
-            return 0   # every digit of the mantissa is 0: exactly zero
-        return float("-inf") if text.startswith("-") else float(text)
+        value = None
+    if value is not None and not value.is_nan():
+        return value
+    mantissa, _, exponent = text.lower().partition("e")
+    if not mantissa.strip("-0."):
+        return 0   # every digit of the mantissa is 0: exactly zero
+    if text.startswith("-"):
+        return float("-inf")
+    return 0.0 if exponent.startswith("-") else _LARGEST
 
 
 def _json_integer(text: str) -> Any:
