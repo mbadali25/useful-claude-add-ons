@@ -278,20 +278,31 @@ SERIOUS_CLASSES = frozenset({MONEY, PRODUCTION_WRITE, PERMISSION_CHANGE,
                              IRREVERSIBLE, NO_PROVABLE_BACKUP})
 
 
-def _serious_class(spec: Op, tier: str, facts: dict,
-                   hint: Any = None) -> Optional[str]:
-    """The seriousness class of this request, or None if it is not serious.
-    `hint` is the classifier's own verdict (request field classified_as):
-    it can only raise seriousness. A class this table knows is taken; any
-    other non-empty value is a class the table cannot place, so UNPLACED."""
+# The class reported for a request that is serious in more than one way,
+# strictest first.
+_PRIORITY = (UNPLACED, NO_PROVABLE_BACKUP, DESTROY_NOT_OWNED, IRREVERSIBLE,
+             MONEY, ACCOUNT_CREATION, ADMIN_USE, PERMISSION_CHANGE,
+             PRODUCTION_WRITE)
+
+
+def _classes(spec: Op, tier: str, facts: dict, hint: Any = None) -> frozenset:
+    """Every seriousness class that applies: the table's own and the
+    classifier's verdict (request field classified_as). The verdict can only
+    add a class, never remove one. A class this table knows is added; any
+    other non-empty value is one it cannot place, so UNPLACED."""
+    found = set()
     own = _own_class(spec, tier, facts)
     if own is not None:
-        return own
-    if hint is None or hint == "none":
-        return None
-    return hint.strip().lower() if (
-        isinstance(hint, str) and hint.strip().lower() in SERIOUS_CLASSES
-    ) else UNPLACED
+        found.add(own)
+    if hint is not None and hint != "none":
+        said = hint.strip().lower() if isinstance(hint, str) else ""
+        found.add(said if said in SERIOUS_CLASSES else UNPLACED)
+    return frozenset(found)
+
+
+def _primary(classes: frozenset) -> Optional[str]:
+    """The strictest class of a set, for the answer and its reason."""
+    return next((c for c in _PRIORITY if c in classes), None)
 
 
 def _own_class(spec: Op, tier: str, facts: dict) -> Optional[str]:
@@ -459,7 +470,8 @@ def decide(request: Any) -> dict:
                         "unattended and never classified by the decider "
                         f"({stop_word})")
 
-    if spec.admin:
+    classes = _classes(spec, tier, facts, req.get("classified_as"))
+    if spec.admin or ADMIN_USE in classes:
         need = _pick(req.get("admin_need"), ADMIN_NEED)
         walk.look("4", f"admin need {need}")
         if need != "covers":
@@ -485,11 +497,13 @@ def decide(request: Any) -> dict:
         return done("5a", DENY, "a backup that was required and whose probe "
                                 "failed always refuses; no plan excuses it")
 
-    serious = _serious_class(spec, tier, facts, req.get("classified_as"))
-    walk.look("5", f"serious class {serious or 'none'}")
+    serious = _primary(classes)
+    walk.look("5", f"serious class {serious or 'none'}"
+                   + (f" (all: {sorted(classes)})" if len(classes) > 1
+                      else ""))
     if serious:
-        return _serious(req, walk, (name, spec, facts), serious, attended,
-                        (stop_outcome, stop_word))
+        return _serious(req, walk, (name, spec, facts, classes), serious,
+                        attended, (stop_outcome, stop_word))
 
     if spec.lane == READ:
         return done("6", ALLOW, "read with a verified read account")
@@ -521,11 +535,13 @@ def decide(request: Any) -> dict:
 
 def _serious(req: dict, walk: _Walk, subject: tuple, serious: str,
              attended: bool, stop: tuple) -> dict:
-    """Rule 5 for a serious request. `subject` is (name, spec, facts) and
-    `stop` is (outcome, wording) for a stop that depends on presence."""
-    name, spec, facts = subject
+    """Rule 5 for a serious request. `subject` is (name, spec, facts,
+    classes) and
+    `stop` is (outcome, wording) for a stop that depends on presence.
+    `subject` carries every class that applies; the strictest is `serious`."""
+    name, spec, facts, classes = subject
     stop_outcome, stop_word = stop
-    if serious == UNPLACED:
+    if UNPLACED in classes:
         return walk.done(
             "5", NEEDS_PLAN,
             "the operation is not in the closed table, and a plan of record "
@@ -538,7 +554,7 @@ def _serious(req: dict, walk: _Walk, subject: tuple, serious: str,
     if prov == "plan-of-record":
         usable = True
     elif prov == "standing-plan":
-        usable = serious == PRODUCTION_WRITE and name in ENVELOPE_OPS
+        usable = classes == {PRODUCTION_WRITE} and name in ENVELOPE_OPS
     else:
         usable = False
     if not (usable and covers):
@@ -552,7 +568,7 @@ def _serious(req: dict, walk: _Walk, subject: tuple, serious: str,
             "5", NEEDS_PLAN,
             f"serious ({serious}): unattended work needs an attested plan "
             "approval; without one it can only run attended", serious)
-    if serious in IRREVERSIBLE_CLASSES:
+    if classes & IRREVERSIBLE_CLASSES:
         listed = (_fact(facts, "irreversible_listed", True),
                   _fact(facts, "cap_set", True))
         walk.look("5", f"irreversible listing and cap {listed}")

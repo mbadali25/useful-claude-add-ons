@@ -411,6 +411,33 @@ def _cases():
                            (None, "allow")):
             add(f"{op}: classifier says {hint!r}",
                 req(op, classified_as=hint), want)
+    prod_apply = {"estimate_under_threshold": True}
+    for hint in ("irreversible-or-outside-effect", "money", "banana",
+                 "no-provable-backup", "destroy-not-owned",
+                 "permission-change", "account-creation"):
+        add(f"terraform-apply: prod, standing plan, classifier says {hint!r}",
+            planned("terraform-apply", "prod", presence="unattended",
+                    provenance="standing-plan", classified_as=hint,
+                    facts=prod_apply), "needs-plan")
+    add("terraform-apply: prod, plan of record, classifier says admin-use, "
+        "no need",
+        planned("terraform-apply", "prod", classified_as="admin-use",
+                admin_need="none", facts=prod_apply), "deny")
+    add("terraform-apply: prod, plan of record, classifier says admin-use, "
+        "need covers",
+        planned("terraform-apply", "prod", classified_as="admin-use",
+                admin_need="covers", facts=prod_apply), "allow")
+    add("terraform-apply: prod, plan of record, classifier says "
+        "irreversible, not listed",
+        planned("terraform-apply", "prod",
+                classified_as="irreversible-or-outside-effect",
+                facts=prod_apply), "needs-plan")
+    add("terraform-apply: prod, plan of record, classifier says "
+        "irreversible, listed",
+        planned("terraform-apply", "prod",
+                classified_as="irreversible-or-outside-effect",
+                facts=dict(prod_apply, irreversible_listed=True, cap_set=True,
+                           preflight_ok=True)), "allow")
     add("payment: the classifier cannot lower it",
         req("payment", classified_as="none"), "needs-plan")
     add("terraform-apply: a classifier verdict still needs a plan, then allows",
@@ -1067,10 +1094,10 @@ MUTATIONS = (
      '    if prov == "plan-of-record":\n',
      '    if prov in ("plan-of-record", "record"):\n'),
     ("a standing plan unlocks an exact-only kind",
-     "usable = serious == PRODUCTION_WRITE and name in ENVELOPE_OPS",
+     "usable = classes == {PRODUCTION_WRITE} and name in ENVELOPE_OPS",
      "usable = True"),
     ("a plan of record unlocks an operation the schema does not know",
-     "    if serious == UNPLACED:\n", "    if False:\n"),
+     "    if UNPLACED in classes:\n", "    if False:\n"),
     ("the attestation is not required unattended",
      "    if not attended and not attested:\n", "    if False:\n"),
     ("the production checks are not required",
@@ -1131,10 +1158,16 @@ MUTATIONS = (
     ("a production grant needs no write account",
      'else None)\n    if access:', 'else None)\n    if spec.account:'),
     ("the classifier's verdict is ignored",
-     'serious = _serious_class(spec, tier, facts, req.get("classified_as"))',
-     "serious = _serious_class(spec, tier, facts)"),
+     'classes = _classes(spec, tier, facts, req.get("classified_as"))',
+     "classes = _classes(spec, tier, facts)"),
+    ("a stricter classifier verdict is dropped when the op has its own class",
+     "        found.add(said if said in SERIOUS_CLASSES else UNPLACED)\n",
+     "        found = found or {said if said in SERIOUS_CLASSES else UNPLACED}\n"),
+    ("an admin verdict from the classifier needs no admin need",
+     "    if spec.admin or ADMIN_USE in classes:\n", "    if spec.admin:\n"),
     ("an unrecognised classifier verdict counts as none",
-     "    ) else UNPLACED\n", "    ) else None\n"),
+     "        found.add(said if said in SERIOUS_CLASSES else UNPLACED)\n",
+     "        if said in SERIOUS_CLASSES:\n            found.add(said)\n"),
     ("an apply with no cost estimate is not a money action",
      '    if spec.cost_checked and _fact(facts, "estimate_under_threshold",\n'
      '                                   True) != "met":',
