@@ -146,6 +146,12 @@ read entries under any `## [` heading.
 - crew 1.3.159: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); the accepted-value test changed plugin/crew after the number was set, so the branch moved to 1.3.160; the change is recorded under crew 1.3.160
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Added — crew 1.3.185: `crew_paths.py`, machine-owned run folders and the one safe delete (R-04)
+
+- **Summary.** `crew` 1.3.185 adds one resolver for every crew run folder, read from the machine config layer only, and the single recursive delete crew will use; nothing calls it yet.
+- **What.** New `hooks/scripts/crew_paths.py` resolves the `scratch`, `review`, `sandbox` and `tests` run folders, creates each exclusively with a `.crew-owner.json` record, and gives `delete_run_dir`, which refuses (changing nothing) unless the path passes string checks, a link walk anchored at the resolved root, the ownership record and a read-only pre-scan for mounts; the walk never follows a link, and links inside a run are removed as links. `crew_paths.py explain` reports an ignored repo `worktrees.root`; `check-delete <path> --run-id ID` is a dry run. `crew_worktrees.py` shares its helper.
+- **Tests.** `test_crew_paths.py` (link, junction, mount-crossing and root-replacement cases on Windows and Linux) and the `paths_mutations.py` sabotage rows.
+
 ### Added — crew 1.3.183: tracker status maps, Jira transition check and durable event ids (R-72)
 
 - **Summary.** `crew` 1.3.183 gives every tracker kind a status map, checks a Jira transition against the issue's last seen status before it is pushed, and gives each tracker post a durable event id so a timed-out post is not posted twice.
