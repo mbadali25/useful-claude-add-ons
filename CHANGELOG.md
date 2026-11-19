@@ -146,6 +146,13 @@ read entries under any `## [` heading.
 - crew 1.3.159: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); the accepted-value test changed plugin/crew after the number was set, so the branch moved to 1.3.160; the change is recorded under crew 1.3.160
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Added — crew 1.3.184: `crew_never.py`, the Never-lane command tripwire and shared redactor, report-only (R-33)
+
+- **Summary.** `crew` 1.3.184 adds `crew_never.py`, which says whether a command a model runs skips git hooks or signing or carries a secret-shaped value, and holds the one shared redactor; nothing calls it yet, so no guard or command changes.
+- **What.** `plugin/crew/hooks/scripts/crew_never.py` recognises `skip-hooks-or-signing` (`--no-verify`, `commit -n`, `--no-gpg-sign`, `core.hooksPath`, `HUSKY=0` and the rest of the closed `SHAPES` list) and `write-secret-plaintext` (`crew_reference.SECRET_PATTERNS`, a bearer-token shape, the literal value of a secret-named environment variable). Verdicts are `hit`, `clear` and `could-not-tell`; a finding names its rule and place, never the matched value. `redact` replaces each match with `[redacted:<rule>]`. CLI: `judge`, `redact`, `shapes`. Crew's own coordination push runs in-process and is never a hook payload, so it is unaffected.
+- **Inert.** Nothing in the plugin imports it, and `test_crew_never.py` fails if anything does. R-33b (harness-only) reports it in guard.log; R-35 enforces it.
+- **Tests.** `test_crew_never.py`: must-block, must-allow, could-not-tell, the pinned raw-pass false positive, policy binding, the real coordination argv, inertness in a throwaway HOME, and 17 in-file mutations.
+
 ### Changed — crew 1.3.182: review provider registry; one probe per attempt (R-10)
 
 - **Summary.** `crew` 1.3.182 moves each review provider's command, parser, limit text and probe kind into one registry row, so `review_run.py` no longer branches on `codex` by name; the default `/crew:review` path is unchanged.
