@@ -18,6 +18,11 @@ each one, and one undeclared value, through the real reader. Where crew
 validates nothing, the row says `unvalidated` and names the file that reads
 the key; the reference then prints "not validated", never an implied check.
 
+Every row must carry four things, and `problems()` fails when one is missing:
+a plain-language `summary`, its allowed values (`values_of`, or a `type`
+describing an open shape), a layer class (`layer_of`, one of `LAYERS`) and the
+crew version it arrived in (`since`). R-C1.
+
 What this module does NOT hold:
 - defaults: `crew_config.default_config()` / `default_global_config()` own
   them, and the generator reads them from there;
@@ -34,6 +39,8 @@ import the readers without a cycle. Standard library only.
 """
 from __future__ import annotations
 
+import re
+
 import crew_autopilot
 import crew_config
 import crew_guards
@@ -44,6 +51,13 @@ import crew_sleep
 import crew_state
 import crew_ticket
 import crew_tracker
+
+# Every output `layer_of` can return. The layer is derived, never stored, so this
+# list is what `problems()` holds the derivation to, and what the generator holds
+# `config_reference.LAYER_TERMS` to: a class with no plain-language meaning, or a
+# meaning for a class that does not exist, fails the build.
+LAYERS = ("repo", "both", "both, ratchet", "both, widening warned",
+          "both, stricter wins", "machine-arms", "machine-only", "human-only opt-out")
 
 KINDS = ("tuple", "ratchet", "branch", "type", "open-table", "prose", "unvalidated")
 
@@ -372,9 +386,11 @@ KEY_META = {
         "The AWS region the unattended run gets; null is `us-east-1`. Machine file only.",
         "type", since="1.1.10", source=_S + "crew_unattended.py", type_="region, or null"),
     "unattendedCloud.aws.nonProd": _row(
-        "Environment name -> `{profile, identity, region}` for `launch --environment NAME`; "
+        "Environment name -> `{profile, identity, region?}` (region optional, default `us-east-1`) "
+        "for `launch --environment NAME`; "
         "usable only where the repo's `environments.nonProd` agrees. Machine file only.",
-        "open-table", since="1.1.10", source=_S + "crew_unattended.py"),
+        "open-table", since="1.1.10", source=_S + "crew_unattended.py",
+        type_="object: environment name -> {profile, identity, region?}"),
     # --- pm
     "pm.authority": _row("How much the PM may do unasked. A widening is warned about; the "
                          "two layers combine by precedence.", "tuple",
@@ -693,8 +709,35 @@ def problems():
                        "values (crew_guards.RATCHETED_KEYS owns them)")
         if crew_guards.ratchet_spec(key) is not None and row["kind"] != "ratchet":
             out.append(f"ratchet kind: {key} is ratcheted and its kind is {row['kind']!r}")
-        if not row["summary"]:
+        if not isinstance(row["summary"], str) or not row["summary"].strip():
             out.append(f"no summary: {key}")
+        if row["type"] is not None and not isinstance(row["type"], str):
+            out.append(f"bad type text: {key} ({row['type']!r})")
+        else:
+            # The field the generator prints for this kind: a value list for
+            # tuple/ratchet/prose, the `type` text for type/open-table/unvalidated,
+            # either for a branch. Checking "either" for all kinds let an empty
+            # list through under a type, and a bare type under a list.
+            kind = row["kind"]
+            has_values = bool(values_of(key))
+            has_type = bool((row["type"] or "").strip())
+            if kind in ("tuple", "ratchet", "prose"):
+                shown = has_values
+            elif kind == "branch":
+                shown = has_values or has_type
+            else:
+                shown = has_type
+            if not shown:
+                out.append(f"no allowed values: {key}")
+        since = row["since"]
+        if since is not None and not isinstance(since, str):
+            out.append(f"bad arrival version: {key} ({since!r})")
+        elif since is None or not since.strip():
+            out.append(f"no arrival version: {key}")
+        elif since != FIRST and not re.fullmatch(r"\d+\.\d+\.\d+", str(since)):
+            out.append(f"bad arrival version: {key} ({since!r})")
+        if layer_of(key) not in LAYERS:
+            out.append(f"no layer class: {key} ({layer_of(key)!r})")
     return out
 
 

@@ -141,6 +141,19 @@ def _import_raises(tmp):
         fh.write('raise ImportError("sabotaged crew_keys")\n')
 
 
+_NONPROD_SINCE = '"open-table", since="1.1.10", source=_S + "crew_unattended.py",'
+_NONPROD_TYPE = '\n        type_="object: environment name -> {profile, identity, region?}"),'
+
+
+def _row_without_since(tmp):
+    edit(tmp, os.path.join(SCRIPTS, "crew_keys.py"), _NONPROD_SINCE,
+         '"open-table", source=_S + "crew_unattended.py",')
+
+
+def _row_without_values(tmp):
+    edit(tmp, os.path.join(SCRIPTS, "crew_keys.py"), _NONPROD_TYPE, "),")
+
+
 # (name, sabotage, expected exit, text the generator must print, text the gate must print)
 MUST_BLOCK = [
     ("reference edited by one byte", _one_byte, 1,
@@ -159,6 +172,10 @@ MUST_BLOCK = [
      "stale: plugin/crew/CONFIG.md", "CONFIG.md"),
     ("the generator's import raises", _import_raises, 2,
      "sabotaged crew_keys", "sabotaged crew_keys"),
+    ("a KEY_META row without its arrival version", _row_without_since, 2,
+     "no arrival version", "no arrival version"),
+    ("an open-table row without allowed values", _row_without_values, 2,
+     "no allowed values", "no allowed values"),
 ]
 
 

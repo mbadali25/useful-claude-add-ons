@@ -133,8 +133,11 @@ Rules the older paragraphs named, re-checked by id at `bdde58724`:
   (`:796`) maps `crew_keys.py`, `crew_dropped.py`, `CONFIG.md`, `test_crew_keys.py`, `scripts/_test/config-reference.py`
   and runs `test_crew_keys.py`, `config_reference.py --check`, `scripts/_test/config-reference.py`, `build.py --check` and
   `scripts/_test/crew-guide.py`. `plugin/crew/tests/l0725_keyset.py` is the committed key set and
-  `plugin/crew/tests/test_crew_keys.py:414` asserts `(87, 83, 50)` (keys, repo leaves, machine leaves).
-  `plugin/crew/CONFIG.md` is generated whole by `docs/guides/crew/src/config_reference.py` (`render_config_md`, `:395`).
+  `plugin/crew/tests/test_crew_keys.py:428` asserts `(102, 98, 63)` (keys, repo leaves, machine leaves).
+  `crew_keys.problems()` (called by `Model.__init__` in `docs/guides/crew/src/config_reference.py`) also requires, per row,
+  a non-blank summary, the allowed-values field its kind renders (or a `type`), a `layer_of` result inside `crew_keys.LAYERS` and a well-formed `since`
+  (R-C1); the generator also refuses a `LAYERS` entry with no `LAYER_TERMS` definition.
+  `plugin/crew/CONFIG.md` is generated whole by `docs/guides/crew/src/config_reference.py` (`render_config_md`, `:781`).
 - `worktree-config-shell` (`:891`, 36 s, `coveredBy` `crew-suite`) maps `_common.sh`, the guard and handoff shell scripts,
   `verify-gate.sh` and `verify_fingerprint.py` to `test_worktree_config_shell.py`; `promote-gate.ps1` is the one `.ps1` it
   still lists (the others were deleted).

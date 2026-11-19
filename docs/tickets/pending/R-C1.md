@@ -1,6 +1,6 @@
 # R-C1: Registry completeness: every key has a plain-language line, allowed values, a layer class and its arrival version
 
-Status: ready.
+Status: done (PR #795).
 Phase: Phase 13 — Configuration guide shipped in the plugin (new in revision 3; starts right after Phase 0)
 Size: S
 Model tier: Sonnet 5.5
