@@ -49,6 +49,7 @@ CONF_FILES = tuple(os.path.join(CONF_DIR, name) for name in (
 # `crew_config` takes four default blocks from `crew_upgrade`, so the defaults
 # are not all in SCRIPTS.
 UPGRADE = os.path.join("plugin", "crew", "skills", "crew-graph", "scripts")
+TIMEOUT = 300  # seconds for one generator run (PYTHON-07)
 
 
 def load_checker():
@@ -75,9 +76,14 @@ def edit(tmp, rel, old, new):
     path = os.path.join(tmp, rel)
     with open(path, encoding="utf-8", newline="") as fh:
         text = fh.read()
+    if "\r\n" in text:
+        # A CRLF copy (an autocrlf checkout, or `_crlf`): match and write in its
+        # own line endings, so a multi-line `old` still matches and the copy
+        # stays CRLF.
+        old, new = old.replace("\n", "\r\n"), new.replace("\n", "\r\n")
     assert text.count(old) == 1, f"fixture edit not unique in {rel}: {old!r}"
     text = text.replace(old, new)
-    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+    with open(path, "w", encoding="utf-8", newline="") as fh:
         fh.write(text)
 
 
@@ -87,7 +93,8 @@ def run_gen(tmp, home=None):
         env["HOME"] = home
         env["USERPROFILE"] = home
     done = subprocess.run([sys.executable, "-I", os.path.join(tmp, GEN), "--check"],
-                          capture_output=True, text=True, check=False, env=env)
+                          capture_output=True, text=True, check=False, env=env,
+                          timeout=TIMEOUT)
     return done.returncode, done.stdout, done.stderr
 
 
@@ -155,6 +162,14 @@ def _conf_deleted(tmp):
 def _blank_key_added(tmp):
     edit(tmp, os.path.join(CONF_DIR, "config.blank.json"), '{\n  "schema"',
          '{\n  "zzHandAdded": true,\n  "schema"')
+
+
+def _crlf_blank_key_added(tmp):
+    """The multi-line edit above on a CRLF copy: `edit` matches in the copy's
+    own line endings, so the row cannot fail on its fixture before the
+    generator runs."""
+    _crlf(tmp)
+    _blank_key_added(tmp)
 
 
 _KEYS = os.path.join(SCRIPTS, "crew_keys.py")
@@ -246,6 +261,8 @@ MUST_BLOCK = [
      "stale: plugin/crew/docs/configuration/keys.json", "keys.json"),
     ("a key added to config.blank.json by hand", _blank_key_added, 1,
      "stale: plugin/crew/docs/configuration/config.blank.json", "config.blank.json"),
+    ("a CRLF checkout of config.blank.json with a key added by hand", _crlf_blank_key_added, 1,
+     "stale: plugin/crew/docs/configuration/config.blank.json", "config.blank.json"),
     ("dev.provider removed from BLANK_EXCLUDED['repo']", _shadowing_back, 2,
      "blank R1: dev.provider", "blank R1: dev.provider"),
     ("a blank exclusion reason for autopilot.mode", _blank_reason, 2,
@@ -311,7 +328,7 @@ def run():
         build(tmp)
         shutil.rmtree(os.path.join(tmp, CONF_DIR))
         write = subprocess.run([sys.executable, "-I", os.path.join(tmp, GEN), "--write"],
-                               capture_output=True, text=True, check=False)
+                               capture_output=True, text=True, check=False, timeout=TIMEOUT)
         got, out, err = run_gen(tmp)
         ok = write.returncode == 0 and got == 0
         print(f"  {'ok  ' if ok else 'FAIL'} must-allow: --write recreates a missing "
@@ -323,7 +340,7 @@ def run():
         build(tmp)
         _default_changed(tmp)
         write = subprocess.run([sys.executable, "-I", os.path.join(tmp, GEN), "--write"],
-                               capture_output=True, text=True, check=False)
+                               capture_output=True, text=True, check=False, timeout=TIMEOUT)
         got, out, err = run_gen(tmp)
         ok = write.returncode == 0 and got == 0
         print(f"  {'ok  ' if ok else 'FAIL'} must-allow: --write makes a stale copy current "

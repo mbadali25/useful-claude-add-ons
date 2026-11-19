@@ -403,8 +403,11 @@ class Probe:  # pylint: disable=too-few-public-methods
                     out[("explain", all_keys, row["path"])] = json.dumps(row["value"],
                                                                          sort_keys=True)
         for name in crew_state.ALL_GUARD_NAMES:
-            out[("guard", name)] = json.dumps(crew_config.resolve_guard(root, name, gpath),
-                                              sort_keys=True, default=str)
+            # `effective` only: the rest of the result is diagnostic (which layer
+            # said what), and a blank may change that without changing policy.
+            out[("guard", name)] = json.dumps(
+                crew_config.resolve_guard(root, name, gpath)["effective"],
+                sort_keys=True, default=str)
         for dotted in crew_config.PERSONAL_PATHS:
             out[("personal", dotted)] = json.dumps(
                 crew_config.resolve_personal(root, dotted, gpath)["effective"], default=str)
@@ -629,6 +632,49 @@ def test_autocycle_settings_warn_about_neither_blank(tmp_path):
 _INFO_TAGS = ("[missing-keys]", "[authority]")
 
 
+def value_problems(layer, cfg):
+    """Every leaf of `cfg` that is not a legal blank value for `layer`: outside
+    the layer, not the layer default, or (when not null) outside the values the
+    registry declares. `crew_config.py --check` validates the `environments`
+    block only and exits 0 on findings, so it cannot catch a bad value; this is
+    the value-level check the blanks are held to."""
+    bad = []
+    keys = set(crew_keys.layer_keys(layer))
+    for key, value in _leaf_values(cfg).items():
+        if key == "schema" and layer == "repo":
+            if value != SCHEMA:
+                bad.append(f"schema: {value!r} is not {SCHEMA!r}")
+            continue
+        if key not in keys:
+            bad.append(f"{key}: not a {layer}-layer key")
+            continue
+        found, default = crew_keys.layer_default(layer, key)
+        if not found or value != default:
+            bad.append(f"{key}: {value!r} is not the {layer} default {default!r}")
+        declared = crew_keys.values_of(key)
+        if declared and value is not None:
+            items = value if crew_keys.KEY_META[key]["type"] == "list of" else [value]
+            if not isinstance(items, list) or any(v not in declared for v in items):
+                bad.append(f"{key}: {value!r} is not one of the declared {declared!r}")
+    return bad
+
+
+def _leaf_values(cfg, prefix=""):
+    out = {}
+    for name, value in cfg.items():
+        dotted = prefix + name
+        if isinstance(value, dict) and value and dotted not in crew_keys.KEY_META:
+            out.update(_leaf_values(value, dotted + "."))
+        else:
+            out[dotted] = value
+    return out
+
+
+@pytest.mark.parametrize("layer", ["repo", "machine"])
+def test_blank_values_are_layer_defaults(layer):
+    assert value_problems(layer, committed_blank(layer)) == []
+
+
 def _run_check(tmp_path, args, cwd):
     env = dict(os.environ)
     env["HOME"] = env["USERPROFILE"] = str(tmp_path / "home")
@@ -649,6 +695,8 @@ def test_repo_blank_passes_check(tmp_path):
     # reports the `environments` block only, so "no warnings" is the signal.
     assert code == 0, out
     assert "no warnings" in out and "[warn]" not in out, out
+    copied = json.loads((repo / ".crew" / "config.json").read_text(encoding="utf-8"))
+    assert value_problems("repo", copied) == []
 
 
 def test_machine_blank_passes_check_global(tmp_path):
@@ -660,3 +708,6 @@ def test_machine_blank_passes_check_global(tmp_path):
     assert code == 0, out
     findings = [line for line in out.splitlines() if line.startswith("- [")]
     assert findings and all(line[2:].startswith(_INFO_TAGS) for line in findings), out
+    copied = json.loads((tmp_path / "home" / ".claude" / "crew" / "config.json")
+                        .read_text(encoding="utf-8"))
+    assert value_problems("machine", copied) == []
