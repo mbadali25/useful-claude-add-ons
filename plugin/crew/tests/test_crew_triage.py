@@ -12,6 +12,8 @@ import ast
 import itertools
 import json
 import os
+import shutil
+import stat
 import subprocess
 import sys
 import types
@@ -24,7 +26,7 @@ import crew_triage as T  # noqa: E402  pylint: disable=wrong-import-position
 
 SCRIPTS = os.path.dirname(os.path.abspath(T.__file__))
 PLUGIN = os.path.dirname(os.path.dirname(SCRIPTS))
-REPO = os.path.dirname(PLUGIN)
+REPO = os.path.dirname(os.path.dirname(PLUGIN))  # the repo root, above plugin/
 MODULE = os.path.join(SCRIPTS, "crew_triage.py")
 GONE = object()  # the key is absent
 SONNET, OPUS, FABLE, HAIKU = ("claude-sonnet-5-5", "claude-opus-5-5",
@@ -143,9 +145,16 @@ def check_overrides(mod):
         ("risk 2 total 6 stays Fable (floor not cap)",
          task(factors=_fac(risk=2, complexity=2, systems=2)),
          "workflow", FABLE, []),
-        ("docs only with risk 2 is a normal ticket",
+        ("docs only with risk 2 is a normal ticket, rejection recorded",
          task(factors={"risk": 2}, docs_only=True),
-         "workflow", OPUS, ["risk-floor"]),
+         "workflow", OPUS, ["docs-rejected-risk", "risk-floor"]),
+        ("docs only with risk 2 and a high score keeps Fable, recorded",
+         task(factors=_fac(risk=2, complexity=2, systems=2), docs_only=True),
+         "workflow", FABLE, ["docs-rejected-risk"]),
+        ("docs only at score 8 (risk 0) is Sonnet",
+         task(factors=_fac(complexity=2, systems=1, ambiguity=2, risk=0),
+              legacy=True, money=True, docs_only=True),
+         "docs", SONNET, ["docs"]),
         ("S runs", task(size="S"), "workflow", SONNET, []),
         ("M runs", task(size="M"), "workflow", SONNET, []),
         ("L is an epic", task(size="L"), "epic", None, ["epic"]),
@@ -157,6 +166,15 @@ def check_overrides(mod):
         out = mod.triage(given)
         if _summary(out) != (route, model, overrides):
             bad.append((label, _summary(out)))
+    eight = mod.triage(next(r[1] for r in rows if "score 8" in r[0]))
+    if eight["score"] != 8:
+        bad.append(("docs-only score 8 case", eight["score"]))
+    plain = mod.triage(task(factors={"risk": 2}))
+    if "rejected" in plain["post"]:
+        bad.append(("rejection recorded without docs_only", plain["post"]))
+    rejected = mod.triage(task(factors={"risk": 2}, docs_only=True))
+    if "docs route rejected: risk 2" not in rejected["post"]:
+        bad.append(("rejection not in post", rejected["post"]))
     return bad
 
 
@@ -186,10 +204,43 @@ def check_size_table(mod):
     return bad
 
 
+MECHANICAL_KINDS = (  # literal, so removing a member from the module fails
+    "ticket-update", "jira-status", "evidence-link", "file-scan",
+    "find-references", "relay", "scripted-check", "log-extract", "rename",
+    "format", "boilerplate", "commit-message", "changelog",
+)
+
+
+class _Booby(dict):
+    """A factors object that must never be read."""
+
+    def get(self, *_a, **_k):
+        raise AssertionError("factors were read on the mechanical route")
+
+    __getitem__ = get
+
+
+def _booby_task(kind):
+    """A task whose factors object raises when read (`task()` would copy it)."""
+    given = task(task_type=kind)
+    given["factors"] = _Booby(complexity=0, systems=0, risk=0, ambiguity=0)
+    return given
+
+
 def check_mechanical(mod):
     """Table 6: the mechanical set goes to Haiku; size beats type."""
     bad = []
-    for kind in sorted(mod.MECHANICAL):
+    if set(mod.MECHANICAL) != set(MECHANICAL_KINDS):
+        bad.append(("mechanical set", sorted(set(mod.MECHANICAL) ^ set(
+            MECHANICAL_KINDS))))
+    for kind in MECHANICAL_KINDS:
+        try:
+            out = mod.triage(_booby_task(kind))
+        except Exception as err:  # pylint: disable=broad-except
+            bad.append(("mechanical evaluated factors", kind, repr(err)))
+        else:
+            if out["route"] != "mechanical":
+                bad.append(("mechanical booby", kind, out["route"]))
         for size in ("S", "M"):
             out = mod.triage(task(size=size, task_type=kind))
             if (_summary(out) != ("mechanical", HAIKU, ["mechanical"])
@@ -312,11 +363,20 @@ def check_grid(mod):
     return bad
 
 
+OUTPUT_KEYS = (  # literal: the contract, not read back from the module
+    "route", "size", "factors", "legacy_points", "score", "model",
+    "model_name", "effort", "overrides", "unknown", "ignored",
+    "ticket_status", "notify", "suggest_breakdown", "post",
+)
 ROUTE_FACTS = {  # route -> (ticket_status, notify, suggest_breakdown)
     "workflow": ("Backlog", False, False), "docs": ("Backlog", False, False),
     "mechanical": ("Backlog", False, False),
     "epic": ("Blocked or Parked", True, True),
     "needs-size": ("Blocked or Parked", True, False),
+}
+MODEL_FACTS = {  # model -> (model_name, effort)
+    HAIKU: ("Haiku 5.5", "low"), SONNET: ("Sonnet 5.5", "medium"),
+    OPUS: ("Opus 5.5", "high"), FABLE: ("Fable 5.2", "high"),
 }
 NULL_ON = {  # key -> routes where it is null (and only there)
     "size": {"needs-size"},
@@ -326,15 +386,28 @@ NULL_ON = {  # key -> routes where it is null (and only there)
     "effort": {"epic", "needs-size"},
 }
 LISTS = ("overrides", "unknown", "ignored")
+ROUTE_MODELS = {  # route -> the models it may carry
+    "workflow": (SONNET, OPUS, FABLE), "docs": (SONNET,),
+    "mechanical": (HAIKU,), "epic": (None,), "needs-size": (None,),
+}
+POST_START = {"workflow": "size ", "docs": "size ", "mechanical": "size ",
+              "epic": "size ", "needs-size": "size missing; score "}
+
+
+def _is_int(value):
+    return type(value) is int  # pylint: disable=unidiomatic-typecheck
 
 
 def check_output_shape(mod):
-    """Table 8 (iv): every key present, typed per the route table."""
+    """Table 8 (iv): every key present, typed and valued per the route table."""
     bad = []
     for _s, _k, _d, _f, _l, _m, out in _grid(mod):
         route = out["route"]
-        if list(out) != list(mod.OUTPUT_KEYS):
+        if list(out) != list(OUTPUT_KEYS):
             bad.append(("keys", route, list(out)))
+            continue
+        if route not in ROUTE_FACTS:
+            bad.append(("route", route))
             continue
         for key, routes in NULL_ON.items():
             if (out[key] is None) != (route in routes):
@@ -343,13 +416,37 @@ def check_output_shape(mod):
             if not isinstance(out[key], list):
                 bad.append(("list", key, route))
         status, notify, breakdown = ROUTE_FACTS[route]
-        if (out["ticket_status"], out["notify"], out["suggest_breakdown"]) != (
-                status, notify, breakdown):
+        if out["ticket_status"] != status or out["notify"] is not notify or (
+                out["suggest_breakdown"] is not breakdown):
             bad.append(("route facts", route))
-        if not isinstance(out["post"], str) or not out["post"]:
-            bad.append(("post", route))
-        if route == "workflow" and out["effort"] not in ("medium", "high"):
-            bad.append(("effort", out["effort"]))
+        if out["model"] not in ROUTE_MODELS[route]:
+            bad.append(("route model", route, out["model"]))
+        if out["model"] is not None and (
+                (out["model_name"], out["effort"]) != MODEL_FACTS[out["model"]]):
+            bad.append(("model facts", out["model"], out["model_name"],
+                        out["effort"]))
+        if route != "mechanical":
+            if not _is_int(out["score"]) or not 0 <= out["score"] <= 11:
+                bad.append(("score type", route, out["score"]))
+            if not _is_int(out["legacy_points"]) or not (
+                    0 <= out["legacy_points"] <= 3):
+                bad.append(("legacy_points type", route, out["legacy_points"]))
+            if not isinstance(out["factors"], dict) or not all(
+                    _is_int(out["factors"].get(n)) and 0 <= out["factors"][n] <= 2
+                    for n in ("complexity", "systems", "risk", "ambiguity")):
+                bad.append(("factors type", route, out["factors"]))
+            elif out["score"] != sum(out["factors"].values()) + (
+                    out["legacy_points"]):
+                bad.append(("score sum", route, out["score"]))
+        if route == "needs-size" and out["size"] is not None:
+            bad.append(("needs-size carries a size", out["size"]))
+        if route != "needs-size" and out["size"] not in ("S", "M", "L", "XL"):
+            bad.append(("size value", route, out["size"]))
+        if not isinstance(out["post"], str) or not out["post"].startswith(
+                POST_START[route]):
+            bad.append(("post", route, out["post"]))
+        elif route != "mechanical" and "score %s" % out["score"] not in out["post"]:
+            bad.append(("post score", route, out["post"]))
     return bad
 
 
@@ -382,6 +479,31 @@ def violations(mod):
 @pytest.mark.parametrize("name", sorted(TABLES))
 def test_the_table_holds(name):
     assert TABLES[name](T) == []
+
+
+@pytest.mark.parametrize("name,value", list(itertools.product(
+    ("complexity", "systems", "risk", "ambiguity"), (0, 1, 2))),
+    ids=str)
+def test_one_factor_case(name, value):
+    out = T.triage(task(factors={name: value}))
+    assert out["score"] == value and out["factors"][name] == value
+
+
+@pytest.mark.parametrize("legacy,money,systems,points", LEGACY_ROWS)
+def test_one_legacy_row(legacy, money, systems, points):
+    out = T.triage(task(factors={"systems": systems}, legacy=legacy,
+                        money=money))
+    assert out["legacy_points"] == points and out["score"] == systems + points
+
+
+@pytest.mark.parametrize("score,model", [r for r in BAND_ROWS if r[0] <= 6])
+def test_one_band_row(score, model):
+    assert T.triage(task(factors=_factors_for(score)))["model"] == model
+
+
+def test_a_raising_factors_object_is_never_read_on_the_mechanical_route():
+    out = T.triage(_booby_task("rename"))
+    assert out["route"] == "mechanical" and out["model"] == HAIKU
 
 
 # --- sabotage: each weakened copy must fail a table -------------------------
@@ -422,11 +544,28 @@ MUTATIONS = (
      "if size in EPIC_SIZES:", "if size in EPIC_SIZES and not is_mech:"),
     ("mechanical before needs-size",
      "elif size is None:", "elif size is None and not is_mech:"),
-    ("mechanical returns a computed score",
-     "out.update(factors=None, legacy_points=None, score=None)", "pass"),
+    ("mechanical route is never taken",
+     "if size in RUNNABLE and is_mech:",
+     "if size in RUNNABLE and is_mech and False:"),
     ("epic is not parked", "ticket_status=PARKED, notify=True, "
      "suggest_breakdown=True,", "ticket_status=BACKLOG, notify=True, "
      "suggest_breakdown=True,"),
+    ("docs rejection is not recorded",
+     'overrides.append("docs-rejected-risk")', "pass"),
+    ("a mechanical type is dropped from the set",
+     '"ticket-update", ', ""),
+    ("mechanical scores the factors first",
+     "    if size in RUNNABLE and is_mech:",
+     '    _factors(_field(task, "factors"))\n    if size in RUNNABLE and is_mech:'),
+    ("score is a string",
+     "out.update(factors=factors, legacy_points=points, score=score)",
+     "out.update(factors=factors, legacy_points=points, score=str(score))"),
+    ("model name is wrong", "model_name=NAME[model],", 'model_name="Opus",'),
+    ("needs-size does not notify",
+     'unknown=unknown + ["size"] + extra, ticket_status=PARKED,\n'
+     '                   notify=True,',
+     'unknown=unknown + ["size"] + extra, ticket_status=PARKED,\n'
+     '                   notify=False,'),
     ("a missing docs_only counts as true",
      '_flag(_field(task, "docs_only"), False)', '_flag(_field(task, "docs_only"), True)'),
 )
@@ -457,16 +596,21 @@ def test_a_weakened_rule_is_caught(label, old, new):
 
 def _cli(*args):
     return subprocess.run([sys.executable, MODULE, *args], capture_output=True,
-                          text=True, check=False)
+                          text=True, encoding="utf-8", errors="replace",
+                          timeout=60, check=False)
 
 
 def test_the_cli_prints_the_triage():
     done = _cli("triage", json.dumps(task(size="M", factors={"risk": 2})))
     assert done.returncode == 0
     assert json.loads(done.stdout)["model"] == OPUS
+    assert done.stdout == json.dumps(json.loads(done.stdout), indent=2) + "\n"
 
 
-@pytest.mark.parametrize("arg", ["{not json", "[1, 2]", "3", "null", '"x"'])
+@pytest.mark.parametrize("arg", [
+    "{not json", "[1, 2]", "3", "null", '"x"', '{"size":"S","unused":NaN}',
+    '{"size":"S","unused":Infinity}', '{"size":"S","unused":-Infinity}',
+    "[" * 20000])
 def test_the_cli_refuses_a_non_object(arg):
     done = _cli("triage", arg)
     assert done.returncode == 2 and done.stdout == ""
@@ -480,9 +624,22 @@ def test_the_cli_refuses_no_arguments():
 def test_the_cli_prints_the_tables():
     done = _cli("tables")
     assert done.returncode == 0
-    for text in ("Sonnet 5.5", "Opus 5.5", "Fable 5.2", "Haiku 5.5", "XL",
-                 "needs-size", "rename"):
-        assert text in done.stdout
+    lines = done.stdout.splitlines()
+    for line in (  # the artifact's rows, literally
+            "  S, M   run through the workflow",
+            "  L, XL  epic: break down, ticket Blocked or Parked, notify",
+            "  other  needs-size: ticket Blocked or Parked, notify",
+            "  legacy                        +1",
+            "  legacy and money              +1 more",
+            "  legacy and 2+ systems         +1 more",
+            "  score 0-2                   Sonnet 5.5",
+            "  score 3-5                   Opus 5.5",
+            "  score 6+                    Fable 5.2",
+            "  risk 2                        Opus 5.5 at least",
+            "  docs only, risk below 2       Sonnet 5.5",
+            "Mechanical task types (size S or M): Haiku 5.5"):
+        assert line in lines, line
+    assert "  " + ", ".join(sorted(MECHANICAL_KINDS)) in lines
 
 
 def test_triage_refuses_a_non_dict():
@@ -497,37 +654,70 @@ ITSELF = "plugin/crew/hooks/scripts/crew_triage.py"
 NAME = "crew_triage"
 
 
-def _plugin_files(root, use_git=True):
-    """Repo-relative POSIX paths of every file under `plugin/` in `root`."""
-    if use_git:
-        done = subprocess.run(["git", "ls-files", "plugin/"], cwd=root,
-                              capture_output=True, text=True, check=False)
-        if done.returncode == 0 and done.stdout.strip():
-            return sorted(done.stdout.split("\n")[:-1] if done.stdout.endswith(
-                "\n") else done.stdout.split("\n"))
+GIT = shutil.which("git")
+
+
+def _walk(root):
+    """Every file under `root/plugin`, nothing pruned."""
     found = []
-    for base, dirs, files in os.walk(os.path.join(root, "plugin")):
-        dirs[:] = [d for d in dirs if d not in ("node_modules", "__pycache__")]
+    for base, _dirs, files in os.walk(os.path.join(root, "plugin")):
         for fname in files:
             rel = os.path.relpath(os.path.join(base, fname), root)
             found.append(rel.replace(os.sep, "/"))
     return sorted(found)
 
 
-def mentions(root, use_git=True):
+def _plugin_files(root, git=GIT):
+    """Repo-relative POSIX paths of every file under `plugin/` in `root`.
+
+    `git ls-files -z` (NUL-separated, so a non-ASCII or odd name is not
+    quoted), else a plain walk when git is absent or `root` is not a work tree.
+    """
+    if git:
+        try:
+            done = subprocess.run([git, "ls-files", "-z", "plugin/"], cwd=root,
+                                  capture_output=True, timeout=120,
+                                  check=False)
+        except (OSError, subprocess.SubprocessError):
+            done = None
+        if done is not None and done.returncode == 0 and done.stdout:
+            names = [n.decode("utf-8", "surrogateescape")
+                     for n in done.stdout.split(b"\0") if n]
+            return sorted(names)
+    return _walk(root)
+
+
+def _is_regular(path):
+    """True for a regular file; a FIFO or device would block a read."""
+    try:
+        return stat.S_ISREG(os.stat(path).st_mode)
+    except OSError:
+        return False
+
+
+def mentions(root, git=GIT):
     """Files under `plugin/` that name the module, bar the two exact paths."""
     hits = []
-    for rel in _plugin_files(root, use_git):
+    for rel in _plugin_files(root, git):
         if rel in (ITSELF, THIS):
             continue
+        path = os.path.join(root, rel)
+        if not _is_regular(path):
+            continue
         try:
-            with open(os.path.join(root, rel), encoding="utf-8",
-                      errors="replace") as handle:
+            with open(path, encoding="utf-8", errors="replace") as handle:
                 if NAME in handle.read():
                     hits.append(rel)
         except OSError:
             continue
     return hits
+
+
+def test_the_scan_root_is_the_repo_root():
+    assert os.path.isdir(os.path.join(REPO, "plugin", "crew"))
+    files = _plugin_files(REPO)
+    assert ITSELF in files and THIS in files and len(files) > 100
+    assert ITSELF in _plugin_files(REPO, git=None)
 
 
 def test_nothing_under_plugin_mentions_the_module():
@@ -541,7 +731,7 @@ def test_the_scan_sees_a_mention_in_the_plugin_row(tmp_path):
                                        encoding="utf-8")
     (plugin / "crew" / "hooks" / "scripts" / "crew_triage.py").write_text(
         "crew_triage\n", encoding="utf-8")
-    assert mentions(str(tmp_path), use_git=False) == ["plugin/PLUGINS.md"]
+    assert mentions(str(tmp_path), git=None) == ["plugin/PLUGINS.md"]
 
 
 def test_the_scan_sees_a_mention_in_a_hook(tmp_path):
@@ -549,8 +739,48 @@ def test_the_scan_sees_a_mention_in_a_hook(tmp_path):
     hooks.mkdir(parents=True)
     (hooks / "hooks.json").write_text('{"command": "crew_triage"}\n',
                                       encoding="utf-8")
-    assert mentions(str(tmp_path), use_git=False) == [
+    assert mentions(str(tmp_path), git=None) == [
         "plugin/crew/hooks/hooks.json"]
+
+
+def test_the_walk_prunes_nothing(tmp_path):
+    for part in ("node_modules", "__pycache__"):
+        folder = tmp_path / "plugin" / part
+        folder.mkdir(parents=True)
+        (folder / "x.md").write_text("crew_triage\n", encoding="utf-8")
+    assert mentions(str(tmp_path), git=None) == [
+        "plugin/__pycache__/x.md", "plugin/node_modules/x.md"]
+
+
+def test_a_missing_git_falls_back_to_the_walk(tmp_path):
+    (tmp_path / "plugin").mkdir()
+    (tmp_path / "plugin" / "a.md").write_text("crew_triage\n", encoding="utf-8")
+    missing = str(tmp_path / "no-such-git")
+    assert _plugin_files(str(tmp_path), git=missing) == ["plugin/a.md"]
+    assert mentions(str(tmp_path), git=missing) == ["plugin/a.md"]
+
+
+def test_a_non_ascii_name_is_scanned_by_git(tmp_path):
+    if not GIT:
+        pytest.skip("git is not installed")
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env.update(HOME=str(tmp_path), USERPROFILE=str(tmp_path))
+    (tmp_path / "plugin").mkdir()
+    (tmp_path / "plugin" / "caf\u00e9 \u65e5\u672c.md").write_text(
+        "crew_triage\n", encoding="utf-8")
+    for args in (["init", "-q"], ["add", "-A"]):
+        done = subprocess.run([GIT, *args], cwd=tmp_path, env=env, timeout=120,
+                              capture_output=True, check=False)
+        assert done.returncode == 0, done.stderr
+    assert mentions(str(tmp_path)) == ["plugin/caf\u00e9 \u65e5\u672c.md"]
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs here")
+def test_a_fifo_is_not_read(tmp_path):
+    (tmp_path / "plugin").mkdir()
+    getattr(os, "mkfifo")(str(tmp_path / "plugin" / "pipe.md"))
+    (tmp_path / "plugin" / "a.md").write_text("crew_triage\n", encoding="utf-8")
+    assert mentions(str(tmp_path), git=None) == ["plugin/a.md"]
 
 
 def test_the_module_is_pure():

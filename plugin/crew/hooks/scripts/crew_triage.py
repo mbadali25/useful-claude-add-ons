@@ -29,6 +29,10 @@ such field is named in `unknown`.
 Override order, first match wins, size before task type:
   epic (size L or XL), needs-size, mechanical, docs, then the band with a
   risk floor (risk 2 is at least Opus; a floor, never a cap).
+The mechanical route is taken before scoring and never reads or evaluates the
+factors. A docs_only task with risk 2 is a normal ticket and says so: the
+override `docs-rejected-risk` and a note in `post`. The CLI accepts standard
+JSON only (NaN and Infinity are refused).
 
 Output: `triage` returns a dict with every key of `OUTPUT_KEYS` on every route.
 Pure: standard library only, no file, environment, git or network access.
@@ -145,28 +149,33 @@ def triage(task):
     size = _size(_field(task, "size"))
     task_type = _field(task, "task_type")
     is_mech = isinstance(task_type, str) and task_type in MECHANICAL
-
-    factors, unknown = _factors(_field(task, "factors"))
     legacy, legacy_known = _flag(_field(task, "legacy"), True)
     money, money_known = _flag(_field(task, "money"), True)
     docs_only, docs_known = _flag(_field(task, "docs_only"), False)
     extra = [n for n, ok in (("legacy", legacy_known), ("money", money_known),
                              ("docs_only", docs_known)) if not ok]
-    if size is None:
-        extra.insert(0, "size")
-    points = legacy_points(legacy, money, factors["systems"])
-    score = sum(factors.values()) + points
 
     out = {k: None for k in OUTPUT_KEYS}
     out.update(ignored=ignored, overrides=[], notify=False,
-               suggest_breakdown=False, ticket_status=BACKLOG,
-               size=size, factors=factors, legacy_points=points, score=score)
+               suggest_breakdown=False, ticket_status=BACKLOG, size=size)
 
     def pick(model, route, overrides, unknown_list):
         out.update(route=route, model=model, model_name=NAME[model],
                    effort=EFFORT[model], overrides=overrides,
                    unknown=unknown_list)
 
+    if size in RUNNABLE and is_mech:
+        # The mechanical route skips scoring: factors are neither read nor
+        # evaluated, so they are not named in `unknown` either.
+        pick(HAIKU, "mechanical", ["mechanical"], extra)
+        out["post"] = (f"size {size}; mechanical: {task_type}; "
+                       f"model {NAME[HAIKU]}")
+        return out
+
+    factors, unknown = _factors(_field(task, "factors"))
+    points = legacy_points(legacy, money, factors["systems"])
+    score = sum(factors.values()) + points
+    out.update(factors=factors, legacy_points=points, score=score)
     scored = f"score {score} ({_describe(factors)})"
     if size in EPIC_SIZES:
         out.update(route="epic", overrides=["epic"], unknown=unknown + extra,
@@ -175,25 +184,23 @@ def triage(task):
     elif size is None:
         deferred = ["mechanical-deferred"] if is_mech else []
         out.update(route="needs-size", overrides=["needs-size"] + deferred,
-                   unknown=unknown + extra, ticket_status=PARKED, notify=True,
-                   post=f"size missing; {scored}")
-    elif is_mech:
-        out.update(factors=None, legacy_points=None, score=None)
-        pick(HAIKU, "mechanical", ["mechanical"],
-             [n for n in extra if n != "size"])
-        out["post"] = (f"size {size}; mechanical: {task_type}; "
-                       f"model {NAME[HAIKU]}")
+                   unknown=unknown + ["size"] + extra, ticket_status=PARKED,
+                   notify=True, post=f"size missing; {scored}")
     elif docs_only and factors["risk"] < 2:
         pick(SONNET, "docs", ["docs"], unknown + extra)
         out["post"] = f"size {size}; {scored}; model {NAME[SONNET]}"
     else:
         model, overrides = band(score), []
+        note = ""
+        if docs_only:  # risk 2: the docs route was considered and rejected
+            overrides.append("docs-rejected-risk")
+            note = "; docs route rejected: risk 2"
         if factors["risk"] == 2 and RANK[model] < RANK[OPUS]:
-            model, overrides = OPUS, ["risk-floor"]
+            model = OPUS
+            overrides.append("risk-floor")
         pick(model, "workflow", overrides, unknown + extra)
-        out["post"] = f"size {size}; {scored}; model {NAME[model]}"
+        out["post"] = f"size {size}; {scored}; model {NAME[model]}{note}"
     return out
-
 
 def tables():
     """The artifact tables this module encodes, as text."""
@@ -216,14 +223,19 @@ def tables():
     return "\n".join(rows)
 
 
+def _reject_constant(name):
+    """NaN and Infinity are not JSON: refuse them."""
+    raise ValueError(name)
+
+
 def _main(argv):
     if len(argv) == 2 and argv[1] == "tables":
         print(tables())
         return 0
     if len(argv) == 3 and argv[1] == "triage":
         try:
-            task = json.loads(argv[2])
-        except ValueError:
+            task = json.loads(argv[2], parse_constant=_reject_constant)
+        except (ValueError, RecursionError):
             task = None
         if isinstance(task, dict):
             print(json.dumps(triage(task), indent=2))
