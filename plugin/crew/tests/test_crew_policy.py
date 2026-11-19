@@ -57,7 +57,8 @@ def good_facts(spec):
                      makes_admin=False)
         facts.update(P.GRANT_FACTS)
     if spec.lane == P.DESTRUCTIVE:
-        facts.update(ownership="own", backup="provable")
+        facts.update(ownership="own", backup="provable",
+                     noted_on_ticket=True)
     if spec.serious in P.IRREVERSIBLE_CLASSES:
         facts.update(irreversible_listed=True, cap_set=True,
                      preflight_ok=True)
@@ -72,6 +73,8 @@ def req(op, tier="dev", presence="attended", facts=None, **top):
     if spec is not None:
         if spec.account:
             out["account"] = spec.account + "-verified"
+        if spec.lane == P.GRANT and tier == "prod":
+            out["account"] = "write-verified"
         if spec.admin:
             out["admin_need"] = "covers"
         out["facts"] = good_facts(spec)
@@ -348,6 +351,25 @@ def _cases():
     add("merge-pr: an emergency with no request target does not waive it",
         req("merge-pr", facts={"review_clean": False}, target=GONE,
             emergency=emergency()), "deny")
+    for acct in ("none", "read-verified", GONE):
+        for presence in ("attended", "unattended"):
+            add(f"grant-permission: covered prod grant, account {acct!r}, "
+                f"{presence}",
+                planned("grant-permission", "prod", presence=presence,
+                        account=acct), STOP[presence])
+    for tier in ("dev", "prod"):
+        add(f"grant-permission: covered {tier}, permanence and expiry unknown",
+            planned("grant-permission", tier,
+                    facts={"permanence": GONE, "expiry_provable": GONE,
+                           "within_ceiling": GONE}),
+            "ask-owner")
+    add("delete-data: qa, not noted on the ticket is unknown",
+        req("delete-data", "qa", facts={"noted_on_ticket": GONE}),
+        "ask-routine")
+    add("delete-data: qa, noted_on_ticket false",
+        req("delete-data", "qa", facts={"noted_on_ticket": False}), "deny")
+    add("delete-data: dev needs no ticket note",
+        req("delete-data", "dev", facts={"noted_on_ticket": GONE}), "allow")
     add("grant-permission: a plan cannot grant admin rights",
         planned("grant-permission", "prod", facts={"makes_admin": True}),
         "deny")
@@ -979,9 +1001,9 @@ MUTATIONS = (
     ("a machine layer that is not clear passes", '    if layer != "clear":\n',
      "    if False:\n"),
     ("the account check is dropped",
-     '        if account != spec.account + "-verified":\n',
+     '        if account != access + "-verified":\n',
      "        if False:\n"),
-    ("a read account passes for a write", 'spec.account + "-verified"',
+    ("a read account passes for a write", 'access + "-verified"',
      '"read-verified"'),
     ("an unknown tier passes", "        if tier == UNKNOWN:\n",
      "        if False:\n"),
@@ -1056,8 +1078,16 @@ MUTATIONS = (
      '    if spec.lane == DESTRUCTIVE and tier == "prod":\n'
      "        return PRODUCTION_WRITE\n"
      "    if spec.lane == DESTRUCTIVE:\n        # The stricter classes win"),
+    ("unknown permanence drops the expiry facts",
+     '    if _fact(facts, "permanence", "permanent") == "met":\n',
+     '    if _fact(facts, "permanence", "temporary") != "met":\n'),
+    ("a production grant needs no write account",
+     'else None)\n    if access:', 'else None)\n    if spec.account:'),
+    ("a QA deletion needs no ticket note",
+     '    if spec.lane == DESTRUCTIVE and tier == "qa":\n',
+     '    if False:\n'),
     ("a grant's expiry facts are not required for a temporary grant",
-     '        return list(GRANT_FACTS)\n', '        return []\n'),
+     '    return list(GRANT_FACTS)\n', '    return []\n'),
     ("an unattended grant that cannot be proved only asks",
      '    if unknown and spec.lane == GRANT and not attended:\n',
      '    if False:\n'),

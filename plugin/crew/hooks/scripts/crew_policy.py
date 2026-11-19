@@ -290,13 +290,14 @@ GRANT_FACTS = (("expiry_provable", True), ("within_ceiling", True),
 
 def _lane_facts(spec: Op, facts: dict) -> list:
     """The conditions of the operation's own lane. A grant's expiry facts
-    apply to a temporary grant only; the rest apply to every grant."""
+    are dropped only when the grant is positively shown to be permanent
+    (nothing to expire); unknown permanence keeps them."""
     if spec.lane != GRANT:
         return list(spec.facts)
-    if _fact(facts, "permanence", "temporary") == "met":
-        return list(GRANT_FACTS)
-    return [f for f in GRANT_FACTS
-            if f[0] not in ("expiry_provable", "within_ceiling")]
+    if _fact(facts, "permanence", "permanent") == "met":
+        return [f for f in GRANT_FACTS
+                if f[0] not in ("expiry_provable", "within_ceiling")]
+    return list(GRANT_FACTS)
 
 
 def _verdicts(needed: list, facts: dict) -> tuple:
@@ -384,12 +385,14 @@ def decide(request: Any) -> dict:
     if layer != "clear":
         return done("2", stop_outcome,
                     f"machine layer is {layer} ({stop_word})")
-    if spec.account:
+    access = spec.account or ("write" if spec.lane == GRANT and tier == "prod"
+                              else None)
+    if access:
         account = _pick(req.get("account"), ACCOUNTS)
-        walk.look("2", f"account {account}, needs {spec.account}-verified")
-        if account != spec.account + "-verified":
+        walk.look("2", f"account {account}, needs {access}-verified")
+        if account != access + "-verified":
             return done("2", stop_outcome,
-                        f"account is {account}, not the verified {spec.account} "
+                        f"account is {account}, not the verified {access} "
                         f"account the tier map names ({stop_word})")
     else:
         other = _pick(req.get("account"), ACCOUNTS)
@@ -446,9 +449,9 @@ def decide(request: Any) -> dict:
 
     if spec.lane == READ:
         return done("6", ALLOW, "read with a verified read account")
-    if spec.lane == DESTRUCTIVE:
-        return done("7", ALLOW, "own data with a provable backup")
     needed = _lane_facts(spec, facts)
+    if spec.lane == DESTRUCTIVE and tier == "qa":
+        needed.append(("noted_on_ticket", True))
     if name == "merge-pr" and _emergency(req, name):
         needed = [f for f in needed if f[0] != "review_clean"]
         walk.look("8", "an owner-declared emergency for this action waives "
@@ -467,6 +470,10 @@ def decide(request: Any) -> dict:
                     "condition cannot be shown: " + ", ".join(unknown))
     if spec.lane == FREE:
         return done("9", ALLOW, "free")
+    if spec.lane == DESTRUCTIVE:
+        return done("7", ALLOW, "own data with a provable backup"
+                                + (" and the change noted on the ticket"
+                                   if tier == "qa" else ""))
     return done("8", ALLOW, "every condition met")
 
 
