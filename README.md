@@ -239,8 +239,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.174**: `crew_policy.py`, the one decision table, report-only. `crew` 1.3.174 adds `crew_policy.py`, one table that says what crew would allow, ask about or refuse for an operation, with the reason; nothing calls it yet, so no allow or deny anywhere changes.
 - **crew 1.3.167**: The Stop budget reader agrees with the writer (harness-only). `crew` 1.3.167: a hand-edited `verify.stopBudgetSeconds` that `/crew:config` would refuse (0, a negative, a decimal, a string, a boolean, null, a number over 540, or the key written twice) now reads as the 60 s default in `verify-gate.sh`, instead of being taken as written.
-- **crew 1.3.166**: Codex `gpt-6.2-sol` is the pinned default for `qa.codex.model`. `crew` 1.3.166 makes Codex `gpt-6.2-sol` the default review model (`qa.codex.model`), where before the default was `null` and the Codex CLI chose; a repo that spells `"model": null` keeps `null` (no flag) unless a machine-wide config supplies a model, which then wins over that `null`; a new `/crew:init` repo writes the pin itself, so it overrides a custom machine-wide `qa.codex.model` until you remove the repo key.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
