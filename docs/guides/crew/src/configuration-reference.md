@@ -422,7 +422,8 @@ a repo that says nothing imposes nothing. A repo entry that asks for less than
 the machine (or names a target the machine does not list) is shown as ignored.
 
 **Targets** are `<kind>:<name>`, kind one of `workspace`, `workflow`,
-`database`, `account`, `host`. The kind is read ignoring case. The name is
+`database`, `account`, `host`. The kind is read ignoring case, ASCII letters
+only (a look-alike letter makes the key an invalid entry). The name is
 matched exactly: `workflow:deploy.yml` does not match a listed
 `workflow:Deploy.yml` (that target is `unknown`, noted `case-mismatch`), so a
 case slip always lands on the strictest value. Two keys in one map that differ
@@ -449,8 +450,7 @@ Here `workflow:deploy.yml` is `prod` (`narrowed-by-repo`) and
 `host:api.example.com` stays `qa` (`listed`; the repo's `dev` is ignored).
 
 **Reasons**, checked in this order: `machine-unreadable` and `repo-unreadable`
-(a file that exists and is not a JSON object, holds `NaN`, `Infinity` or a
-number too large for a float such as `1e999`, or
+(a file that exists and is not a JSON object, holds `NaN` or `Infinity`, or
 whose `tiers` is present and not an object, `null` included; a worktree whose
 `.crew/` git cannot resolve is `repo-unreadable`: every target is `unknown`),
 `conflicting` (case twins, two keys folding to `tiers`, or twins of `tier` in

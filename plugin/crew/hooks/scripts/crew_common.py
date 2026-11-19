@@ -89,9 +89,14 @@ def read_text(path):
     config as malformed. utf-8-sig strips a leading BOM when present and is
     a no-op on a plain utf-8 file, so every other reader here is unaffected.
     """
+    # O_NONBLOCK (POSIX), then the type judged on the open descriptor: a plain
+    # `open` on a FIFO nobody writes to blocks for ever, so a FIFO at a config
+    # path hung every reader here -- `crew_config --explain` before it reached
+    # the tier reader, which already refuses one (R-05 review round 6). Only a
+    # regular file is read; anything else is "cannot be read", like a directory.
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
-        with open(path, "r", encoding="utf-8-sig", errors="replace") as handle:
-            return handle.read()
+        fd = os.open(path, flags)
     except (OSError, ValueError):
         # ValueError covers a path Python rejects before touching the disk (an
         # embedded NUL raises rather than returning ENOENT). Unreachable from a
@@ -99,6 +104,33 @@ def read_text(path):
         # hook under any input, so the cheap catch beats the argument about
         # reachability.
         return None
+    try:
+        regular = stat.S_ISREG(os.fstat(fd).st_mode)
+    except OSError:
+        regular = False
+    if not regular:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        return None
+    try:
+        with open(fd, "r", encoding="utf-8-sig", errors="replace") as handle:
+            return handle.read()
+    except (OSError, ValueError):
+        return None
+
+
+def one_line(text):
+    """`text` safe for one physical line on any stream: every character that
+    is not printable ASCII (a newline, a carriage return, U+2028, other
+    controls, a lone surrogate, any non-ASCII letter) becomes its escape. So a
+    name a repo file holds cannot forge another line of a report, and a report
+    never dies of UnicodeEncodeError on a stream that is not UTF-8 (cp1252
+    under `PYTHONIOENCODING`, a Windows console)."""
+    return "".join(ch if ch.isascii() and ch.isprintable()
+                   else ch.encode("unicode_escape", "backslashreplace").decode("ascii")
+                   for ch in str(text))
 
 
 def git_out(root, *args):

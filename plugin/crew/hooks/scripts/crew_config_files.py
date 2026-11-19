@@ -40,6 +40,7 @@ import stat
 import time
 
 import _promote_match
+import crew_common
 
 # How long `Lock` waits for another crew writer before refusing. A module
 # attribute read at acquire time, so a test can shorten it.
@@ -301,7 +302,18 @@ def tier_map_duplicates(text):
     The keys crew_tiers consults are the top-level `tiers`, the targets in
     its map and the fields of each entry; an exact repeat of any of them is
     reported. Case twins are distinct keys, survive a rewrite, and are not
-    reported here. Unparsable text is None: `_parse` reports that."""
+    reported here. Unparsable text is None: `_parse` reports that.
+
+    The answer is always ONE physical line (`crew_common.one_line`): the keys
+    it names come from a file a repo wrote, and SessionStart prints the answer
+    (`crew_platform.main`), so a newline in a key would otherwise add a line
+    that reads as the hook's own (review round 6)."""
+    why = _tier_map_duplicates(text)
+    return None if why is None else crew_common.one_line(why)
+
+
+def _tier_map_duplicates(text):
+    """`tier_map_duplicates` before its answer is made one line."""
     try:
         top = json.loads(text, object_pairs_hook=_repeats_hook)
     except (ValueError, RecursionError):

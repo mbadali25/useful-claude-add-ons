@@ -16,8 +16,8 @@ The rule (docs/plans/crew-revamp-2026-11-18.md 4.3, 4.14; R-05 spec D1-D11):
   stricter of the machine value and the repo value. A target the machine does
   not list has machine value `unknown`, so a repo cannot lift it out of
   `unknown`; a repo that says nothing imposes nothing.
-- A target is `<kind>:<name>`, kind one of `KINDS` (matched ignoring case and
-  normalised to lower case). The name is looked up EXACTLY: a query that
+- A target is `<kind>:<name>`, kind one of `KINDS` (matched ignoring ASCII
+  case and normalised to lower case). The name is looked up EXACTLY: a query that
   differs from a listed name only by case does not match (it is `unlisted`,
   noted `case-mismatch`). Two keys in one `tiers` object that are equal after
   folding the whole target are case twins, and every target in that group is
@@ -79,6 +79,12 @@ def parse_target(text):
     if not isinstance(text, str) or ":" not in text:
         return None
     kind, name = text.split(":", 1)
+    # ASCII only: `str.lower` maps the Kelvin sign (U+212A) onto `k`, which
+    # `_promote_match.fold` (the twin rule) keeps apart, so `wor\u212aflow:x`
+    # matched `workflow:x` without being its twin and the answer followed the
+    # order of the keys (review round 6). A kind that is not ASCII is no kind.
+    if not kind.isascii():
+        return None
     kind = kind.lower()
     if kind not in KINDS or not name:
         return None
@@ -133,15 +139,37 @@ def _no_constant(name):
     raise ValueError(f"{name} is not JSON")
 
 
-def _finite_float(text):
-    """`parse_float` for `_read_layer`: a number that overflows a float
-    (`1e999`) would come back as infinity, which `json.dumps` then writes as
-    the non-JSON `Infinity` in a `--json` report. Such a file is unreadable
-    (D5), the same as one holding `Infinity` itself (review round 3)."""
+class _Number(str):
+    """A JSON number Python cannot hold, kept as the text the file wrote."""
+
+    __slots__ = ()
+
+
+def _float(text):
+    """`parse_float` for `_read_layer`. `1e999` is valid JSON that overflows a
+    float; as infinity, `json.dumps` would write it into a `--json` report as
+    the non-JSON `Infinity` (review round 3). It is kept as its text instead,
+    so the file stays readable and a number in a field nothing reads changes
+    no tier (D4; review round 6: refusing the whole layer over it was wrong)."""
     value = float(text)
-    if math.isinf(value) or math.isnan(value):
-        raise ValueError(f"{text} does not fit a finite number")
-    return value
+    return _Number(text) if math.isinf(value) or math.isnan(value) else value
+
+
+def _int(text):
+    """`parse_int` for `_read_layer`: an integer too long for `int` (Python
+    refuses more than 4300 digits with ValueError) is kept as its text, the
+    same way and for the same reason as `_float`."""
+    try:
+        return int(text)
+    except ValueError:
+        return _Number(text)
+
+
+def _kind(value):
+    """What a value is, for a message: `number` for a `_Number`, never `str`."""
+    if value is None:
+        return "null"
+    return "number" if isinstance(value, _Number) else type(value).__name__
 
 
 def _dangling(path):
@@ -190,7 +218,7 @@ def _read_layer(path):
         return "unreadable", f"{path}: not UTF-8 ({exc})"
     try:
         parsed = json.loads(text, object_pairs_hook=_pairs, parse_constant=_no_constant,
-                            parse_float=_finite_float)
+                            parse_float=_float, parse_int=_int)
     except (ValueError, RecursionError) as exc:
         return "unreadable", f"{path}: not JSON ({type(exc).__name__}: {exc})"
     if not isinstance(parsed, dict):
@@ -225,8 +253,7 @@ def _layer(label, status, parsed):
         # `null` included (D5): a present key that is not a map is unreadable,
         # never "no map", so a `"tiers": null` cannot hide the layer's entries.
         out["status"] = "unreadable"
-        kind = "null" if tiers is None else type(tiers).__name__
-        out["detail"] = f"its `tiers` is {kind}, not an object"
+        out["detail"] = f"its `tiers` is {_kind(tiers)}, not an object"
         return out
     out["map"] = tiers
     return out
@@ -316,10 +343,12 @@ def _entry_problem(key, entry):
         return (f"{key!r} is not `<kind>:<name>` with a kind of "
                 + ", ".join(KINDS))
     if not isinstance(entry, dict):
-        return f"{key}: the entry is {type(entry).__name__}, not an object"
+        return f"{key}: the entry is {_kind(entry)}, not an object"
     if "tier" not in entry:
         return f"{key}: the entry has no `tier`"
     tier = entry[FIELD]
+    if isinstance(tier, _Number):
+        return f"{key}: tier is the number {tier}, not one of " + ", ".join(SETTABLE)
     if not isinstance(tier, str) or tier not in SETTABLE:
         return (f"{key}: tier {tier!r} is not one of " + ", ".join(SETTABLE)
                 + (" (unknown is a result, not a setting)" if tier == "unknown" else ""))
@@ -476,16 +505,11 @@ def layer_problems(machine, repo):
 
 
 def show(text):
-    """`text` safe for one physical line on any stream: every character that
-    is not printable ASCII (a newline, a carriage return, U+2028, other
-    controls, a lone surrogate, any non-ASCII letter) becomes its escape. So a
-    repo-written name cannot forge another result row, and a report never
-    dies of UnicodeEncodeError on a stream that is not UTF-8 (cp1252 under
-    `PYTHONIOENCODING`, a Windows console; review round 4). `--json` output is
-    `json.dumps`, ASCII already."""
-    return "".join(ch if ch.isascii() and ch.isprintable()
-                   else ch.encode("unicode_escape", "backslashreplace").decode("ascii")
-                   for ch in str(text))
+    """`text` safe for one physical line on any stream
+    (`crew_common.one_line`): a repo-written name cannot forge another result
+    row, and a report never dies of UnicodeEncodeError on a stream that is
+    not UTF-8 (review round 4). `--json` output is `json.dumps`, ASCII already."""
+    return crew_common.one_line(text)
 
 
 def _line(result):

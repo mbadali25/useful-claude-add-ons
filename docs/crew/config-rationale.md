@@ -1713,10 +1713,11 @@ rules:
   upgrade and platform-sync therefore leave a file alone when its `tiers`
   repeats a key exactly (`crew_config_files.tier_map_duplicates`), and `--set`
   refuses a value that repeats a key. Case twins are distinct keys, survive a
-  rewrite, and are not refused. A number too large for a float (`1e999`)
-  makes a layer unreadable, like `Infinity`, so no report carries the non-JSON
-  `Infinity` out. `list --json` keeps stdout a list and names an unreadable
-  layer on stderr.
+  rewrite, and are not refused. No report carries the non-JSON `Infinity`
+  out: the word itself makes a layer unreadable, and a number too large for a
+  float (`1e999`) is kept as its text (round 6 below; round 3 refused the
+  whole layer over it). `list --json` keeps stdout a list and names an
+  unreadable layer on stderr.
 - **Every path gives an answer, and no path splits a name** (review round 4).
   `resolve` returns `invalid` for a target that is not text (`None`), not an
   exception. The reader opens without blocking and reads only a regular file,
@@ -1742,10 +1743,25 @@ rules:
   write, and says so, when the repo file repeats a tier key. It reads
   `crew_config_files`, never `crew_tiers`, so the report-only rule (D6: nothing
   that decides imports the resolver) holds; the cost is a stale `platform`
-  block until the file is fixed by hand. Known and not changed here, because
-  it predates R-05 and is outside the tier reader: `crew_config --explain`
-  reads the config with an ordinary blocking `open` before `crew_tiers` runs,
-  so a FIFO at the config path can still hang that command on POSIX.
+  block until the file is fixed by hand.
+- **One rule for "the same target", and nothing a file holds can stall or
+  forge a report** (review round 6). The kind is matched on ASCII letters
+  only. `str.lower` turns the Kelvin sign (U+212A) into `k` and the twin fold
+  does not, so `wor<U+212A>flow:X` matched `workflow:X` without being its
+  twin, and the answer followed the order of the keys. A kind that is not
+  ASCII is now no kind: that key is its own invalid entry and never answers
+  for `workflow:X`. A JSON number Python cannot hold (`1e999`, an integer
+  past 4300 digits) is kept as the text the file wrote instead of making the
+  layer unreadable, because D4 says a field nothing reads changes no tier; in
+  a place crew does read, it is an invalid value like any other.
+  `crew_common.read_text`, which every lenient loader reads through, opens
+  without blocking and reads only a regular file, so `crew_config --explain`
+  no longer hangs on a FIFO at a config path before it reaches `crew_tiers`
+  (round 5 left that as known; it was reproduced on Linux, then fixed at the
+  shared reader rather than in one command). `tier_map_duplicates` answers on
+  one line of printable ASCII: SessionStart prints its answer, and a newline
+  in a repeated key used to add a line that read as crew's own. Still
+  unreadable, on purpose: a file nested too deeply to parse.
 
 ### The ratchet is one table, not five copies
 
