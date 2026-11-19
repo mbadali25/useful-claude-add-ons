@@ -149,6 +149,12 @@ read entries under any `## [` heading.
 - crew 1.3.159: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); the accepted-value test changed plugin/crew after the number was set, so the branch moved to 1.3.160; the change is recorded under crew 1.3.160
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Added — crew 1.3.188: copy-safe config blanks, a per-key list and an annotated template (R-C2)
+
+- **Summary.** `crew` 1.3.188 ships `plugin/crew/docs/configuration/`: a repo and a machine config blank you can copy into an empty layer without changing any effective setting, a per-key fact list and an annotated template, all generated and checked for staleness.
+- **What.** `docs/guides/crew/src/config_reference.py --write` also writes `config.blank.json` (repo layer), `global.blank.json` (machine layer), `keys.json` and `template.annotated.md`; `--check` fails when any is stale. `crew_keys.py` gains `BLANK_EXCLUDED` (each left-out key with its reason) and `blank_problems()`, which `problems()` runs: a repo-blank key must be repo-only or `null` by default (R1), the machine blank leaves out personal keys (R2), and blank plus exclusions is the layer. Nothing at runtime reads the new files; no hook or default changes.
+- **Tests.** `test_config_blanks.py` proves a blank in an empty layer changes no effective value through `explain_config`, `resolve_guard`, `resolve_personal`, `crew_humanonly.resolve` and `crew_autocycle.settings`, with in-memory sabotage rows; `scripts/_test/config-reference.py` gains must-block and must-allow rows for the new files.
+
 ### Added — crew 1.3.187: `crew_paths.py`, machine-owned run folders and the one safe delete (R-04)
 
 - **Summary.** `crew` 1.3.187 adds one resolver for every crew run folder, read from the machine config layer only, and the single recursive delete crew will use; nothing calls it yet.
