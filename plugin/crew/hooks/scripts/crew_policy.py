@@ -427,6 +427,11 @@ def decide(request: Any) -> dict:
         name = walk.name = "push-protected-branch"
         spec = OPERATIONS[name]
     done = walk.done
+    # Every class that applies is known before any rule runs, so a class the
+    # classifier adds (classified_as) pulls in the same requirements the
+    # operation's own class would: a tier, the write account, an admin need.
+    classes = _classes(spec, tier, facts, req.get("classified_as"))
+    needs_admin = spec.admin or bool(classes & {ADMIN_USE, ACCOUNT_CREATION})
 
     walk.look("1", "never lane?")
     if spec.lane == NEVER:
@@ -440,8 +445,8 @@ def decide(request: Any) -> dict:
     # A production write by any route uses the verified write account; an
     # admin operation goes through the broker instead (4.14).
     access = spec.account or (
-        "write" if tier == "prod" and not spec.admin
-        and spec.lane in (GRANT, SERIOUS_ALWAYS) else None)
+        "write" if tier == "prod" and classes and not needs_admin
+        and spec.lane not in (HUMAN, NEVER) else None)
     if access:
         account = _pick(req.get("account"), ACCOUNTS)
         walk.look("2", f"account {account}, needs {access}-verified")
@@ -462,7 +467,7 @@ def decide(request: Any) -> dict:
                     "one-way: only the owner's yes, repeat-back and confirm; "
                     "the decider never answers it")
 
-    if spec.tiered:
+    if spec.tiered or classes:
         walk.look("3", f"tier {tier}")
         if tier == UNKNOWN:
             return done("3", stop_outcome,
@@ -470,8 +475,7 @@ def decide(request: Any) -> dict:
                         "unattended and never classified by the decider "
                         f"({stop_word})")
 
-    classes = _classes(spec, tier, facts, req.get("classified_as"))
-    if spec.admin or ADMIN_USE in classes:
+    if needs_admin:
         need = _pick(req.get("admin_need"), ADMIN_NEED)
         walk.look("4", f"admin need {need}")
         if need != "covers":

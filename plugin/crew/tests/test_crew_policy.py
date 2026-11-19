@@ -418,7 +418,27 @@ def _cases():
         add(f"terraform-apply: prod, standing plan, classifier says {hint!r}",
             planned("terraform-apply", "prod", presence="unattended",
                     provenance="standing-plan", classified_as=hint,
-                    facts=prod_apply), "needs-plan")
+                    facts=prod_apply),
+            "deny" if hint == "account-creation" else "needs-plan")
+    add("terraform-apply: prod, classifier says account-creation, need covers",
+        planned("terraform-apply", "prod", presence="unattended",
+                classified_as="account-creation", admin_need="covers",
+                facts=prod_apply), "allow")
+    for presence in ("attended", "unattended"):
+        for acct in ("none", "read-verified", GONE):
+            add(f"comment: prod, classifier says production-write, account "
+                f"{acct!r}, {presence}",
+                planned("comment", "prod", presence=presence, account=acct,
+                        classified_as="production-write"), STOP[presence])
+        for tier in ("staging", GONE, None):
+            add(f"comment: tier {tier!r}, classifier says money, {presence}",
+                planned("comment", tier, presence=presence,
+                        classified_as="money"), STOP[presence])
+        add(f"comment: prod, classifier says production-write, write "
+            f"account, {presence}",
+            planned("comment", "prod", presence=presence,
+                    account="write-verified",
+                    classified_as="production-write"), "allow")
     add("terraform-apply: prod, plan of record, classifier says admin-use, "
         "no need",
         planned("terraform-apply", "prod", classified_as="admin-use",
@@ -1163,8 +1183,16 @@ MUTATIONS = (
     ("a stricter classifier verdict is dropped when the op has its own class",
      "        found.add(said if said in SERIOUS_CLASSES else UNPLACED)\n",
      "        found = found or {said if said in SERIOUS_CLASSES else UNPLACED}\n"),
-    ("an admin verdict from the classifier needs no admin need",
-     "    if spec.admin or ADMIN_USE in classes:\n", "    if spec.admin:\n"),
+    ("an admin or account-creation verdict from the classifier needs no "
+     "admin need",
+     "    needs_admin = spec.admin or bool(classes & {ADMIN_USE, "
+     "ACCOUNT_CREATION})\n",
+     "    needs_admin = spec.admin\n"),
+    ("a classifier verdict pulls in no tier rule",
+     "    if spec.tiered or classes:\n", "    if spec.tiered:\n"),
+    ("a classifier verdict pulls in no write account",
+     '"write" if tier == "prod" and classes and not needs_admin',
+     '"write" if tier == "prod" and spec.prod_serious and not needs_admin'),
     ("an unrecognised classifier verdict counts as none",
      "        found.add(said if said in SERIOUS_CLASSES else UNPLACED)\n",
      "        if said in SERIOUS_CLASSES:\n            found.add(said)\n"),
@@ -1176,7 +1204,7 @@ MUTATIONS = (
      '        return [("noted_on_ticket", True)] if tier == "qa" else []\n',
      '        return []\n'),
     ("a production payment needs no write account",
-     'and spec.lane in (GRANT, SERIOUS_ALWAYS) else None)',
+     'and spec.lane not in (HUMAN, NEVER) else None)',
      'and spec.lane == GRANT else None)'),
     ("an unattested plan may do an attended production write",
      '        if not attested:\n            return walk.done(\n'
@@ -1196,9 +1224,6 @@ MUTATIONS = (
     ("a credential store may be read",
      '_NOT_A_SECRET_STORE = (("credential_store", False),)',
      '_NOT_A_SECRET_STORE = ()'),
-    ("creating an account needs no admin need",
-     '    "create-account": Op(SERIOUS_ALWAYS, tiered=True, admin=True,',
-     '    "create-account": Op(SERIOUS_ALWAYS, tiered=True, admin=False,'),
     ("a truthy fact counts as met", "        if isinstance(seen, bool):\n",
      "        if True:\n"),
     ("unknown presence is attended",
