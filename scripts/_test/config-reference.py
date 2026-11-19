@@ -245,7 +245,7 @@ MUST_BLOCK = [
      "no allowed values", "no allowed values"),
     # R-C2: the four files in plugin/crew/docs/configuration/.
     ("config.blank.json edited by one byte",
-     _conf_one_byte("config.blank.json", '"verifyGate": true', '"verifyGate": false'), 1,
+     _conf_one_byte("config.blank.json", '"maxTicketsPerRun": 3', '"maxTicketsPerRun": 4'), 1,
      "stale: plugin/crew/docs/configuration/config.blank.json", "config.blank.json"),
     ("global.blank.json edited by one byte",
      _conf_one_byte("global.blank.json", '"maxDispatches": 3', '"maxDispatches": 4'), 1,

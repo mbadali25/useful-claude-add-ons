@@ -37,6 +37,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import tempfile
 
 sys.dont_write_bytecode = True
 
@@ -998,10 +999,21 @@ def write():
         if _read(path) == text:
             continue
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
-            fh.write(text)
-        os.replace(tmp, path)
+        # A per-writer staging name (GEN-02): two concurrent --write runs
+        # never share one temp file, so neither can rename the other's half.
+        fd, tmp = tempfile.mkstemp(prefix=os.path.basename(path) + ".",
+                                   suffix=".tmp", dir=os.path.dirname(path))
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(text)
+            os.chmod(tmp, 0o644)  # mkstemp opens 0600; a doc stays readable
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
         print(f"wrote {os.path.relpath(path, ROOT)}")
 
 

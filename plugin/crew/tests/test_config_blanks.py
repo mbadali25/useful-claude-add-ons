@@ -435,7 +435,9 @@ def probe(tmp_path):
 def effects(tmp_path_factory, _isolated):
     """`{table: {key: entries changed}}`: each single-key fixture against the
     empty layer, the other layer empty. Computed once for the validity and
-    direct-reader tests."""
+    direct-reader tests. Its reader calls run before any test's
+    `_no_real_crew_dir` takes its start index, so it asserts isolation itself."""
+    before = len(_isolated)
     probe = Probe(tmp_path_factory.mktemp("effects"))
     base_machine = probe.policy(None, None)
     base_repo = probe.policy(repo_file(), None)
@@ -444,6 +446,7 @@ def effects(tmp_path_factory, _isolated):
         out["machine"][key] = diff(base_machine, probe.policy(None, nest(key, value)))
     for key, value in REPO_FIXTURES.items():
         out["repo"][key] = diff(base_repo, probe.policy(repo_file(nest(key, value)), None))
+    assert _isolated[before:] == [], f"opened the real crew directory: {_isolated[before:]}"
     return out
 
 
@@ -537,6 +540,15 @@ def test_fixture_values_are_valid(layer):
 def _table_key_params():
     return ([("machine", k) for k in MACHINE_FIXTURES]
             + [("repo", k) for k in REPO_FIXTURES])
+
+
+def test_inert_alone_names_are_live():
+    """A stale INERT_ALONE name would otherwise go unnoticed once its key left
+    both fixture tables: the effect test only visits keys the tables hold."""
+    registry = set(crew_keys.layer_keys("machine")) | set(crew_keys.layer_keys("repo"))
+    fixtures = set(MACHINE_FIXTURES) | set(REPO_FIXTURES)
+    assert sorted(set(INERT_ALONE) - registry) == [], "INERT_ALONE names outside the registry"
+    assert sorted(set(INERT_ALONE) - fixtures) == [], "INERT_ALONE names with no fixture row"
 
 
 @pytest.mark.parametrize("layer,key", _table_key_params())
