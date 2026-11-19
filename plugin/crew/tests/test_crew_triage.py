@@ -478,13 +478,60 @@ def check_post(mod):
     out = mod.triage(task(size="L"))
     if "epic: break down" not in out["post"]:
         bad.append(("epic post", out["post"]))
+    for size, kind in (("S", "rename"), ("M", "jira-status")):
+        out = mod.triage(task(size=size, task_type=kind))
+        want = f"size {size}; mechanical: {kind}; model Haiku 5.5"
+        if out["post"] != want:
+            bad.append(("mechanical post", size, kind, out["post"]))
+    return bad
+
+
+STOP_ROWS = (  # label, task, route, factors, legacy_points, score
+    ("epic L, every input counted",
+     task(size="L", factors=_fac(complexity=1, systems=1, risk=2, ambiguity=0),
+          legacy=True, money=True),
+     "epic", _fac(complexity=1, systems=1, risk=2, ambiguity=0), 3, 7),
+    ("epic XL, legacy without money or systems",
+     task(size="XL", factors=_fac(complexity=2, systems=0, risk=0, ambiguity=1),
+          legacy=True),
+     "epic", _fac(complexity=2, systems=0, risk=0, ambiguity=1), 1, 4),
+    ("epic L with a mechanical type is still scored",
+     task(size="L", factors=_fac(complexity=0, systems=2, risk=1, ambiguity=1),
+          legacy=True, task_type="rename"),
+     "epic", _fac(complexity=0, systems=2, risk=1, ambiguity=1), 2, 6),
+    ("epic L docs only is still scored",
+     task(size="L", factors=_fac(complexity=1, systems=0, risk=0, ambiguity=0),
+          docs_only=True),
+     "epic", _fac(complexity=1, systems=0, risk=0, ambiguity=0), 0, 1),
+    ("needs-size missing, legacy and systems",
+     task(size=GONE, factors=_fac(complexity=1, systems=2, risk=1, ambiguity=0),
+          legacy=True),
+     "needs-size", _fac(complexity=1, systems=2, risk=1, ambiguity=0), 2, 6),
+    ("needs-size invalid, every input unknown",
+     task(size="XXL", factors=GONE, legacy=GONE, money=GONE),
+     "needs-size", _fac(complexity=2, systems=2, risk=2, ambiguity=2), 3, 11),
+    ("needs-size with a mechanical type is still scored",
+     task(size=None, factors=_fac(complexity=0, systems=0, risk=2, ambiguity=1),
+          task_type="rename"),
+     "needs-size", _fac(complexity=0, systems=0, risk=2, ambiguity=1), 0, 3),
+)
+
+
+def check_stop_scores(mod):
+    """Decision 12: epic and needs-size still compute score, factors, points."""
+    bad = []
+    for label, given, route, factors, points, score in STOP_ROWS:
+        out = mod.triage(given)
+        got = (out["route"], out["factors"], out["legacy_points"], out["score"])
+        if got != (route, factors, points, score):
+            bad.append((label, got))
     return bad
 
 
 TABLES = {fn.__name__: fn for fn in (
     check_factor_table, check_legacy_table, check_bands, check_overrides,
     check_size_table, check_mechanical, check_unknowns, check_grid,
-    check_output_shape, check_post)}
+    check_output_shape, check_post, check_stop_scores)}
 
 
 def violations(mod):
@@ -611,6 +658,20 @@ MUTATIONS = (
      '                   notify=False,'),
     ("a missing docs_only counts as true",
      '_flag(_field(task, "docs_only"), False)', '_flag(_field(task, "docs_only"), True)'),
+    ("the mechanical post drops the task type",
+     'f"size {size}; mechanical: {task_type}; "', 'f"size {size}; "'),
+    # zeroed before scoring, so score, factors, points and post stay
+    # consistent with each other and only the input tables can tell
+    ("epic does not score its inputs",
+     '    points = legacy_points(legacy, money, factors["systems"])',
+     '    if size in EPIC_SIZES:\n'
+     '        factors, legacy = dict.fromkeys(FACTOR_NAMES, 0), False\n'
+     '    points = legacy_points(legacy, money, factors["systems"])'),
+    ("needs-size does not score its inputs",
+     '    points = legacy_points(legacy, money, factors["systems"])',
+     '    if size is None:\n'
+     '        factors, legacy = dict.fromkeys(FACTOR_NAMES, 0), False\n'
+     '    points = legacy_points(legacy, money, factors["systems"])'),
 )
 
 
@@ -715,17 +776,25 @@ def _walk(root):
     return sorted(found)
 
 
+def _git_env():
+    """The environment without GIT_*: an inherited GIT_DIR or GIT_WORK_TREE
+    would point the listing at some other repository."""
+    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
+
 def _plugin_files(root, git=GIT):
     """Repo-relative POSIX paths of every file under `plugin/` in `root`.
 
-    `git ls-files -z` (NUL-separated, so a non-ASCII or odd name is not
+    `git ls-files -z --cached --others --exclude-standard` (tracked plus
+    untracked-not-ignored, NUL-separated so a non-ASCII or odd name is not
     quoted), else a plain walk when git is absent or `root` is not a work tree.
     """
     if git:
         try:
-            done = subprocess.run([git, "ls-files", "-z", "plugin/"], cwd=root,
-                                  capture_output=True, timeout=120,
-                                  check=False)
+            done = subprocess.run(
+                [git, "ls-files", "-z", "--cached", "--others",
+                 "--exclude-standard", "plugin/"], cwd=root, env=_git_env(),
+                capture_output=True, timeout=120, check=False)
         except (OSError, subprocess.SubprocessError):
             done = None
         if done is not None and done.returncode == 0 and done.stdout:
@@ -743,11 +812,22 @@ def _is_regular(path):
     return stat.S_ISREG(os.stat(path).st_mode)
 
 
+def _own_bytecode(rel):
+    """True for the compiled copy of the module or this file (the walk sees
+    `__pycache__`, and a .pyc names its own source)."""
+    folder, _sep, fname = rel.rpartition("/")
+    if not folder.endswith("__pycache__") or not fname.endswith(".pyc"):
+        return False
+    parent = folder[:-len("__pycache__")]
+    stem = fname.split(".", 1)[0]
+    return any(parent + stem + ".py" == own for own in (ITSELF, THIS))
+
+
 def mentions(root, git=GIT):
     """Files under `plugin/` that name the module, bar the two exact paths."""
     hits = []
     for rel in _plugin_files(root, git):
-        if rel in (ITSELF, THIS):
+        if rel in (ITSELF, THIS) or _own_bytecode(rel):
             continue
         path = os.path.join(root, rel)
         if not _is_regular(path):
@@ -840,6 +920,61 @@ def test_a_non_ascii_name_is_scanned_by_git(tmp_path):
                               capture_output=True, check=False)
         assert done.returncode == 0, done.stderr
     assert mentions(str(tmp_path)) == ["plugin/caf\u00e9 \u65e5\u672c.md"]
+
+
+def _git_repo(tmp_path):
+    """A throwaway repo in `tmp_path`, isolated from the real git config."""
+    if not GIT:
+        pytest.skip("git is not installed")
+    env = _git_env()
+    env.update(HOME=str(tmp_path), USERPROFILE=str(tmp_path))
+    done = subprocess.run([GIT, "init", "-q"], cwd=tmp_path, env=env,
+                          timeout=120, capture_output=True, check=False)
+    assert done.returncode == 0, done.stderr
+    return env
+
+
+def test_an_untracked_file_is_scanned_by_git(tmp_path):
+    env = _git_repo(tmp_path)
+    (tmp_path / "plugin").mkdir()
+    (tmp_path / "plugin" / "tracked.md").write_text("x\n", encoding="utf-8")
+    done = subprocess.run([GIT, "add", "-A"], cwd=tmp_path, env=env,
+                          timeout=120, capture_output=True, check=False)
+    assert done.returncode == 0, done.stderr
+    (tmp_path / "plugin" / "new.md").write_text("crew_triage\n",
+                                                encoding="utf-8")
+    assert mentions(str(tmp_path)) == ["plugin/new.md"]
+
+
+def test_an_inherited_git_dir_does_not_redirect_the_scan(tmp_path,
+                                                          monkeypatch):
+    here, other = tmp_path / "here", tmp_path / "other"
+    for root, fname in ((here, "a.md"), (other, "b.md")):
+        root.mkdir()
+        env = _git_repo(root)
+        (root / "plugin").mkdir()
+        (root / "plugin" / fname).write_text("x\n", encoding="utf-8")
+        done = subprocess.run([GIT, "add", "-A"], cwd=root, env=env,
+                              timeout=120, capture_output=True, check=False)
+        assert done.returncode == 0, done.stderr
+    # a real second repository, so a leaked GIT_DIR lists ITS files rather
+    # than failing into the walk (which would hide the leak)
+    monkeypatch.setenv("GIT_DIR", str(other / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(other))
+    assert _plugin_files(str(here)) == ["plugin/a.md"]
+
+
+def test_the_walk_skips_only_the_own_bytecode(tmp_path):
+    cache = tmp_path / "plugin" / "crew" / "hooks" / "scripts" / "__pycache__"
+    cache.mkdir(parents=True)
+    tests = tmp_path / "plugin" / "crew" / "tests" / "__pycache__"
+    tests.mkdir(parents=True)
+    for folder, fname in ((cache, "crew_triage.cpython-312.pyc"),
+                          (tests, "test_crew_triage.cpython-312-pytest-8.pyc"),
+                          (cache, "other.cpython-312.pyc")):
+        (folder / fname).write_bytes(b"\0crew_triage\0")
+    assert mentions(str(tmp_path), git=None) == [
+        "plugin/crew/hooks/scripts/__pycache__/other.cpython-312.pyc"]
 
 
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs here")
