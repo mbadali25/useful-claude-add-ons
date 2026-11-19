@@ -447,6 +447,9 @@ _NAMES_DROPPED_KEYS = {"crew_dropped.py"}
 _ROLE_PINS = ('a qa/dev role-pin table (kept) or the 0.20 legacy file read by status and migrate, '
               'not the retired top-level key')
 _NOT_A_READER = {
+    ('hooks/scripts/crew_policy.py',
+     'tier = _pick(req.get("tier"), TIERS)'):
+        "a field of the policy table's request dict (dev, qa or prod), not the retired config key",
     ('hooks/scripts/crew_config.py',
      'table = block.get("roles")'):
         _ROLE_PINS,

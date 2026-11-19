@@ -18,6 +18,12 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.173: re-bump only - interim number on the crew_policy branch (PR #794, pushed, never on main) before review fixes changed plugin/crew again; the change is recorded under crew 1.3.174
+- crew 1.3.172: re-bump only - interim number on the crew_policy branch (PR #794, pushed, never on main) before review fixes changed plugin/crew again; the change is recorded under crew 1.3.173
+- crew 1.3.171: re-bump only - interim number on the crew_policy branch (PR #794, pushed, never on main) before review fixes changed plugin/crew again; the change is recorded under crew 1.3.172
+- crew 1.3.170: re-bump only - interim number on the crew_policy branch (PR #794, pushed, never on main) before review fixes changed plugin/crew again; the change is recorded under crew 1.3.171
+- crew 1.3.169: re-bump only - interim number on the crew_policy branch (PR #794, pushed, never on main) before review fixes changed plugin/crew again; the change is recorded under crew 1.3.170
+- crew 1.3.168: re-bump only - interim number on the crew_policy branch (PR #794, pushed, never on main) before review fixes changed plugin/crew again; the change is recorded under crew 1.3.169
 - crew 1.3.164: re-bump only - interim number on the Codex gpt-6.2-sol pin branch (PR #790, pushed, never on main) before plugin/crew changed again in review; the change is recorded under crew 1.3.166
 - crew 1.3.165: re-bump only - interim number on the Codex gpt-6.2-sol pin branch (PR #790, pushed, never on main) before a pylint line-length fix changed plugin/crew again; the change is recorded under crew 1.3.166
 - crew 1.3.113: re-bump only - interim number on the isjunction pylint branch (PR #779, commit c84fa5e31, pushed, never on main) before main reached 1.3.153 and open PR #774 held 1.3.154; the change is recorded under crew 1.3.155
@@ -136,6 +142,14 @@ read entries under any `## [` heading.
 - crew 1.3.160: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); main reached 1.3.161 and open PR #774 holds 1.3.157, so the branch re-bumped to 1.3.162; the change is recorded under crew 1.3.167
 - crew 1.3.159: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); the accepted-value test changed plugin/crew after the number was set, so the branch moved to 1.3.160; the change is recorded under crew 1.3.160
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
+
+### Added — crew 1.3.174: `crew_policy.py`, the one decision table, report-only (R-01)
+
+- **Summary.** `crew` 1.3.174 adds `crew_policy.py`, one table that says what crew would allow, ask about or refuse for an operation, with the reason; nothing calls it yet, so no allow or deny anywhere changes.
+- **What.** `plugin/crew/hooks/scripts/crew_policy.py` is the deny-first table of the revision-3 crew revamp plan (section 4.3, ticket R-01): never lane, machine layer and account, the one-way list, tier, admin need, the serious list with its plan-of-record rule, then reads, destructive, conditional and free. `decide` returns `allow`, `ask-routine`, `ask-owner`, `needs-plan` or `deny`; `explain` prints every rule it looked at. Every unknown (tier, protection, ownership, operation, account, machine layer, presence) takes the stricter branch. The operating mode is not an input.
+- **Inert.** Nothing imports it and no hook, command or config key refers to it; `test_crew_policy.py` fails if one does. A later ticket switches it on.
+- **Tests.** `test_crew_policy.py`: a positive and a negative case for every operation, the unknown cases, rule order, the whole table under both modes, a grid that proves nothing forbidden is ever allowed, the CLI, the inertness, and 53 weakened copies of the module that each must fail. Run it as `python3 plugin/crew/hooks/scripts/crew_policy.py explain '<json>'`.
+- **Not verified.** The table is a reading of the plan, not yet measured against real guard decisions; where the plan is silent the module's docstring lists the reading chosen.
 
 ### Fixed — crew 1.3.167: the Stop budget reader agrees with the writer (harness-only)
 

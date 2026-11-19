@@ -20,23 +20,22 @@ repairs and the rest.
 
 | # | Ticket | Title | Size | Model | Harness | Phase |
 |---|---|---|---|---|---|---|
-| 1 | [R-01](docs/tickets/pending/R-01.md) | `crew_policy.py` decision table, report-only, with `explain` | M | Opus 5.5 |  | 0 |
-| 2 | [R-04](docs/tickets/pending/R-04.md) | `crew_paths.py`: machine-owned roots and the deletion helper | M | Opus 5.5 |  | 0 |
-| 3 | [R-06](docs/tickets/pending/R-06.md) | Measure what a crew-launched headless run reports as the answering model and whether a fallback shows; exercise the direct API path and its response metadata too | S | Fable 5.2 |  | 0 |
-| 4 | [R-07](docs/tickets/pending/R-07.md) | Measure the two attestation forms: an owner-presence signing key on Windows and Linux, and a forge review by the owner while agents use a separate account | S | Fable 5.2 |  | 0 |
-| 5 | [R-02](docs/tickets/pending/R-02.md) | Reproduce the host damage in a disposable VM with write auditing | M | Opus 5.5 |  | 0 |
-| 6 | [R-05](docs/tickets/pending/R-05.md) | Machine-owned tier map, report-only | S | Opus 5.5 |  | 0 |
-| 7 | [R-10](docs/tickets/pending/R-10.md) | Provider registry; one probe per attempt | M | Opus 5.5 | H | 1 |
-| 8 | [R-20](docs/tickets/pending/R-20.md) | Store tripwire stops refusing everyday commands | S | Opus 5.5 | H | 2 |
-| 9 | [R-21](docs/tickets/pending/R-21.md) | ADR and measurement: is a blocked prompt's hook text shown; does a plain reply arrive unchanged | S | Fable 5.2 |  | 2 |
-| 10 | [R-C1](docs/tickets/pending/R-C1.md) | Registry completeness: every key has a plain-language line, allowed values, a layer class and its arrival version | S | Sonnet 5.5 |  | 13 |
-| 11 | [R-03](docs/tickets/pending/R-03.md) | Capture one refused IAM write and one refused dispatch | S | Haiku 5.5 |  | 0 |
-| 12 | [R-3B](docs/tickets/pending/R-3B.md) | CLAUDE.md wording for O1 | S | Sonnet 5.5 |  | 4 |
-| 13 | [R-42](docs/tickets/pending/R-42.md) | Backup evidence, first provider (AWS RDS snapshots) | M | Opus 5.5 |  | 7 |
-| 14 | [R-54](docs/tickets/pending/R-54.md) | Scope guard allowance for the active ticket's handoff file | S | Opus 5.5 | H | 8 |
-| 15 | [R-70](docs/tickets/pending/R-70.md) | `crew_triage.py` | S | Sonnet 5.5 |  | 10 |
-| 16 | [R-72](docs/tickets/pending/R-72.md) | Status maps and event ids for all four trackers | M | Opus 5.5 |  | 10 |
-| 17 | [R-80](docs/tickets/pending/R-80.md) | Tiers and slices in `gate-runner.py` | M | Sonnet 5.5 |  | 11 |
+| 1 | [R-04](docs/tickets/pending/R-04.md) | `crew_paths.py`: machine-owned roots and the deletion helper | M | Opus 5.5 |  | 0 |
+| 2 | [R-06](docs/tickets/pending/R-06.md) | Measure what a crew-launched headless run reports as the answering model and whether a fallback shows; exercise the direct API path and its response metadata too | S | Fable 5.2 |  | 0 |
+| 3 | [R-07](docs/tickets/pending/R-07.md) | Measure the two attestation forms: an owner-presence signing key on Windows and Linux, and a forge review by the owner while agents use a separate account | S | Fable 5.2 |  | 0 |
+| 4 | [R-02](docs/tickets/pending/R-02.md) | Reproduce the host damage in a disposable VM with write auditing | M | Opus 5.5 |  | 0 |
+| 5 | [R-05](docs/tickets/pending/R-05.md) | Machine-owned tier map, report-only | S | Opus 5.5 |  | 0 |
+| 6 | [R-10](docs/tickets/pending/R-10.md) | Provider registry; one probe per attempt | M | Opus 5.5 | H | 1 |
+| 7 | [R-20](docs/tickets/pending/R-20.md) | Store tripwire stops refusing everyday commands | S | Opus 5.5 | H | 2 |
+| 8 | [R-21](docs/tickets/pending/R-21.md) | ADR and measurement: is a blocked prompt's hook text shown; does a plain reply arrive unchanged | S | Fable 5.2 |  | 2 |
+| 9 | [R-C1](docs/tickets/pending/R-C1.md) | Registry completeness: every key has a plain-language line, allowed values, a layer class and its arrival version | S | Sonnet 5.5 |  | 13 |
+| 10 | [R-03](docs/tickets/pending/R-03.md) | Capture one refused IAM write and one refused dispatch | S | Haiku 5.5 |  | 0 |
+| 11 | [R-3B](docs/tickets/pending/R-3B.md) | CLAUDE.md wording for O1 | S | Sonnet 5.5 |  | 4 |
+| 12 | [R-42](docs/tickets/pending/R-42.md) | Backup evidence, first provider (AWS RDS snapshots) | M | Opus 5.5 |  | 7 |
+| 13 | [R-54](docs/tickets/pending/R-54.md) | Scope guard allowance for the active ticket's handoff file | S | Opus 5.5 | H | 8 |
+| 14 | [R-70](docs/tickets/pending/R-70.md) | `crew_triage.py` | S | Sonnet 5.5 |  | 10 |
+| 15 | [R-72](docs/tickets/pending/R-72.md) | Status maps and event ids for all four trackers | M | Opus 5.5 |  | 10 |
+| 16 | [R-80](docs/tickets/pending/R-80.md) | Tiers and slices in `gate-runner.py` | M | Sonnet 5.5 |  | 11 |
 
 ## All tickets by phase
 
@@ -44,7 +43,7 @@ repairs and the rest.
 
 | Ticket | Title | Size | Model | H | Depends | Status |
 |---|---|---|---|---|---|---|
-| [R-01](docs/tickets/pending/R-01.md) | `crew_policy.py` decision table, report-only, with `explain` | M | Opus 5.5 |  | — | READY |
+| [R-01](docs/tickets/pending/R-01.md) | `crew_policy.py` decision table, report-only, with `explain` | M | Opus 5.5 |  | — | done (PR #794) |
 | [R-02](docs/tickets/pending/R-02.md) | Reproduce the host damage in a disposable VM with write auditing | M | Opus 5.5 |  | — | READY |
 | [R-03](docs/tickets/pending/R-03.md) | Capture one refused IAM write and one refused dispatch | S | Haiku 5.5 |  | — | READY |
 | [R-04](docs/tickets/pending/R-04.md) | `crew_paths.py`: machine-owned roots and the deletion helper | M | Opus 5.5 |  | — | READY |
