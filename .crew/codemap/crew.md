@@ -1018,16 +1018,16 @@ DERIVED on `feat/worktrees-root` (cut from main `e65a067a4`); this section does
 not move the anchor. One leaf, `worktrees.root`, default `null` in both templates
 (`plugin/crew/hooks/scripts/crew_config.py` `default_config` and
 `default_global_config`; `crew_state.WORKTREES_DEFAULTS`). The reader is
-`plugin/crew/hooks/scripts/crew_worktrees.py:129` (`resolve`): a value that is
+`plugin/crew/hooks/scripts/crew_worktrees.py:130` (`resolve`): a value that is
 not a non-empty string, not absolute after `~` expansion, or inside the main
 checkout is a `problem` and `dir` stays `None` (never the default); the
 directory is `<base>/<repo>-<digest>` from `crew_state._repo_digest` of the main
 checkout (first `git worktree list` record). `crew_state.py --worktree-path`
-answers through it and exits 2 on a problem. `classify` (`:202`) marks a
+answers through it and exits 2 on a problem. `classify` (`:208`) marks a
 worktree removable only when status, unpushed (`rev-list HEAD --not --remotes`),
 merge into the default ref, lock and age all prove it, every failed probe being
-`could not tell`; `remove` (`:280`) needs `--yes` and runs `git worktree remove`
-without `--force`. `hook_create` (`:348`) and `hook_remove` are the entry points
+`could not tell`; `remove` (`:287`) needs `--yes` and runs `git worktree remove`
+without `--force`. `hook_create` (`:355`) and `hook_remove` are the entry points
 of Claude Code's `WorktreeCreate` / `WorktreeRemove` hooks (replacing git's
 creation; documented behaviour, not run against the live CLI);
 `crew_wave._init_refusal` admits a lane under the same directory. JUDGEMENT:
@@ -1037,6 +1037,32 @@ replaces creation for every user is the owner's to opt into, so
 `plugin/crew/tests/test_crew_worktrees.py`; mutations
 `plugin/crew/tests/worktrees_mutations.py` (17, run alone: `sabotage*.py` is
 harness).
+
+## Machine-owned run folders and the safe delete (`crew_paths.py`, R-04)
+
+DERIVED on `feat/r-04-crew-paths` (cut from main `fa68b4f4c`); this section and
+the `crew_worktrees.py` line numbers above (`:130`, `:208`, `:287`, `:355`,
+re-measured after the `_leaf` extract) do not move the anchor: the rest of this
+map was not re-derived. `crew_worktrees._leaf` (`crew_worktrees.py:162`) holds
+the `<leaf>` expression once; `resolve` calls it at `:158` and
+`crew_paths.repo_key` (`plugin/crew/hooks/scripts/crew_paths.py:311`) calls it
+too, so a worktree, review and scratch folder share one `<leaf>-<digest>`.
+`crew_paths.layout` (`:233`) reads the MACHINE layer only
+(`crew_config.read_global_config`); `explain` (`:982`) reports a repo
+`worktrees.root` as ignored. `test_root_problem` (`:283`) gates
+`$CREW_TEST_ROOT`. `make_run_dir` (`:934`) creates a run folder exclusively and
+writes `.crew-owner.json` through a temp file and `os.replace`.
+`delete_run_dir` (`:848`) never raises: `string_problem` (`:399`, run on the
+path and its realpath), `_anchor_problem` (`:456`), `_component_problem`
+(`:463`), `_read_record` (`:479`), the root identity capture, `_prescan`
+(`:596`, with `_mount_problem` `:568` reading `/proc/self/mountinfo`), then
+`_walk_posix` (`:799`, `dir_fd` and `O_NOFOLLOW` throughout, `fchmod` through a
+verified fd) or `_walk_windows` (`:735`, identity re-checked per entry;
+`_win_readonly` `:706` clears READONLY through a verified handle and deletes a
+multi-link read-only file by name with `FileDispositionInfoEx`). JUDGEMENT:
+nothing calls it yet (R-50 to R-53, R-60 will); it is not a hook, so it ships
+inert. Tests `plugin/crew/tests/test_crew_paths.py`; mutations
+`plugin/crew/tests/paths_mutations.py` (split by OS, run alone).
 
 **1.3.33 (PR 2 of 3, harness only).** DERIVED: `crew_ticket.cli_approval_allowed`
 (`plugin/crew/hooks/scripts/crew_ticket.py`) returns True when

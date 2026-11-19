@@ -18,6 +18,8 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.186: re-bump only - interim number on the crew-paths branch (PR #803, commit 394002c5f, pushed, never on main) before an ALLOWED row for crew_paths.py in test_worktree_config.py changed plugin/crew again; the change is recorded under crew 1.3.187
+- crew 1.3.185 (R-04): re-bump only - interim number on the crew-paths branch (PR #803, commits f694b76ab and 169ac8467, pushed, never on main) before PR #802 landed 1.3.185 for R-33; the R-04 change is recorded under crew 1.3.187
 - crew 1.3.184: re-bump only - interim number on the Never-lane tripwire branch (PR #802, commit 94f7586b8, pushed, never on main) before main moved to 1.3.183 (PR #801) and was merged in; the change is recorded under crew 1.3.185
 - crew 1.3.180: re-bump only - interim number on the protected-policy comparator branch (PR #798, commit 6e6d7033, pushed, never on main) before an ALLOWED row for crew_protected.py in test_worktree_config.py changed plugin/crew again; the change is recorded under crew 1.3.181
 - crew 1.3.178: re-bump only - interim number on the Actions schema branch (PR #797, commit 43dc06fd6, pushed, never on main) before a short-test-id fix in test_crew_actions.py changed plugin/crew again; the change is recorded under crew 1.3.179
@@ -146,6 +148,12 @@ read entries under any `## [` heading.
 - crew 1.3.160: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); main reached 1.3.161 and open PR #774 holds 1.3.157, so the branch re-bumped to 1.3.162; the change is recorded under crew 1.3.167
 - crew 1.3.159: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); the accepted-value test changed plugin/crew after the number was set, so the branch moved to 1.3.160; the change is recorded under crew 1.3.160
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
+
+### Added — crew 1.3.187: `crew_paths.py`, machine-owned run folders and the one safe delete (R-04)
+
+- **Summary.** `crew` 1.3.187 adds one resolver for every crew run folder, read from the machine config layer only, and the single recursive delete crew will use; nothing calls it yet.
+- **What.** New `hooks/scripts/crew_paths.py` resolves the `scratch`, `review`, `sandbox` and `tests` run folders, creates each exclusively with a `.crew-owner.json` record, and gives `delete_run_dir`, which refuses (changing nothing) unless the path passes string checks, a link walk anchored at the resolved root, the ownership record and a read-only pre-scan for mounts; the walk never follows a link, and links inside a run are removed as links. `crew_paths.py explain` reports an ignored repo `worktrees.root`; `check-delete <path> --run-id ID` is a dry run. `crew_worktrees.py` shares its helper.
+- **Tests.** `test_crew_paths.py` (link, junction, mount-crossing and root-replacement cases on Windows and Linux) and the `paths_mutations.py` sabotage rows.
 
 ### Added — crew 1.3.185: `crew_never.py`, the Never-lane command tripwire and shared redactor, report-only (R-33)
 
