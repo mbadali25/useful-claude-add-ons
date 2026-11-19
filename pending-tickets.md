@@ -34,7 +34,6 @@ repairs and the rest.
 | 12 | [R-54](docs/tickets/pending/R-54.md) | Scope guard allowance for the active ticket's handoff file | S | Opus 5.5 | H | 8 |
 | 13 | [R-70](docs/tickets/pending/R-70.md) | `crew_triage.py` | S | Sonnet 5.5 |  | 10 |
 | 14 | [R-72](docs/tickets/pending/R-72.md) | Status maps and event ids for all four trackers | M | Opus 5.5 |  | 10 |
-| 15 | [R-80](docs/tickets/pending/R-80.md) | Tiers and slices in `gate-runner.py` | M | Sonnet 5.5 |  | 11 |
 
 ## All tickets by phase
 
@@ -186,7 +185,7 @@ repairs and the rest.
 
 | Ticket | Title | Size | Model | H | Depends | Status |
 |---|---|---|---|---|---|---|
-| [R-80](docs/tickets/pending/R-80.md) | Tiers and slices in `gate-runner.py` | M | Sonnet 5.5 |  | — | READY |
+| [R-80](docs/tickets/pending/R-80.md) | Tiers and slices in `gate-runner.py` | M | Sonnet 5.5 |  | — | done (PR #799) |
 | [R-81](docs/tickets/pending/R-81.md) | Verify gate: fast per round, heavy at Gate, shard completeness | M | Opus 5.5 | H | R-80, R-53 | blocked: R-80, R-53 |
 | [R-82](docs/tickets/pending/R-82.md) | Web test and doc slices; smoke template | S | Sonnet 5.5 |  | R-80 | blocked: R-80 |
 
