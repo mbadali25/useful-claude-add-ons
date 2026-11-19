@@ -505,7 +505,7 @@ def redact(text, env=None):
 
 
 def _main(argv):
-    parser = argparse.ArgumentParser(prog="crew_never.py", description=__doc__.split("\n\n")[0])
+    parser = argparse.ArgumentParser(prog="crew_never.py", description=__doc__.split("\n\n", maxsplit=1)[0])
     sub = parser.add_subparsers(dest="action", required=True)
     one = sub.add_parser("judge")
     one.add_argument("--shell", choices=("bash", "powershell"), default="bash")
