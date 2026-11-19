@@ -18,6 +18,7 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.178: re-bump only - interim number on the Actions schema branch (PR #797, commit 43dc06fd6, pushed, never on main) before a short-test-id fix in test_crew_actions.py changed plugin/crew again; the change is recorded under crew 1.3.179
 - crew 1.3.175: re-bump only - interim number on the registry-completeness branch (PR #795, commit aa15361e2, pushed, never on main) before a pylint line-length fix changed plugin/crew again; the change is recorded under crew 1.3.176
 - crew 1.3.173: re-bump only - interim number on the crew_policy branch (PR #794, pushed, never on main) before review fixes changed plugin/crew again; the change is recorded under crew 1.3.174
 - crew 1.3.172: re-bump only - interim number on the crew_policy branch (PR #794, pushed, never on main) before review fixes changed plugin/crew again; the change is recorded under crew 1.3.173
@@ -144,12 +145,12 @@ read entries under any `## [` heading.
 - crew 1.3.159: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); the accepted-value test changed plugin/crew after the number was set, so the branch moved to 1.3.160; the change is recorded under crew 1.3.160
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
-### Added — crew 1.3.178: `crew_actions.py`, the Actions schema per kind, report-only (R-30)
+### Added — crew 1.3.179: `crew_actions.py`, the Actions schema per kind, report-only (R-30)
 
-- **Summary.** `crew` 1.3.178 adds `crew_actions.py`, one closed schema for a plan's Actions block that says whether each planned action is well formed and why not; nothing calls it yet, so no guard or command changes.
+- **Summary.** `crew` 1.3.179 adds `crew_actions.py`, one closed schema for a plan's Actions block that says whether each planned action is well formed and why not; nothing calls it yet, so no guard or command changes.
 - **What.** `plugin/crew/hooks/scripts/crew_actions.py` defines nine kinds (the six of plan 4.4's table plus typed `payment`, `account-create` and `admin-identity-op`). Only `form: "exact"` passes (`envelope` is `envelope-not-supported`); every kind carries a `tier`; objects are closed; int fields take JSON integers only; `*` and `?` are refused outside `inputs` values and `deletes`; `inputs` keys are identifiers; money is a decimal string; two actions with one `id`, or equal but for `id`, are refused. `parse()` never raises and reports `bad-utf8`, `invalid-json` and `non-finite-number`; repeated keys are reported at any depth. CLI: `validate <file|->` exits 0 valid, 1 invalid, 2 unreadable; `kinds` prints the schema.
 - **Inert.** Nothing imports it; `test_crew_actions.py` fails if any other file under `plugin/` mentions it. R-31 (matcher) and R-P1 (plan of record) wire it.
-- **Tests.** `test_crew_actions.py` replays a must-allow and a must-reject table against the module and 28 weakened copies of its source, each of which must fail; `test_crew_keys.py` pins the action's `tier` field as not the retired config key.
+- **Tests.** `test_crew_actions.py` replays a must-allow and a must-reject table against the module and 28 weakened copies of its source, each of which must fail (the parse table carries short ids: the default id of its 100000-bracket input overflowed Windows' 32767-character environment limit in CI); `test_crew_keys.py` pins the action's `tier` field as not the retired config key.
 - **Not verified.** The schema is checked only against the plan's table and the tests' cases, not against real plans, since none use it yet.
 
 ### Added — crew 1.3.177: `crew_triage.py`, size route, difficulty score and starting model, report-only (R-70)

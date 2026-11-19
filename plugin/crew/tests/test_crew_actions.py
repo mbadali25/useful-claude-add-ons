@@ -420,7 +420,10 @@ def test_parse_returns_the_document_for_text_and_bytes():
     (b"\xff\xfe{}", "bad-utf8"), (b"\xef\xbb\xbf{}", "bad-utf8"), ("\ufeff{}", "bad-utf8"),
     ("", "invalid-json"), ('{"schema": ', "invalid-json"), ("[" * 100000, "invalid-json"),
     ('{"n": ' + "9" * 5000 + "}", "invalid-json"), ("[NaN]", "non-finite-number"),
-    ("[-Infinity]", "non-finite-number"), (None, "invalid-json"), (12, "invalid-json")])
+    ("[-Infinity]", "non-finite-number"), (None, "invalid-json"), (12, "invalid-json")],
+    # Short ids: the default id of the 100000-bracket input overflows Windows' 32767-char env limit.
+    ids=["ff-fe", "bom-bytes", "bom-text", "empty", "truncated", "too-deep", "long-int", "nan",
+         "neg-infinity", "none", "int"])
 def test_parse_never_raises_and_returns_one_error(data, code):
     parsed, errors = A.parse(data)
     assert parsed is None
