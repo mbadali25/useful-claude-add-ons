@@ -17,7 +17,10 @@ Input: one request, a dict.
                 (including absent) trips rule 2, never passes it
     account     read-verified | write-verified | mismatch | fail |
                 could-not-tell | none; checked only for operations that use
-                an account, and only the exact access level passes
+                an account, and only the exact access level passes. A key
+                that is present with any other value (a typo, a number,
+                null, a list) is UNKNOWN and stops at rule 2 for every
+                operation (R-P6 D6); an absent key means no account reported
     provenance  plan-of-record | standing-plan | decider-approved-plan |
                 record | none
     plan_covers, attested     True only if shown (see rule 5). plan_covers
@@ -36,6 +39,16 @@ Input: one request, a dict.
     emergency   a dict naming the owner, incident, target, action, expiry
                 and uses left (see below); anything else is no emergency
     facts       per-operation facts (ownership, protection, backup, ...)
+    effects     what the action does, as answers to the closed questions in
+                `EFFECT_QUESTIONS` (R-P6, 4.13); see `classify`. Read only
+                when the key is present, whatever its value. Its classes are
+                added to the table's own and never remove one, so effects
+                never lower an outcome: a cost estimate under the threshold
+                does not stand in for facts.estimate_under_threshold. Rule
+                2's account check runs with and without them; both must
+                pass. Effects must be derived from the operation and the
+                provider, never from prose: the classifier is only as
+                truthful as the answers it is given
 
 Every field is read the same way: a value that is missing, of the wrong
 type, or not in the closed list is UNKNOWN, and unknown never takes the
@@ -83,14 +96,24 @@ Readings this file chooses where the plan is silent (each is a test):
     the merge review condition (the timing waiver is not modelled) and never
     lifts a deny, a needs-plan or a backup.
 
-CLI (report-only, always exits 0 for a decision):
+CLI (report-only, exits 0 for a decision):
     crew_policy.py explain '<json>'     or  ... explain -   (stdin)
     crew_policy.py decide  '<json>'
+    crew_policy.py classify '<json>'    (the same request; reads only its
+                                         effects and tier, default threshold)
     crew_policy.py operations
-Unreadable JSON exits 2 with the reason on stderr and prints no decision.
+One strict reader takes the request for every verb, and anything it or the
+verb cannot handle exits 2 with one line on stderr and nothing on stdout:
+a body over MAX_REQUEST_BYTES, bytes that are not UTF-8, text that is not
+JSON, a name given twice in one object, NaN or Infinity, a number token
+longer than MAX_NUMBER_CHARS, a fraction the pinned decimal context
+refuses (out of range or not exact), nesting deeper than MAX_DEPTH, and any
+error while deciding or writing the answer. The answer is built in full
+before anything is written.
 """
 from __future__ import annotations
 
+import decimal
 import json
 import sys
 from typing import Any, NamedTuple, Optional
@@ -332,6 +355,234 @@ def _own_class(spec: Op, tier: str, facts: dict) -> Optional[str]:
     return None
 
 
+# --- the serious classifier (R-P6, 4.13) -----------------------------------
+#
+# One action's effects, as answers to a closed set of questions. Every
+# question is required: a missing, mistyped or unlisted answer counts as the
+# serious one (could not tell is serious). A key that is not a question is an
+# effect the classifier cannot place, so UNPLACED; the known keys are still
+# read. Effects that are not an object give exactly UNPLACED.
+
+PERMISSION_CHANGES = ("none", "temporary-listed", "temporary-unlisted",
+                      "permanent")
+ADMIN_USES = ("none", "grantable-profile-temporary", "other")
+DESTROYS = ("none", "own", "not-own")
+BACKUPS = ("provable", "no-state-change")
+
+# key -> the closed answer list (None: a bool; "cost": see _cost).
+EFFECT_QUESTIONS = {
+    "spends": None,
+    "monthly_cost": "cost",
+    "writes": None,
+    "permission_change": PERMISSION_CHANGES,
+    "creates_account": None,
+    "admin_use": ADMIN_USES,
+    "destroys": DESTROYS,
+    "reversible": None,
+    "outside_effect": None,
+    "backup": BACKUPS,
+}
+
+# Plan section 8. No config key sets it yet (R-P6 D7): the key must be a
+# protected one, and that protection has not landed.
+DEFAULT_COST_THRESHOLD_USD_MONTH = 50
+# A threshold given to `classify` above this is not a threshold: 0 applies.
+MAX_COST_THRESHOLD = 10 ** 9
+
+UNDER = "under"
+OVER = "over"
+CANNOT_ESTIMATE = "cannot-estimate"
+
+# The one decimal context every number is read in (R-P6 D5). It is a
+# template: nothing calls a method on it or installs it; `_exact` reads in a
+# copy, so a refusal never leaves a flag on it and the caller's own context
+# is never read or changed. Every signal is trapped, so a value that would
+# round, overflow, underflow or be clamped is refused, never approximated.
+_DECIMAL = decimal.Context(
+    prec=34, rounding=decimal.ROUND_HALF_EVEN, Emax=999, Emin=-999,
+    capitals=1, clamp=0, flags=[],
+    traps=[decimal.Clamped, decimal.DivisionByZero, decimal.InvalidOperation,
+           decimal.Overflow, decimal.Subnormal, decimal.Underflow,
+           decimal.FloatOperation,
+           decimal.Inexact, decimal.Rounded])
+
+
+def _exact(value: Any, signed: bool = False) -> Optional[decimal.Decimal]:
+    """`value` (an int, a float, a Decimal or a JSON number token) as a
+    finite Decimal read in a copy of `_DECIMAL`, or None when it is not
+    finite or, unless `signed`, below zero. A value the pinned context
+    refuses raises its trapped signal (an ArithmeticError). A float is read
+    through repr(), its shortest exact text. The only place in this file that
+    makes a Decimal."""
+    with decimal.localcontext(_DECIMAL) as ctx:
+        number = ctx.create_decimal(
+            repr(value) if isinstance(value, float) else value)
+        if number.is_finite() and (signed or number >= 0):
+            return number
+    return None
+
+
+def _amount(value: Any) -> Optional[decimal.Decimal]:
+    """A finite amount >= 0 that is not a bool, as an exact Decimal, else
+    None. Anything the pinned context refuses is no amount."""
+    if isinstance(value, bool) or not isinstance(
+            value, (int, float, decimal.Decimal)):
+        return None
+    try:
+        return _exact(value)
+    except ArithmeticError:
+        return None
+
+
+def _threshold(threshold: Any) -> tuple:
+    """(the threshold applied, True when it is the default or the one given).
+    One that is not an amount, or is over MAX_COST_THRESHOLD, reads as 0, the
+    strictest value: an invalid threshold must never widen (D7)."""
+    if threshold is None:
+        return _exact(DEFAULT_COST_THRESHOLD_USD_MONTH), True
+    limit = _amount(threshold)
+    if limit is None or limit > MAX_COST_THRESHOLD:
+        return _exact(0), False
+    return limit, True
+
+
+def _cost(estimate: Any, limit: decimal.Decimal) -> str:
+    """UNDER, OVER or CANNOT_ESTIMATE for one monthly cost estimate.
+
+    Only {"amount": n, "currency": "USD", "period": "month"} is an estimate;
+    any other shape, currency or period cannot be compared without a rate
+    source, so it cannot be estimated (counted as over, 4.5). Over means
+    strictly over the threshold. Both sides are finite Decimals, and their
+    comparison is exact in any context."""
+    if not isinstance(estimate, dict):
+        return CANNOT_ESTIMATE
+    if set(estimate) != {"amount", "currency", "period"}:
+        return CANNOT_ESTIMATE   # an extra or missing key is not the shape
+    amount = _amount(estimate.get("amount"))
+    currency = _pick(estimate.get("currency"), ("usd",))
+    period = _pick(estimate.get("period"), ("month",))
+    if amount is None or currency != "usd" or period != "month":
+        return CANNOT_ESTIMATE
+    return OVER if amount > limit else UNDER
+
+
+def _verdict(found: dict, cost: str) -> dict:
+    """The classifier's answer, built from {class: [reasons]}."""
+    classes = frozenset(found)
+    return {"classes": sorted(classes), "primary": _primary(classes),
+            "reasons": {c: "; ".join(r) for c, r in found.items()},
+            "placed": UNPLACED not in classes, "cost": cost}
+
+
+def classify(effects: Any, tier: Any, threshold: Any = None) -> dict:
+    """Place one action's effects into the closed serious list (4.13).
+
+    Returns {"classes": sorted list, "primary": the strictest by _PRIORITY or
+    None, "reasons": {class: text}, "placed": False exactly when UNPLACED is
+    in classes, "cost": UNDER | OVER | CANNOT_ESTIMATE}. A tier that is not
+    dev or qa counts as prod here (a write to an unknown tier may be a
+    production write); decide's rule 3 still refuses an unknown tier first.
+    `threshold` None is the default, in USD a month. A reason never prints
+    a rejected threshold or amount, only that it was rejected."""
+    limit, valid = _threshold(threshold)
+    if not isinstance(effects, dict):
+        return _verdict({UNPLACED: ["effects is not an object, so no effect "
+                                    "in it can be placed"]}, CANNOT_ESTIMATE)
+    found: dict = {}
+
+    def add(cls: str, text: str) -> None:
+        found.setdefault(cls, []).append(text)
+
+    extra = [k for k in effects if k not in EFFECT_QUESTIONS]
+    if extra:
+        names = sorted(k[:64] for k in extra if isinstance(k, str))
+        add(UNPLACED, "no question for effect "
+            + (", ".join(names) or "keys that are not text"))
+    prod = _pick(tier, TIERS) not in ("dev", "qa")
+
+    if effects.get("spends") is not False:
+        add(MONEY, "spends is True, missing or not a bool")
+    cost = _cost(effects.get("monthly_cost"), limit)
+    if cost != UNDER:
+        add(MONEY, f"monthly cost is {cost} (threshold {limit} USD a month"
+            + ("" if valid else "; the given threshold is not a valid "
+                                "amount, so 0 applies") + ")")
+    # Only a known False is benign in every tier. True is tied to the tier
+    # (a dev or QA write is not a production write); an answer that cannot
+    # be read is a production write in every tier (could not tell).
+    writes = effects.get("writes")
+    if writes is not False and (prod or writes is not True):
+        add(PRODUCTION_WRITE, "writes is True and the tier is not dev or qa"
+            if writes is True else "writes is missing or not a bool")
+    perm = _pick(effects.get("permission_change"), PERMISSION_CHANGES)
+    if perm not in ("none", "temporary-listed") or (prod and perm != "none"):
+        add(PERMISSION_CHANGE, f"permission change is {perm}"
+                               + (" outside dev or qa" if prod else ""))
+    if effects.get("creates_account") is not False:
+        add(ACCOUNT_CREATION, "creates_account is True, missing or not a bool")
+    admin = _pick(effects.get("admin_use"), ADMIN_USES)
+    if admin != "none" and not (admin == "grantable-profile-temporary"
+                                and not prod):
+        add(ADMIN_USE, f"admin use is {admin}"
+                       + (" outside dev or qa" if prod else ""))
+    destroys = _pick(effects.get("destroys"), DESTROYS)
+    if destroys not in ("none", "own"):
+        add(DESTROY_NOT_OWNED, f"destroys is {destroys}")
+    if (effects.get("reversible") is not True
+            or effects.get("outside_effect") is not False):
+        add(IRREVERSIBLE, "reversible is not True, or outside_effect is not "
+                          "False")
+    if _pick(effects.get("backup"), BACKUPS) == UNKNOWN:
+        add(NO_PROVABLE_BACKUP, "backup is not provable or no-state-change")
+    return _verdict(found, cost)
+
+
+def _request_tier(req: dict) -> str:
+    """The request's tier: dev, qa, prod or UNKNOWN. The one reader of it."""
+    tier = _pick(req.get("tier"), TIERS)
+    return tier
+
+
+_ADMIN_CLASSES = frozenset({ADMIN_USE, ACCOUNT_CREATION})
+
+
+def _account_stop(req: dict, spec: Op, tier: str, classes: frozenset,
+                  walk: Any) -> Optional[str]:
+    """Rule 2's account check for one class set: why it stops, or None."""
+    needs_admin = spec.admin or bool(classes & _ADMIN_CLASSES)
+    # A production write by any route uses the verified write account; an
+    # admin operation goes through the broker instead (4.14).
+    # A class in production asks for the write account even where the row
+    # itself would take a read account (a read classified as a write).
+    # An admin operation holds no session account at all (the else branch).
+    access = None if needs_admin else "write" if (
+        tier == "prod" and classes and spec.lane not in (HUMAN, NEVER)
+    ) else spec.account
+    if access:
+        account = _pick(req.get("account"), ACCOUNTS)
+        walk.look("2", f"account {account}, needs {access}-verified")
+        if account != access + "-verified":
+            return (f"account is {account}, not the verified {access} "
+                    "account the tier map names")
+        return None
+    other = _pick(req.get("account"), ACCOUNTS)
+    bad = ("mismatch", "fail", "could-not-tell")
+    if "account" in req:
+        # D6: an account that was reported but is not in the closed list
+        # (a typo, a number, null) could not be checked, so it stops; only
+        # an absent key means "no account reported".
+        bad += (UNKNOWN,)
+    # An admin operation runs in the broker (4.14): the session holds no
+    # credential for it, so a verified read or write account in use is
+    # the wrong credential, not a pass.
+    if needs_admin:
+        bad += ("read-verified", "write-verified")
+    if other in bad:
+        walk.look("2", f"account {other} (identity does not check out)")
+        return f"account is {other}"
+    return None
+
+
 GRANT_FACTS = (("expiry_provable", True), ("within_ceiling", True),
                ("crew_account_exists", True), ("provider_ticket", True),
                ("ownership", "own"))
@@ -407,7 +658,7 @@ def decide(request: Any) -> dict:
     facts = req.get("facts") if isinstance(req.get("facts"), dict) else {}
     name = req.get("operation")
     name = name.strip().lower() if isinstance(name, str) else ""
-    tier = _pick(req.get("tier"), TIERS)
+    tier = _request_tier(req)
     attended = _pick(req.get("presence"), PRESENCE) == "attended"
     stop_outcome = ASK_OWNER if attended else DENY
     stop_word = "attended: ask the owner" if attended else "unattended: deny"
@@ -431,6 +682,18 @@ def decide(request: Any) -> dict:
     # classifier adds (classified_as) pulls in the same requirements the
     # operation's own class would: a tier, the write account, an admin need.
     classes = _classes(spec, tier, facts, req.get("classified_as"))
+    base = classes
+    # The effects (R-P6) are read when the key is present, whatever its
+    # value, and only ever add classes (D3, D8).
+    effect = classify(req["effects"], tier) if "effects" in req else None
+    if effect is not None:
+        classes = base | frozenset(effect["classes"])
+        walk.look("-", "effects add "
+                       + (", ".join(effect["classes"]) or "no class"))
+    unplaced_what = (
+        "an effect has no question in the closed effects schema"
+        if UNPLACED in classes and UNPLACED not in base
+        else "the operation is not in the closed table")
     needs_admin = spec.admin or bool(classes & {ADMIN_USE, ACCOUNT_CREATION})
 
     walk.look("1", "never lane?")
@@ -442,33 +705,14 @@ def decide(request: Any) -> dict:
     if layer != "clear":
         return done("2", stop_outcome,
                     f"machine layer is {layer} ({stop_word})")
-    # A production write by any route uses the verified write account; an
-    # admin operation goes through the broker instead (4.14).
-    # A class in production asks for the write account even where the row
-    # itself would take a read account (a read classified as a write).
-    # An admin operation holds no session account at all (the else branch).
-    access = None if needs_admin else "write" if (
-        tier == "prod" and classes and spec.lane not in (HUMAN, NEVER)
-    ) else spec.account
-    if access:
-        account = _pick(req.get("account"), ACCOUNTS)
-        walk.look("2", f"account {account}, needs {access}-verified")
-        if account != access + "-verified":
-            return done("2", stop_outcome,
-                        f"account is {account}, not the verified {access} "
-                        f"account the tier map names ({stop_word})")
-    else:
-        other = _pick(req.get("account"), ACCOUNTS)
-        # An admin operation runs in the broker (4.14): the session holds no
-        # credential for it, so a verified read or write account in use is
-        # the wrong credential, not a pass.
-        bad = ("mismatch", "fail", "could-not-tell")
-        if needs_admin:
-            bad += ("read-verified", "write-verified")
-        if other in bad:
-            walk.look("2", f"account {other} (identity does not check out)")
-            return done("2", stop_outcome,
-                        f"account is {other} ({stop_word})")
+    # Effects only add requirements (R-P6 D8): the account check runs for
+    # the classes without them and, when they add a class, again with them,
+    # so an added class can never swap the account the request must hold for
+    # one it does not. Both must pass.
+    for checked in ((base, classes) if classes != base else (classes,)):
+        why = _account_stop(req, spec, tier, checked, walk)
+        if why:
+            return done("2", stop_outcome, f"{why} ({stop_word})")
 
     if spec.lane == HUMAN:
         walk.look("human", "one-way list")
@@ -516,7 +760,7 @@ def decide(request: Any) -> dict:
                       else ""))
     if serious:
         return _serious(req, walk, (name, spec, facts, classes), serious,
-                        attended, (stop_outcome, stop_word))
+                        attended, (stop_outcome, stop_word), unplaced_what)
 
     if spec.lane == READ:
         return done("6", ALLOW, "read with a verified read account")
@@ -547,17 +791,20 @@ def decide(request: Any) -> dict:
 
 
 def _serious(req: dict, walk: _Walk, subject: tuple, serious: str,
-             attended: bool, stop: tuple) -> dict:
+             attended: bool, stop: tuple,
+             unplaced_what: str = "the operation is not in the closed table"
+             ) -> dict:
     """Rule 5 for a serious request. `subject` is (name, spec, facts,
     classes) and
     `stop` is (outcome, wording) for a stop that depends on presence.
-    `subject` carries every class that applies; the strictest is `serious`."""
+    `subject` carries every class that applies; the strictest is `serious`.
+    `unplaced_what` names what could not be placed."""
     name, spec, facts, classes = subject
     stop_outcome, stop_word = stop
     if UNPLACED in classes:
         return walk.done(
             "5", NEEDS_PLAN,
-            "the operation is not in the closed table, and a plan of record "
+            f"{unplaced_what}, and a plan of record "
             "cannot list a form the schema does not know", serious)
     prov = _pick(req.get("provenance"), PROVENANCE)
     covers = req.get("plan_covers") is True
@@ -632,27 +879,136 @@ def explain(request: Any) -> str:
     return "\n".join(lines)
 
 
+# --- the CLI's one strict reader (R-P6 D10) -----------------------------------
+
+MAX_REQUEST_BYTES = 65536
+MAX_NUMBER_CHARS = 32
+MAX_DEPTH = 32
+
+
+class _BadInput(ValueError):
+    """A request the reader refuses: the CLI exits 2 and decides nothing."""
+
+
+def _json_object(pairs: list) -> dict:
+    """An object in which no name is given twice: two answers to one
+    question are no answer."""
+    out = dict(pairs)
+    if len(out) != len(pairs):
+        raise _BadInput("a name is given twice in one object")
+    return out
+
+
+def _json_constant(text: str) -> Any:
+    """NaN, Infinity and -Infinity are not numbers this reader takes."""
+    raise _BadInput(f"{text} is not a number")
+
+
+def _json_token(text: str) -> None:
+    """A number token longer than MAX_NUMBER_CHARS is refused."""
+    if len(text) > MAX_NUMBER_CHARS:
+        raise _BadInput(f"a number is longer than {MAX_NUMBER_CHARS} "
+                        "characters")
+
+
+def _json_integer(text: str) -> int:
+    """A JSON integer, bounded in length."""
+    _json_token(text)
+    return int(text)
+
+
+def _json_fraction(text: str) -> decimal.Decimal:
+    """A JSON fraction as an exact Decimal, read by `_exact`: a token the
+    pinned context refuses (out of range, not exact) is refused."""
+    _json_token(text)
+    try:
+        number = _exact(text, signed=True)
+    except ArithmeticError as exc:
+        raise _BadInput("a number cannot be read exactly "
+                        f"({type(exc).__name__})") from exc
+    if number is None:
+        raise _BadInput("a number is not finite")
+    return number
+
+
+def _check_depth(value: Any) -> None:
+    """Refuse nesting deeper than MAX_DEPTH; an iterative walk, so the walk
+    itself cannot run out of stack."""
+    stack = [(value, 1)]
+    while stack:
+        item, depth = stack.pop()
+        if isinstance(item, (dict, list)):
+            if depth > MAX_DEPTH:
+                raise _BadInput(f"the request is nested deeper than "
+                                f"{MAX_DEPTH}")
+            children = item.values() if isinstance(item, dict) else item
+            stack.extend((child, depth + 1) for child in children)
+
+
+def _read_request(arg: str) -> Any:
+    """The request from argv or, for "-", stdin read as bytes; every rule
+    the module docstring lists refuses with _BadInput."""
+    if arg == "-":
+        data = sys.stdin.buffer.read(MAX_REQUEST_BYTES + 1)
+    else:
+        try:
+            data = arg.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise _BadInput("the request argument is not valid text") from exc
+    if len(data) > MAX_REQUEST_BYTES:
+        raise _BadInput(f"the request is over {MAX_REQUEST_BYTES} bytes")
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise _BadInput("the request is not UTF-8") from exc
+    try:
+        request = json.loads(text, object_pairs_hook=_json_object,
+                             parse_constant=_json_constant,
+                             parse_int=_json_integer,
+                             parse_float=_json_fraction)
+    except _BadInput:
+        raise
+    except ValueError as exc:
+        raise _BadInput(f"the request is not JSON ({exc})") from exc
+    _check_depth(request)
+    return request
+
+
+def _classify_request(request: Any) -> dict:
+    """The classify verb: the request's effects and tier, the default
+    threshold. No effects key, or a request that is not an object, is
+    unplaced."""
+    req = request if isinstance(request, dict) else {}
+    return classify(req.get("effects"), _request_tier(req))
+
+
 def _main(argv: list) -> int:
     cmd = argv[1] if len(argv) > 1 else ""
     if cmd == "operations":
         for key in sorted(OPERATIONS):
             print(f"{key}\t{OPERATIONS[key].lane}")
         return 0
-    if cmd not in ("decide", "explain") or len(argv) < 3:
-        print("usage: crew_policy.py decide|explain <json|-> | operations",
-              file=sys.stderr)
+    if cmd not in ("decide", "explain", "classify") or len(argv) < 3:
+        print("usage: crew_policy.py decide|explain|classify <json|-> | "
+              "operations", file=sys.stderr)
         return 2
-    raw = sys.stdin.read() if argv[2] == "-" else argv[2]
+    # The single wrapper (R-P6 D9): reading, deciding and building the whole
+    # answer happen inside one try, and nothing is written until all three
+    # have succeeded. The verbs are looked up by name at call time.
     try:
-        request = json.loads(raw)
-    except ValueError as exc:
-        print(f"crew_policy: request is not JSON ({exc}); no decision",
+        request = _read_request(argv[2])
+        if cmd == "explain":
+            out = explain(request) + "\n"
+        else:
+            result = (decide(request) if cmd == "decide"
+                      else _classify_request(request))
+            out = json.dumps(result, indent=2, sort_keys=True) + "\n"
+    except Exception as exc:  # pylint: disable=broad-exception-caught  # noqa: BLE001
+        why = " ".join(str(exc).split())[:200] or "no detail"
+        print(f"crew_policy: {type(exc).__name__}: {why}; no decision",
               file=sys.stderr)
         return 2
-    if cmd == "explain":
-        print(explain(request))
-    else:
-        print(json.dumps(decide(request), indent=2, sort_keys=True))
+    sys.stdout.write(out)
     return 0
 
 
