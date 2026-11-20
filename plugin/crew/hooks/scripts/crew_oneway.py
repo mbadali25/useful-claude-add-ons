@@ -33,7 +33,8 @@ Reading a command:
    authoritative (`git commit -m "fix terraform state rm docs"` is clear);
 2. raw: every chain, redirection and expansion. Quote-blind on purpose.
    Redirection operators are protected first (`2>&1`, `>&2`, `&>`, `&>>`,
-   `>|`, `<<`, `<<-`, `<<<`, `>`, `>>`, `<`), then the text is cut at `&&`
+   `>|`, `<<`, `<<-`, `<<<`, `>`, `>>`, `<`; for powershell also the
+   all-streams `*>&1`, `*>`, `*>>`), then the text is cut at `&&`
    `||` `;` `|` `&` and newline, split on whitespace and stripped of quotes
    and brackets. Each redirection is lifted out of its segment before the head
    is read: an fd copy is dropped, any other operator takes the next word as
@@ -50,7 +51,8 @@ precedence). Global options are skipped with `skip_options`, which also
 returns every place an unknown option may have swallowed a table subcommand
 or terragrunt's `exec`; every such reading is judged and the worst kept, the
 earliest on a tie. terragrunt's `run`, `run-all` and `exec` are unwrapped; what
-`exec` runs is judged as a new command.
+`exec` runs is judged as a new command. A command's words are read once, so
+judging it takes time linear in its length.
 
 It is a tripwire, not a boundary (plan 4.0, layer 1). It does not see
 terraform behind `bash -c`, `make`, a script, `xargs`, `sudo -u <user>` or a
@@ -61,6 +63,7 @@ Exit codes: 0 for every judgement (report-only) and for `shapes`, 2 for a
 usage error.
 """
 import argparse
+import bisect
 import json
 import re
 import sys
@@ -120,10 +123,19 @@ _ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=", re.S)
 # Longest first: fd copies, &> and &>>, >|, here-documents and here-strings,
 # > and >>, <. Leading digits are an fd number only at the start of a word:
 # in `list2>&1` the shell's word is `list2` and the operator is `>&1`.
+# PowerShell also names every stream `*` (`*>&1`, `*>`, `*>>`); in bash a
+# `*` there is a glob word, so only the powershell reader takes it.
 _FD = r"(?:(?<![^\s;&|(){}])[0-9]+)?"
-_REDIRECT_RE = re.compile(_FD + r"[<>]&(?:[0-9]+|-)|&>>?|" + _FD + r">\||" + _FD
-                          + r"<<[<-]?|" + _FD + r">>?|" + _FD + r"<")
-_FD_COPY_RE = re.compile(r"[0-9]*[<>]&(?:[0-9]+|-)")
+_PS_FD = r"(?:(?<![^\s;&|(){}])(?:[0-9]+|\*))?"
+
+
+def _redirect_re(fd):
+    return re.compile(fd + r"[<>]&(?:[0-9]+|-)|&>>?|" + fd + r">\||" + fd
+                      + r"<<[<-]?|" + fd + r">>?|" + fd + r"<")
+
+
+_REDIRECT_RE = {"bash": _redirect_re(_FD), "powershell": _redirect_re(_PS_FD)}
+_FD_COPY_RE = re.compile(r"(?:[0-9]*|\*)[<>]&(?:[0-9]+|-)")
 _SEPARATORS_RE = re.compile(r"&&|\|\||[;|&\n\r]")
 _STRIP = "\"'(){}"
 _MARK = "\x01"
@@ -134,11 +146,11 @@ _SHOW = str.maketrans({"\x02": "&", "\x03": "|"})
 _UNMARK = str.maketrans({_MARK: "�", "\x02": "�", "\x03": "�"})
 
 
-def _protect(text):
+def _protect(text, shell="bash"):
     """`text` with each redirection operator turned into a word of its own
     that no separator cuts."""
     text = text.translate(_UNMARK)
-    return _REDIRECT_RE.sub(lambda m: f" {_MARK}{m.group(0).translate(_HIDE)} ", text)
+    return _REDIRECT_RE[shell].sub(lambda m: f" {_MARK}{m.group(0).translate(_HIDE)} ", text)
 
 
 def _lift(piece):
@@ -167,11 +179,11 @@ def _lift(piece):
     return {"words": out, "targets": targets, "dangling": dangling}
 
 
-def raw_segments(text):
+def raw_segments(text, shell="bash"):
     """The raw pass's segments of `text`, redirections lifted: a list of
     {words, targets: [(operator, target)], dangling: [operator]}."""
     segments = []
-    for piece in _SEPARATORS_RE.split(_protect(text)):
+    for piece in _SEPARATORS_RE.split(_protect(text, shell)):
         segment = _lift(piece)
         if segment is not None:
             segments.append(segment)
@@ -202,33 +214,77 @@ def _unseen(word):
     return any(mark in word for mark in _UNSEEN)
 
 
-def skip_options(args, index):
+def _takes_value(args, index):
+    """Whether the option at `index` takes the next word as its value, read
+    exactly as `crew_guards.tf_skip_options` reads one step (pinned by the
+    test on every index of every row it holds)."""
+    # pylint: disable=protected-access
+    name, sep, _value = args[index].lstrip("-").partition("=")
+    nxt = args[index + 1] if index + 1 < len(args) else None
+    return not sep and nxt is not None and name not in crew_guards._TF_GLOBAL_FLAG_OPTS and (
+        name in crew_guards._TF_GLOBAL_VALUE_OPTS or nxt not in crew_guards._TF_OPS
+        and not nxt.startswith("-") and crew_guards._HOLE not in nxt)
+
+
+def _may_swallow(args, j):
+    """Whether the word at `j` is an unknown option whose next word would
+    change the verdict (`AMBIGUOUS_SUBS`)."""
+    # pylint: disable=protected-access
+    word = args[j]
+    if not word.startswith("-") or word == "--" or "=" in word:
+        return False
+    name = word.lstrip("-")
+    if name in crew_guards._TF_GLOBAL_VALUE_OPTS or name in crew_guards._TF_GLOBAL_FLAG_OPTS:
+        return False
+    return args[j + 1] in AMBIGUOUS_SUBS
+
+
+class _Scan:  # pylint: disable=too-few-public-methods
+    """One command's words, read once so judging it is linear in its length.
+
+    `end[i]` is where the global options from `i` stop (`tf_skip_options`);
+    `swallowed` is every index an unknown option may have taken as its value
+    (sorted); `help_from[i]` and `dashdash[i]` say whether a help word, and
+    how many `--`, stand at `i` or later. `memo` holds each start judged."""
+
+    def __init__(self, words):
+        count = len(words)
+        self.words = words
+        self.end = list(range(count + 1))
+        self.help_from = [False] * (count + 1)
+        self.dashdash = [0] * (count + 1)
+        for i in range(count - 1, -1, -1):
+            word = words[i]
+            self.help_from[i] = self.help_from[i + 1] or word in HELP_WORDS
+            self.dashdash[i] = self.dashdash[i + 1] + (word == "--")
+            if word == "--":
+                self.end[i] = i + 1
+            elif word.startswith("-"):
+                self.end[i] = self.end[i + (2 if _takes_value(words, i) else 1)]
+        self.swallowed = [j + 1 for j in range(count - 1) if _may_swallow(words, j)]
+        self.memo = {}
+
+
+def skip_options(args, index, scan=None):
     """(end, alternates): `end` is the first word from `index` that is not a
     global option or its value, as crew_guards reads it; `alternates` is each
     index an unknown option took as its value although it is a word that would
     change the verdict (`AMBIGUOUS_SUBS`). Crew cannot know whether that option
-    takes a value, so both readings are judged."""
-    end = crew_guards.tf_skip_options(args, index)
-    alternates = []
-    for j in range(index, end - 1):
-        word = args[j]
-        if not word.startswith("-") or word == "--" or "=" in word:
-            continue
-        name = word.lstrip("-")
-        if name in crew_guards._TF_GLOBAL_VALUE_OPTS:  # pylint: disable=protected-access
-            continue
-        if name in crew_guards._TF_GLOBAL_FLAG_OPTS:  # pylint: disable=protected-access
-            continue
-        if args[j + 1] in AMBIGUOUS_SUBS:
-            alternates.append(j + 1)
+    takes a value, so both readings are judged. `scan` is `args` already read
+    (`_Scan`), so a long command costs one read, not one per call."""
+    scan = scan if scan is not None else _Scan(args)
+    end = scan.end[index]
+    alternates = scan.swallowed[bisect.bisect_left(scan.swallowed, index + 1):
+                                bisect.bisect_left(scan.swallowed, end)]
     return end, alternates
 
 
-def _table(words, at):
+def _table(scan, at):
     """(verdict, rule, word index) of the subcommand at `at`."""
+    words = scan.words
     if at >= len(words):
         return (COULD_NOT_TELL, "tf-sub-unseen", None)
-    if any(word in HELP_WORDS for word in words[at + 1:]):
+    if scan.help_from[at + 1]:
         return _CLEAR
     sub = words[at]
     if _unseen(sub):
@@ -244,60 +300,68 @@ def _table(words, at):
     return _CLEAR
 
 
-def _unwrap(words, at, memo):
+def _unwrap(scan, at):
     """terragrunt's `exec`, `run` or `run-all` at `at`."""
-    if words[at] == "exec":
-        end, _ = skip_options(words, at + 1)
+    if scan.words[at] == "exec":
+        end = scan.end[at + 1]
         readings = []
-        if end > at + 1 and "--" not in words[at + 1:end]:
+        if end > at + 1 and scan.dashdash[at + 1] == scan.dashdash[end]:
             readings.append((COULD_NOT_TELL, "tg-exec-unseen", at))
-        readings.append(_judge_from(words, end, memo))
+        readings.append(_judge_from(scan, end))
         return _first_worst(readings)
-    end, alternates = skip_options(words, at + 1)
-    return _first_worst([_table(words, start) for start in sorted([end] + alternates)])
+    end, alternates = skip_options(scan.words, at + 1, scan)
+    return _first_worst([_table(scan, start) for start in sorted([end] + alternates)])
 
 
-def _reading(words, head, at, memo):
-    if head == "terragrunt" and at < len(words) and words[at] in UNWRAP_WORDS:
-        return _unwrap(words, at, memo)
-    return _table(words, at)
+def _reading(scan, head, at):
+    if head == "terragrunt" and at < len(scan.words) and scan.words[at] in UNWRAP_WORDS:
+        return _unwrap(scan, at)
+    return _table(scan, at)
 
 
-def _judge_tf(words, head, index, memo):
-    end, alternates = skip_options(words, index)
-    readings = {end: _reading(words, head, end, memo)}
+def _judge_tf(scan, head, index):
+    end, alternates = skip_options(scan.words, index, scan)
+    readings = {end: _reading(scan, head, end)}
     for at in alternates:
-        readings[at] = _reading(words, head, at, memo)
+        readings[at] = _reading(scan, head, at)
     return _first_worst([readings[at] for at in sorted(readings)])
 
 
 def _judge_words(words, start=0):
     """(verdict, rule, word index) of the command that starts at `start`.
 
-    An `exec` unwrap judges the command after it from a later index, so each
-    such index is judged first, latest first, and remembered: a chain of any
-    length (`terragrunt exec -- ` repeated) then needs no deep recursion."""
-    memo = {}
-    starts = {skip_options(words, at + 1)[0] for at in range(start, len(words))
-              if words[at] == "exec"}
+    Head precedence first: a command whose head is not terraform's is clear
+    before anything after it is read. An `exec` unwrap judges the command
+    after it from a later index, so each such index is judged first, latest
+    first, and remembered: a chain of any length (`terragrunt exec -- `
+    repeated) then needs no deep recursion. The words are read once
+    (`_Scan`), so a long command costs time linear in its length."""
+    if _tf_head(words, start) is None:
+        return _CLEAR
+    scan = _Scan(words)
+    starts = {scan.end[at + 1] for at in range(start, len(words)) if words[at] == "exec"}
     for later in sorted(starts, reverse=True):
         if later > start:
-            memo[later] = _judge_from(words, later, memo)
-    return _judge_from(words, start, memo)
+            scan.memo[later] = _judge_from(scan, later)
+    return _judge_from(scan, start)
 
 
-def _judge_from(words, start, memo):
-    if start in memo:
-        return memo[start]
+def _tf_head(words, start):
+    """(index, head) of the terraform head of the command at `start`, or None."""
     index = start
     while index < len(words) and (words[index] in HEAD_PREFIXES or _ASSIGN_RE.match(words[index])):
         index += 1
     if index >= len(words):
-        return _CLEAR
+        return None
     head = _head_name(words[index])
-    if head not in TF_HEADS:
-        return _CLEAR
-    return _judge_tf(words, head, index + 1, memo)
+    return (index, head) if head in TF_HEADS else None
+
+
+def _judge_from(scan, start):
+    if start not in scan.memo:
+        found = _tf_head(scan.words, start)
+        scan.memo[start] = _CLEAR if found is None else _judge_tf(scan, found[1], found[0] + 1)
+    return scan.memo[start]
 
 
 # --- the two passes --------------------------------------------------------------------------
@@ -321,11 +385,11 @@ def _plain_pass(commands):
     return out
 
 
-def _raw_pass(text):
+def _raw_pass(text, shell):
     """One finding per segment (A14). A dangling operator makes the segment
     could-not-tell unless its words are a hit, which wins (A7)."""
     out = []
-    for number, segment in enumerate(raw_segments(text)):
+    for number, segment in enumerate(raw_segments(text, shell)):
         where = {"pass": "raw", "command": number}
         if segment["dangling"]:
             verdict, rule, word = _judge_words(segment["words"])
@@ -340,7 +404,7 @@ def _raw_pass(text):
 def _findings(command, shell):
     commands = crew_gitallow.plain_commands(command, shell)
     if commands is None:
-        return _raw_pass(command)
+        return _raw_pass(command, shell)
     return _plain_pass(commands)
 
 

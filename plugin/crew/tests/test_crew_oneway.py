@@ -16,8 +16,10 @@ import check runs in a subprocess with cwd and HOME on throwaway directories.
 import ast
 import json
 import os
+import random
 import subprocess
 import sys
+import time
 import types
 
 import pytest
@@ -116,6 +118,12 @@ MUST_BLOCK = (
     ("bash", "terragrunt --log-disable exec -- terraform state rm x", "tf-state-write"),
     # rev 4: the `end` reading lands on `state rm x`.
     ("bash", "terragrunt --unknown-flag exec --other terraform state rm x", "tf-state-write"),
+    # PowerShell's all-streams redirections are lifted whole, `*` included.
+    ("powershell", "terraform *>&1 state rm x", "tf-state-write"),
+    ("powershell", "terraform *> out.txt state rm x", "tf-state-write"),
+    ("powershell", "terraform *>> out.txt state rm x", "tf-state-write"),
+    ("powershell", "terraform state rm x *>&1", "tf-state-write"),
+    ("bash", "terraform >&1 state rm x", "tf-state-write"),
 )
 
 # (shell, command)
@@ -138,6 +146,8 @@ MUST_ALLOW = (
     ("bash", "terraform state list >| out.txt"),
     ("bash", "terraform state list > out.txt"),
     ("powershell", "terraform state list 2>&1"),
+    ("powershell", "terraform state list *>&1"),
+    ("powershell", "terraform state list *> out.txt"),
     # A12 and A13.
     ("bash", "terragrunt --unknown-flag state list"),
     ("bash", "terragrunt --working-dir state plan"),
@@ -215,6 +225,28 @@ def test_known_over_reports_are_pinned_hits(command, rule):
 def test_a_tie_keeps_the_earlier_reading():
     result = assert_cnt(crew_oneway, "terragrunt --unknown-flag state")
     assert rules(result) == ["tf-state-unseen"]
+
+
+LONG = 4000
+LONG_BUDGET_SECONDS = 2.0
+# Quadratic reading took 3.9 s at 2000 repeats in review round 3, so 4000
+# repeats would take about 16 s; the linear reading takes well under 0.5 s.
+LONG_COMMANDS = (
+    ("echo " + "--unknown exec " * LONG + "terraform state rm x", "clear"),
+    ("terragrunt " + "--unknown exec " * LONG + "terraform state rm x", "hit"),
+    ("terragrunt " + "--unknown state " * LONG + "rm x", "hit"),
+    ("terragrunt " + "exec --unknown " * LONG + "terraform plan", "could-not-tell"),
+    ("terraform " + "-x " * LONG + "state list", "clear"),
+)
+
+
+@pytest.mark.parametrize("command,verdict", LONG_COMMANDS, ids=[str(n) for n in range(5)])
+def test_a_long_command_is_judged_in_linear_time(command, verdict):
+    started = time.perf_counter()
+    got = run(crew_oneway, command)["verdict"]
+    took = time.perf_counter() - started
+    assert got == verdict
+    assert took < LONG_BUDGET_SECONDS, took
 
 
 @pytest.mark.parametrize("repeat", [1, 100, 300, 2000])
@@ -338,19 +370,30 @@ def test_the_ambiguous_sets():
     assert crew_oneway.UNWRAP_WORDS - crew_oneway.AMBIGUOUS_SUBS <= crew_guards._TF_OPS
 
 
-def _function_lines(name):
-    tree = ast.parse(source())
-    for node in tree.body:
-        if isinstance(node, ast.FunctionDef) and node.name == name:
-            return node.lineno, node.end_lineno
-    raise AssertionError(name)
+_VOCABULARY = ("--", "-", "--unknown-flag", "-unknown", "--working-dir", "-chdir=infra",
+               "--non-interactive", "--log-disable", "--x=1", "state", "rm", "exec", "run",
+               "run-all", "apply", "destroy", "plan", "terraform", "-help", "x", "$X",
+               "a\x00b")
 
 
-def test_the_helper_is_called_only_inside_skip_options():
-    first, last = _function_lines("skip_options")
-    lines = [number for number, line in enumerate(source().splitlines(), 1)
-             if "tf_skip_options" in line]
-    assert lines and all(first <= number <= last for number in lines), lines
+def _agreement_rows():
+    rows = [list(args) for args, _ in SKIP_ROWS]
+    rng = random.Random(34)
+    for _ in range(400):
+        rows.append([rng.choice(_VOCABULARY) for _ in range(rng.randint(0, 9))])
+    return rows
+
+
+def test_the_scan_reads_options_exactly_as_crew_guards_does():
+    """`_Scan` replaces one `tf_skip_options` walk per call with one read of
+    the command; it must agree with the helper at every index."""
+    for args in _agreement_rows():
+        scan = crew_oneway._Scan(args)
+        for index in range(len(args) + 1):
+            assert scan.end[index] == crew_guards.tf_skip_options(args, index), (args, index)
+            assert scan.help_from[index] == any(w in crew_oneway.HELP_WORDS
+                                                for w in args[index:]), (args, index)
+            assert scan.dashdash[index] == args[index:].count("--"), (args, index)
 
 
 # --- the raw reader --------------------------------------------------------------------------
@@ -382,12 +425,28 @@ READER_ROWS = (
     ("a list2>&1", [seg(["a", "list2"])]),
     ("a x2>f", [seg(["a", "x2"], [(">", "f")])]),
     ("a 2>f", [seg(["a"], [("2>", "f")])]),
+    # bash: a `*` before an operator is a glob word, not a stream.
+    ("a *>&1", [seg(["a", "*"])]),
+)
+
+PS_READER_ROWS = (
+    ("a *>&1", [seg(["a"])]),
+    ("a *>&1 b", [seg(["a", "b"])]),
+    ("a *> f", [seg(["a"], [("*>", "f")])]),
+    ("a *>> f", [seg(["a"], [("*>>", "f")])]),
+    ("a 3>&1", [seg(["a"])]),
+    ("a x*>&1", [seg(["a", "x*"])]),
 )
 
 
 @pytest.mark.parametrize("text,expected", READER_ROWS)
 def test_the_reader(text, expected):
     assert crew_oneway.raw_segments(text) == expected
+
+
+@pytest.mark.parametrize("text,expected", PS_READER_ROWS)
+def test_the_powershell_reader(text, expected):
+    assert crew_oneway.raw_segments(text, "powershell") == expected
 
 
 # --- helper pins -----------------------------------------------------------------------------
@@ -551,17 +610,14 @@ def test_importing_loads_no_policy_hook_never_or_coord_and_writes_nothing(tmp_pa
     cwd, home = tmp_path / "cwd", tmp_path / "home"
     cwd.mkdir()
     home.mkdir()
-    env = dict(os.environ)
-    for key in ("HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME",
-                "XDG_CACHE_HOME", "XDG_STATE_HOME"):
-        env[key] = str(home)
-    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env = _isolated_env(home)
     code = ("import json, sys; sys.path.insert(0, sys.argv[1]); before = set(sys.modules); "
             "import crew_oneway; crew_oneway.judge('terraform state rm x'); "
             "print(json.dumps(sorted(set(sys.modules) - before)))")
     before = (_tree(cwd), _tree(home))
     done = subprocess.run([sys.executable, "-c", code, SCRIPTS], cwd=cwd, env=env,
-                          capture_output=True, text=True, check=False, timeout=120)
+                          capture_output=True, text=True, encoding="utf-8", check=False,
+                          timeout=120)
     assert done.returncode == 0 and done.stderr == "", done.stderr
     loaded = set(json.loads(done.stdout))
     assert "crew_oneway" in loaded
@@ -569,10 +625,23 @@ def test_importing_loads_no_policy_hook_never_or_coord_and_writes_nothing(tmp_pa
     assert (_tree(cwd), _tree(home)) == before == ([], [])
 
 
-def test_the_cli():
+def _isolated_env(home):
+    env = dict(os.environ)
+    for key in ("HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME",
+                "XDG_CACHE_HOME", "XDG_STATE_HOME"):
+        env[key] = str(home)
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    return env
+
+
+def test_the_cli(tmp_path):
+    env = _isolated_env(tmp_path)
+
     def cli(*args, stdin=None):
         return subprocess.run([sys.executable, MODULE, *args], input=stdin, capture_output=True,
-                              text=True, encoding="utf-8", check=False, timeout=120)
+                              text=True, encoding="utf-8", check=False, timeout=120,
+                              cwd=tmp_path, env=env)
     done = cli("judge", "--", "terraform state rm x")
     assert done.returncode == 0 and json.loads(done.stdout)["verdict"] == "hit"
     done = cli("judge", "--shell", "powershell", "--", "terraform state list 2>&1")
@@ -669,9 +738,9 @@ def case_block_unknown_option_state(mod):
 
 
 def case_skip_rows_with_alternates(mod):
-    for args, expected in SKIP_ROWS:
-        if expected[1]:
-            assert mod.skip_options(args, 0) == expected, args
+    wrong = [(args, mod.skip_options(args, 0), expected) for args, expected in SKIP_ROWS
+             if expected[1] and mod.skip_options(args, 0) != expected]
+    assert wrong == [], wrong
 
 
 def case_block_swallowed_exec_dashdash(mod):
@@ -729,6 +798,22 @@ def case_one_finding_with_dangling(mod):
     assert rules(result) == ["tf-state-write"], result
 
 
+def case_block_ps_all_streams(mod):
+    assert_hit(mod, "terraform *>&1 state rm x", "tf-state-write", shell="powershell")
+
+
+def case_bash_star_is_a_word(mod):
+    assert mod.raw_segments("a *>&1") == [seg(["a", "*"])]
+
+
+def case_long_swallowed_exec_chain_is_linear(mod):
+    command = "terragrunt " + "--unknown exec " * LONG + "terraform state rm x"
+    started = time.perf_counter()
+    assert_hit(mod, command, "tf-state-write")
+    took = time.perf_counter() - started
+    assert took < LONG_BUDGET_SECONDS, took
+
+
 MUTATIONS = (
     ("1 rm added to the state read set",
      'STATE_READ = frozenset(("list", "show", "pull", "identities"))',
@@ -737,13 +822,13 @@ MUTATIONS = (
     ("2 import and taint dropped", '    "import": "tf-import", "taint": "tf-taint",\n', "",
      ("case_block_import", "case_block_taint")),
     ("3 the terragrunt run unwrap skipped",
-     "    end, alternates = skip_options(words, at + 1)\n",
+     "    end, alternates = skip_options(scan.words, at + 1, scan)\n",
      "    end, alternates = at, []\n", ("case_block_run_unwrap",)),
     ("4 state show treated as a write",
      'STATE_READ = frozenset(("list", "show", "pull", "identities"))',
      'STATE_READ = frozenset(("list", "pull", "identities"))', ("case_allow_state_show",)),
     ("5 the -help check dropped",
-     "    if any(word in HELP_WORDS for word in words[at + 1:]):\n        return _CLEAR\n", "",
+     "    if scan.help_from[at + 1]:\n        return _CLEAR\n", "",
      ("case_allow_help",)),
     ("11 a missing context is could-not-tell",
      "    del context  # accepted and ignored by every terraform row (A4)\n",
@@ -757,7 +842,7 @@ MUTATIONS = (
      '        where = {"pass": "raw", "command": number}\n',
      '        where = {"pass": "raw", "command": number, "targets": segment["targets"]}\n',
      ("case_no_target_in_output",)),
-    ("19 raw pass skipped", "    if commands is None:\n        return _raw_pass(command)",
+    ("19 raw pass skipped", "    if commands is None:\n        return _raw_pass(command, shell)",
      "    if commands is None:\n        return []", ("case_block_raw_chain",)),
     ("29 only assignments, env and sudo stripped",
      'HEAD_PREFIXES = frozenset(("env", "sudo", "command", "time", "then", "do", "else", "!",\n'
@@ -766,7 +851,7 @@ MUTATIONS = (
                                                   "case_block_prefix_bang",
                                                   "case_block_prefix_command")),
     ("R1 cut at separators before protecting redirections",
-     "    for piece in _SEPARATORS_RE.split(_protect(text)):",
+     "    for piece in _SEPARATORS_RE.split(_protect(text, shell)):",
      "    for piece in map(_protect, _SEPARATORS_RE.split(text)):",
      ("case_allow_fd_copy", "case_reader_clobber", "case_reader_amp")),
     ("R2 skip_options without alternates", "    return end, alternates\n",
@@ -779,18 +864,18 @@ MUTATIONS = (
      ("case_block_swallowed_exec_dashdash", "case_block_swallowed_exec_bare",
       "case_exec_skip_row", "case_ambiguous_literal")),
     ("R4 an alternate judged through the table only",
-     "        readings[at] = _reading(words, head, at, memo)\n",
-     "        readings[at] = _table(words, at)\n",
+     "        readings[at] = _reading(scan, head, at)\n",
+     "        readings[at] = _table(scan, at)\n",
      ("case_block_swallowed_exec_dashdash", "case_block_swallowed_exec_bare")),
     ("R5 the no-dash-dash check after exec dropped",
-     '        if end > at + 1 and "--" not in words[at + 1:end]:',
+     "        if end > at + 1 and scan.dashdash[at + 1] == scan.dashdash[end]:",
      "        if False:",
      ("case_cnt_exec_options_no_dashdash", "case_cnt_swallowed_exec_options")),
     ("R6 a tie keeps the last reading",
      "        if _RANK[reading[0]] > _RANK[kept[0]]:",
      "        if _RANK[reading[0]] >= _RANK[kept[0]]:", ("case_tie_keeps_earlier",)),
     ("R7 the exec chain judged by plain recursion",
-     "            memo[later] = _judge_from(words, later, memo)\n",
+     "            scan.memo[later] = _judge_from(scan, later)\n",
      "            pass\n", ("case_long_exec_chain",)),
     ("R8 any digits before an operator taken as its fd",
      '_FD = r"(?:(?<![^\\s;&|(){}])[0-9]+)?"', '_FD = r"[0-9]*"', ("case_block_glued_digit",)),
@@ -802,6 +887,17 @@ MUTATIONS = (
      '            out.append(_finding(COULD_NOT_TELL, "redirect-target-unseen", TF_STATE,\n'
      "                                word=None, **where))\n",
      ("case_one_finding_with_dangling",)),
+    ("R11 powershell's `*` stream not taken as an fd",
+     '_PS_FD = r"(?:(?<![^\\s;&|(){}])(?:[0-9]+|\\*))?"', "_PS_FD = _FD",
+     ("case_block_ps_all_streams",)),
+    ("R12 bash reads `*` as a stream too",
+     '_REDIRECT_RE = {"bash": _redirect_re(_FD), "powershell": _redirect_re(_PS_FD)}',
+     '_REDIRECT_RE = {"bash": _redirect_re(_PS_FD), "powershell": _redirect_re(_PS_FD)}',
+     ("case_bash_star_is_a_word",)),
+    ("R13 the exec chain re-walks the options from every exec (quadratic)",
+     "        end = scan.end[at + 1]\n",
+     "        end = crew_guards.tf_skip_options(scan.words, at + 1)\n",
+     ("case_long_swallowed_exec_chain_is_linear",)),
 )
 
 
@@ -845,7 +941,7 @@ def test_r3_leaves_the_plain_unknown_option_row_a_hit():
 
 def test_r4_leaves_every_skip_options_row_green():
     """What separates R4 from R3: the alternates are found, then judged wrongly."""
-    mutant = _variant("        readings[at] = _reading(words, head, at, memo)\n",
-                      "        readings[at] = _table(words, at)\n")
+    mutant = _variant("        readings[at] = _reading(scan, head, at)\n",
+                      "        readings[at] = _table(scan, at)\n")
     for args, expected in SKIP_ROWS:
         assert mutant.skip_options(args, 0) == expected  # pylint: disable=no-member
