@@ -239,7 +239,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.193**: `crew_policy.classify`, the closed serious list, report-only (R-P6). `crew` 1.3.193 adds `crew_policy.classify`, which places one action's effects into the closed list of eight serious classes, or reports them as unplaced, and treats an operation it cannot place as serious. Nothing acts on the answer yet.
+- **crew 1.3.194**: `crew_policy.classify`, the closed serious list, report-only (R-P6). `crew` 1.3.194 adds `crew_policy.classify`, which places one action's effects into the closed list of eight serious classes, or reports them as unplaced, and treats an operation it cannot place as serious. Nothing acts on the answer yet.
 - **crew 1.3.192**: `crew_oneway.py` reports direct terraform state-file writes and file-tool edits (R-34b). `crew` 1.3.192 extends the report-only `crew_oneway.py` tripwire so writing, removing, moving or editing a terraform state file directly (a redirection, `rm`/`mv`/`cp`/`sed -i`, `git rm`, an object-store copy, or a Write/Edit/MultiEdit/NotebookEdit tool call) is reported as `hand-edit-terraform-state`. It still refuses nothing.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
