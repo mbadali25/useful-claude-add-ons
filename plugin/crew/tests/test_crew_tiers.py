@@ -899,6 +899,9 @@ _T_I2_ALLOWED = ("plugin/crew/hooks/scripts/crew_tiers.py",
 # `merged.get("tiers")` added there is caught like one anywhere else.
 _T_I2_RAW_READERS = {
     "plugin/crew/hooks/scripts/crew_config_files.py": ("_tier_map_duplicates",),
+    # R-32's comparator protects `tiers` (plan 4.3): it compares each layer's raw
+    # map whole (`pinned`) and decides no tier.
+    "plugin/crew/hooks/scripts/crew_protected.py": ("_tier_map_policy",),
 }
 
 

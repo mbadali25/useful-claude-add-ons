@@ -420,6 +420,26 @@ def case_mb15_effective_narrowing_hides_raw(mod, world):
     assert row["change"] == "narrowing"
 
 
+def case_mb17_tier_map_is_pinned(mod, world):
+    """`tiers` (R-05) is compared whole: any change, even a repo narrowing, needs
+    confirming; the same map on both sides is free."""
+    world.put("machine", {"tiers": {"host:db1": {"tier": "qa"}}})
+    assert world.init(mod)[0]
+    world.put("machine", {"tiers": {"host:db1": {"tier": "qa"}}})
+    result = world.drift(mod)
+    assert result["status"] == FREE and not result["changed"], result["changed"]
+    for layer, body in (("machine", {"tiers": {"host:db1": {"tier": "dev"}}}),
+                        ("repo", {"tiers": {"host:db1": {"tier": "prod"}}})):
+        world.put("machine", {"tiers": {"host:db1": {"tier": "qa"}}})
+        world.put("repo", {})
+        world.baseline.unlink()
+        assert world.init(mod)[0]
+        world.put(layer, body)
+        result = world.drift(mod)
+        _blocked(mod, result)
+        assert _row(result, "tiers")["outcome"] == "widening", layer
+
+
 def case_mb16_scope_mode(mod, world):
     world.put("repo", {"scope": {"mode": "block"}})
     assert world.init(mod)[0]
@@ -906,6 +926,8 @@ MUTATIONS = (
      '                if side == "after" else (tempfile.gettempdir(), '
      "crew_state.GLOBAL_CONFIG_PATH)\n",
      ("case_ma8_same_route_both_sides",)),
+    ("the tier map is read as never changing", '    policy.update(_tier_map_policy(layers))\n',
+     '    policy.update(tiers={})\n', ("case_mb17_tier_map_is_pinned",)),
 )
 
 

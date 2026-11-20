@@ -475,7 +475,7 @@ KEY_META = {
                   "\"dev\"|\"qa\"|\"prod\"}`); dev < qa < prod < unknown, an unlisted "
                   "target is `unknown`, and a repo entry may only narrow. Written whole "
                   "(`--set tiers=<map>`). Read through `crew_tiers` only, never the merged "
-                  "value; report-only until R-01.", "open-table", since="1.3.189",
+                  "value; report-only until R-01.", "open-table", since="1.3.190",
                   source=_S + "crew_tiers.py",
                   type_="object of `<kind>:<name>` to {tier}"),
     # --- change requests
