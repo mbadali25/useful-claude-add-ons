@@ -149,6 +149,7 @@ MUST_BLOCK = (
     ("bash", "terraform refresh", "tf-refresh"),
     ("bash", "TF_LOG=1 terraform state rm x", "tf-state-write"),
     ("bash", "env TF_LOG=1 terraform state rm x", "tf-state-write"),
+    ("bash", "exec -- terraform state rm x", "tf-state-write"),
     ("powershell", "terraform.exe state rm x", "tf-state-write"),
     ("bash", "command terraform state rm x", "tf-state-write"),
     ("bash", "time terraform state rm x", "tf-state-write"),
@@ -560,21 +561,25 @@ GROWTH_LIMIT = 8.0
 GROWTH_REPEATS = 3
 
 
-def _growth(judge_at):
-    """How many times longer `judge_at(GROWTH_BIG)` takes than
-    `judge_at(GROWTH_SMALL)`, best run against best run."""
-    best = {GROWTH_SMALL: float("inf"), GROWTH_BIG: float("inf")}
+def _growth(judge_at, small=GROWTH_SMALL, big=GROWTH_BIG):
+    """How many times longer `judge_at(big)` takes than `judge_at(small)`,
+    best run against best run."""
+    best = {small: float("inf"), big: float("inf")}
     for _ in range(GROWTH_REPEATS):
         for size in best:
             started = time.perf_counter()
             judge_at(size)
             best[size] = min(best[size], time.perf_counter() - started)
-    return best[GROWTH_BIG] / max(best[GROWTH_SMALL], 1e-6)
+    return best[big] / max(best[small], 1e-6)
+
+
+def assert_grows_linearly(judge_at, small=GROWTH_SMALL, big=GROWTH_BIG):
+    growth = _growth(judge_at, small, big)
+    assert growth < GROWTH_LIMIT, f"{big / small:.0f}x the input took {growth:.1f}x"
 
 
 def assert_linear(mod, make, ctx=None):
-    growth = _growth(lambda size: run(mod, make(size), ctx=ctx))
-    assert growth < GROWTH_LIMIT, f"{GROWTH_BIG / GROWTH_SMALL:.0f}x the input took {growth:.1f}x"
+    assert_grows_linearly(lambda size: run(mod, make(size), ctx=ctx))
 
 
 # Quadratic reading took 3.9 s at 2000 repeats in review round 3; each row is
@@ -616,6 +621,9 @@ GIT_LONG_COMMANDS = (
     # whose globals are long, so that head is read once, not once per start.
     (lambda n: "terragrunt exec -- " + "exec " * n + "git " + "-c a.b=c " * n
      + "branch -D feature-x", "hit"),
+    # fix round 3: a stack of relative `-C x` is joined once, not re-normalised
+    # at each `-C` (that was quadratic in the path's length).
+    (lambda n: "git " + "-C x " * n + "branch -D feature-x", "hit"),
 )
 
 
@@ -738,6 +746,16 @@ GIT_BLOCK = (
     # a branch option's value is the next word whatever it is (fix round 2).
     ("bash", "git branch --sort -- -D feature-x", BR, DEL, "OWN"),
     ("powershell", "git.exe branch -D feature-x", BR, DEL, "OWN"),
+    # the `--` that ends exec's (command's, env's, sudo's) options (fix round 3).
+    ("bash", "exec -- git branch -D feature-x", BR, DEL, "OWN"),
+    ("bash", "terragrunt exec -- exec -- git branch -D feature-x", BR, DEL, "OWN"),
+    ("bash", "command -- git branch -D feature-x", BR, DEL, "OWN"),
+    ("bash", "env -- git branch -D feature-x", BR, DEL, "OWN"),
+    ("bash", "sudo -- git worktree remove ../r35", WT, WDEL, "OWN"),
+    # --no-delete clears -d's bit only, and a value is never one (fix round 3).
+    ("bash", "git branch -D --no-delete feature-x", BR, DEL, "OWN"),
+    ("bash", "git branch --no-delete -d feature-x", BR, DEL, "OWN"),
+    ("bash", "git branch -d --sort --no-delete feature-x", BR, DEL, "OWN"),
     ("bash", "git worktree remove ../r35", WT, WDEL, "OWN"),
     ("bash", "git worktree remove --force /w/r35", WT, WDEL, "OWN"),
     ("bash", "git -C ../r35 worktree remove .", WT, WDEL, "OWN"),
@@ -788,6 +806,14 @@ GIT_CNT = (
     ("bash", 'git worktree remove "/w/r34 backup" > out.txt', WT, "worktree-target-unseen",
      "OWN"),
     ("bash", 'git wo"rktree" remove /w/r35 > out.txt', None, "git-sub-unseen", "OWN"),
+    # a bracket inside quotes is part of the word, which the raw pass strips:
+    # `(worktree-R-34)` and `/w/r34)` are another branch and path (fix round 3).
+    ("bash", "git branch -D '(worktree-R-34)' > out.txt", BR, "branch-target-unseen", "OWN"),
+    ("bash", 'git branch -D "worktree-R-34)" > out.txt', BR, "branch-target-unseen", "OWN"),
+    ("bash", "git worktree remove '/w/r34)' > out.txt", WT, "worktree-target-unseen", "OWN"),
+    ("bash", "git worktree remove '(/w/r34)' > out.txt", WT, "worktree-target-unseen", "OWN"),
+    # a brace the shell keeps as part of the word.
+    ("bash", "git branch -D worktree-R-34} > out.txt", BR, "branch-target-unseen", "OWN"),
     ("bash", 'git -C "$D" branch -D worktree-R-34', BR, "git-repo-unseen", "OWN"),
     ("bash", "git -C %D% branch -D feature-x", BR, "git-repo-unseen", "OWN"),
     # C5 beats the tag rule, the --prune row and an unreadable ref (review round 1).
@@ -836,6 +862,10 @@ GIT_ALLOW = (
     ("bash", "git branch -D --sort refname worktree-R-34", "OWN"),
     # a quote the raw pass reads as the shell does is no reason to doubt.
     ("bash", 'git "branch" -D "worktree-R-34" > out.txt', "OWN"),
+    ("bash", '(git branch -D "worktree-R-34") > out.txt', "OWN"),
+    # --no-delete clears -d: git lists, or creates, and deletes nothing (fix round 3).
+    ("bash", "git branch -d --no-delete --list feature-x", "OWN"),
+    ("bash", "git branch -d --no-del feature-x", "OWN"),
     ("bash", "git branch feature-y", "OWN"),
     ("bash", "git branch -m old new", "OWN"),
     ("bash", "git branch --list", "OWN"),
@@ -979,6 +1009,23 @@ def test_an_escaped_space_in_a_raw_worktree_path_never_clears(paths):
                  ctx=ctx_of("OWN", paths))
     assert result["verdict"] != "clear", result
     assert result["operations"] == [WT], result
+
+
+@PATH_MODULES
+def test_the_dash_c_stack_resolves_as_one_step_at_a_time(pathmod, monkeypatch):
+    """Fix round 3: `_effective` joins the stack once; it lands where joining
+    and normalising after each `-C` lands, resets and drives included."""
+    monkeypatch.setattr(crew_oneway, "_PATH", pathmod)
+    pool = ["x", "..", ".", "", "a/b", "../..", "/abs", "\\root", "D:", "D:rel", "C:\\c",
+            "y\\z", "x/"]
+    rng = random.Random(34)
+    cwd = _p(pathmod, "w", "r34")
+    for _ in range(400):
+        dirs = tuple(rng.choice(pool) for _ in range(rng.randint(0, 7)))
+        expected = cwd
+        for value in dirs:
+            expected = pathmod.normpath(pathmod.join(expected, value))
+        assert crew_oneway._effective(cwd, dirs) == pathmod.normpath(expected), dirs
 
 
 @PATH_MODULES
@@ -1807,6 +1854,14 @@ def case_long_git_shared_head_is_linear(mod):
     assert_linear(mod, make, own())
 
 
+def case_long_stacked_dash_c_is_linear(mod):
+    """Fix round 3. The directory of `git -C x -C x ...` is timed alone, at
+    sizes where re-normalising the growing path at each `-C` dominates."""
+    assert_hit(mod, "git " + "-C x " * GROWTH_BIG + "branch -D feature-x", DEL, op=BR,
+               ctx=own())
+    assert_grows_linearly(lambda n: mod._effective(own()["cwd"], ("x",) * n), 4000, 16000)
+
+
 def case_block_fd_copy_glued_to_a_word(mod):
     assert_hit(mod, "terraform state >&2list rm x.y", "tf-state-write")
 
@@ -2195,6 +2250,37 @@ def case_block_exec_builtin(mod):
     assert_hit(mod, "exec git branch -D feature-x", DEL, op=BR, ctx=own())
 
 
+# R-34c fix round 3.
+def case_block_exec_dashdash(mod):
+    assert_hit(mod, "exec -- git branch -D feature-x", DEL, op=BR, ctx=own())
+    assert_hit(mod, "terragrunt exec -- exec -- git branch -D feature-x", DEL, op=BR,
+               ctx=own())
+
+
+def case_cnt_quoted_bracket(mod):
+    assert_cnt(mod, "git branch -D '(worktree-R-34)' > out.txt", "branch-target-unseen",
+               op=BR, ctx=own())
+    assert_cnt(mod, "git worktree remove '/w/r34)' > out.txt", "worktree-target-unseen",
+               op=WT, ctx=own())
+
+
+def case_cnt_kept_brace(mod):
+    assert_cnt(mod, "git branch -D worktree-R-34} > out.txt", "branch-target-unseen", op=BR,
+               ctx=own())
+
+
+def case_allow_branch_no_delete(mod):
+    assert_clear(mod, "git branch -d --no-delete --list feature-x", ctx=own())
+
+
+def case_block_no_delete_keeps_force_delete(mod):
+    assert_hit(mod, "git branch -D --no-delete feature-x", DEL, op=BR, ctx=own())
+
+
+def case_block_no_delete_as_a_value(mod):
+    assert_hit(mod, "git branch -d --sort --no-delete feature-x", DEL, op=BR, ctx=own())
+
+
 # R-34c fix round 1.
 def case_block_branch_sort_value(mod):
     assert_hit(mod, "git branch -D --sort -r feature-x", DEL, op=BR, ctx=own())
@@ -2565,9 +2651,10 @@ MUTATIONS = (
      ("case_block_own_and_other",)),
     ("14 -r deletes read as branch deletes",
      "    if remotes:\n        return None\n", "", ("case_allow_remote_delete",)),
+    # Re-anchored by fix round 3: the delete options are read as git's two bits.
     ("15 exact --delete match only",
-     '    if not any(hit(word, "-d") or hit(word, "-D") or hit(word, "--delete") for word in cut):\n',
-     '    if not any(hit(word, "-d") or hit(word, "-D") or word == "--delete" for word in cut):\n',
+     '            deleting |= (hit(word, "-d") or hit(word, "--delete")) | 2 * hit(word, "-D")\n',
+     '            deleting |= (hit(word, "-d") or word == "--delete") | 2 * hit(word, "-D")\n',
      ("case_block_delete_abbreviation",)),
     ("16 the :ref push form dropped",
      '        elif spec.startswith((":", "+:")):\n'
@@ -2576,8 +2663,9 @@ MUTATIONS = (
     ("17 worktree paths compared without resolving against eff",
      "    removed = _norm(_PATH.join(eff, path))\n", "    removed = _norm(path)\n",
      ("case_allow_remove_own_worktree_dot",)),
+    # Re-anchored by fix round 3: the `-C` stack is joined once.
     ("20 -C ignored",
-     "        eff = _PATH.normpath(_PATH.join(eff, value))\n", "        eff = eff\n",
+     "            tail.append(value)\n", "            pass\n",
      ("case_block_dash_c_worktree", "case_cnt_dash_c_own_branch_elsewhere")),
     ("21 the subcommand is the first word after git",
      "    sub_at = head + 1 + split\n",
@@ -2655,7 +2743,7 @@ MUTATIONS = (
      "    repo_unseen = _repo_unseen(globals_, dirs, info.repo_assign[start] < head)\n",
      ("case_cnt_quoted_global",)),
     ("C-faithful every raw word read as the shell reads it",
-     "    body = token.strip(\"(){}\")\n", "    return True\n",
+     "    body = token.strip(\"()\")\n", "    return True\n",
      ("case_cnt_worktree_split_quoted_path", "case_cnt_quoted_global",
       "case_cnt_branch_quoted_option")),
     ("C-empty-word a dropped quoted empty word not recorded",
@@ -2673,6 +2761,27 @@ MUTATIONS = (
     ("C14b a shared git head read again at every start (quadratic)",
      "    if key not in info.git_memo:\n", "    if True:\n",
      ("case_long_git_shared_head_is_linear",)),
+    # R-34c fix round 3.
+    ("C-bracket a bracket inside quotes read as syntax",
+     "            and token.strip(_STRIP) == body[1:-1])\n", ")\n", ("case_cnt_quoted_bracket",)),
+    ("C-brace a brace the shell keeps read as syntax",
+     "        return body == token.strip(_STRIP)\n", "        return True\n",
+     ("case_cnt_kept_brace",)),
+    ("C-exec-dashdash the -- after exec read as the head",
+     '_DASHDASH_PREFIXES = frozenset(("exec", "command", "env", "sudo"))',
+     "_DASHDASH_PREFIXES = frozenset()", ("case_block_exec_dashdash",)),
+    ("C-no-delete --no-delete ignored",
+     "            deleting &= 2\n", "            pass\n", ("case_allow_branch_no_delete",)),
+    ("C-no-delete-D --no-delete clears -D too",
+     "            deleting &= 2\n", "            deleting = 0\n",
+     ("case_block_no_delete_keeps_force_delete",)),
+    ("C-no-delete-value an option's value read as --no-delete",
+     "        if at not in values and _no_delete(word):\n", "        if _no_delete(word):\n",
+     ("case_block_no_delete_as_a_value",)),
+    ("C14c each -C re-normalises the growing path (quadratic)",
+     "    return _PATH.normpath(_PATH.join(base, _PATH.sep.join(tail)) if tail else base)\n",
+     "    for value in tail:\n        base = _PATH.normpath(_PATH.join(base, value))\n"
+     "    return base\n", ("case_long_stacked_dash_c_is_linear",)),
 )
 
 

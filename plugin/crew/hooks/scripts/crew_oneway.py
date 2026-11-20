@@ -117,7 +117,8 @@ Reading a command:
    start of a word (`list2>&1` keeps the word `list2`).
 
 Each segment then has its leading `NAME=VALUE` words and `HEAD_PREFIXES`
-stripped, and its head (basename, lower-cased, `.exe` dropped) is read. A
+stripped (with the `--` after `exec`, `command`, `env` or `sudo`), and its
+head (basename, lower-cased, `.exe` dropped) is read. A
 terraform head is judged by the terraform table; text after any other head
 never matches it (head precedence), and is read only for state words.
 Global options are skipped with `skip_options`, which also
@@ -262,6 +263,8 @@ SHAPES = tuple(row + (TF_STATE,) for row in _TF_SHAPES) + (
 # `exec`, which runs the command after it in place of the shell (R-34c).
 HEAD_PREFIXES = frozenset(("env", "sudo", "command", "time", "then", "do", "else", "!",
                            "if", "elif", "while", "until", "exec"))
+# The prefixes whose own options a `--` ends; that `--` is stripped too.
+_DASHDASH_PREFIXES = frozenset(("exec", "command", "env", "sudo"))
 _ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=", re.S)
 
 # --- state-file writes (R-34b) ---------------------------------------------------------------
@@ -417,14 +420,18 @@ def _faithful(token, escape):
     """Whether the raw pass reads the word `token` as the shell does: no
     escape, and no quote or one pair of the same quote around a body that
     holds none. `""` (an empty word, dropped), `/w/r34"` (half of a quoted
-    space) and `--git-"dir"=x` are not."""
-    body = token.strip("(){}")
+    space) and `--git-"dir"=x` are not. Only a bracket outside the quotes
+    is syntax: `'(own)'` and `'C:/w/r34)'` keep theirs, so the raw pass,
+    which strips them, misreads such a word (fix round 3), and a brace the
+    shell keeps (`own}`) too."""
+    body = token.strip("()")
     if escape in body:
         return False
     if not any(quote in body for quote in _QUOTES):
-        return True
+        return body == token.strip(_STRIP)
     return (len(body) > 2 and body[0] == body[-1] and body[0] in _QUOTES
-            and not any(quote in body[1:-1] for quote in _QUOTES))
+            and not any(quote in body[1:-1] for quote in _QUOTES)
+            and token.strip(_STRIP) == body[1:-1])
 
 
 def _lift(piece, escape="\\"):
@@ -685,13 +692,22 @@ def _judge_words(words, start=0, ctx=None):
     return _judge_from(scan, start)
 
 
+def _prefix_word(words, i):
+    """Whether `words[i]` is stripped before the head: a head prefix, a
+    `NAME=VALUE` word, or the `--` that ends the options of `exec`,
+    `command`, `env` or `sudo` (`exec -- git ...`, fix round 3)."""
+    word = words[i]
+    return (word in HEAD_PREFIXES or _ASSIGN_RE.match(word) is not None
+            or word == "--" and i > 0 and words[i - 1] in _DASHDASH_PREFIXES)
+
+
 def _prefix_ends(words):
     """`ends[i]`: the first index at or after `i` that is not a head prefix
     or a `NAME=VALUE` word, so every start strips its prefixes in constant
     time (`exec exec ... git`, an `exec` start at each word, stays linear)."""
     ends = list(range(len(words) + 1))
     for i in range(len(words) - 1, -1, -1):
-        if words[i] in HEAD_PREFIXES or _ASSIGN_RE.match(words[i]):
+        if _prefix_word(words, i):
             ends[i] = ends[i + 1]
     return ends
 
@@ -700,7 +716,7 @@ def _head(words, start, ends=None):
     """(index, head) of the command at `start`, prefixes stripped, or None.
     `ends` is `_prefix_ends(words)` when the caller holds it."""
     index = start if ends is None else ends[start]
-    while index < len(words) and (words[index] in HEAD_PREFIXES or _ASSIGN_RE.match(words[index])):
+    while index < len(words) and _prefix_word(words, index):
         index += 1
     if index >= len(words):
         return None
@@ -1035,10 +1051,20 @@ def _effective(cwd, dirs):
     `cwd` is known."""
     if cwd is None:
         return None
-    eff = cwd
+    # Linear in the stack (fix round 3): normalising after each `-C`, or
+    # one `join` of them all, re-copies the growing path, quadratic in a
+    # stack of relative `-C x`. A value that may reset the path or its
+    # drive is joined as git would; the relative ones after it are joined
+    # with the separator once. Taking a relative value as a reset changes
+    # nothing, so the test is loose on purpose.
+    base, tail = cwd, []
     for value in dirs:
-        eff = _PATH.normpath(_PATH.join(eff, value))
-    return eff
+        if value.startswith(("/", "\\")) or ":" in value:
+            base, tail = _PATH.join(_PATH.join(base, _PATH.sep.join(tail)) if tail else base,
+                                    value), []
+        elif value:  # an empty `-C ""` stays where it is
+            tail.append(value)
+    return _PATH.normpath(_PATH.join(base, _PATH.sep.join(tail)) if tail else base)
 
 
 def _positionals(rest):
@@ -1083,10 +1109,11 @@ def _branch_words(rest):
     `x`; `-D --sort refname x` deletes only `x`; `--sort -r` is no
     `--remotes`). `cut` is every option word, bundles read up to `u`, an
     option-shaped value too: a delete option read there can only
-    over-report. `operands` are indexes in `rest`."""
+    over-report. `values` holds the indexes in `cut` of those values, which
+    are never a `--no-delete`. `operands` are indexes in `rest`."""
     # pylint: disable=protected-access
     hit = crew_gitallow._option_hit
-    cut, operands, remotes, dashdash, index = [], [], False, False, 0
+    cut, values, operands, remotes, dashdash, index = [], set(), [], False, False, 0
     while index < len(rest):
         word = rest[index]
         if dashdash or not word.startswith("-"):
@@ -1102,17 +1129,33 @@ def _branch_words(rest):
                 index += 1  # the value
                 if rest[index].startswith("-"):
                     cut.append(_short(rest[index], "u"))
+                    values.add(len(cut) - 1)
         index += 1
-    return cut, operands, remotes
+    return cut, values, operands, remotes
+
+
+def _no_delete(word):
+    """Whether `word` is `--no-delete` or a prefix git takes for it."""
+    name = word.split("=", 1)[0]
+    return len(name) > len("--no-") and "--no-delete".startswith(name)
 
 
 def _branch_targets(rest):
     """git branch: the delete targets as (index, name), or None when this is
-    not a branch delete (no delete option, or `-r`/`--remotes`)."""
+    not a branch delete (no delete option, or `-r`/`--remotes`). git keeps
+    `-d`/`--delete` and `-D` as two bits of one flag, read in order:
+    `--no-delete` clears the first, so `-d --no-delete --list x` lists and
+    `-D --no-delete x` still deletes (fix round 3)."""
     # pylint: disable=protected-access
     hit = crew_gitallow._option_hit
-    cut, operands, remotes = _branch_words(rest)
-    if not any(hit(word, "-d") or hit(word, "-D") or hit(word, "--delete") for word in cut):
+    cut, values, operands, remotes = _branch_words(rest)
+    deleting = 0
+    for at, word in enumerate(cut):
+        if at not in values and _no_delete(word):
+            deleting &= 2
+        else:
+            deleting |= (hit(word, "-d") or hit(word, "--delete")) | 2 * hit(word, "-D")
+    if not deleting:
         return None
     if remotes:
         return None
