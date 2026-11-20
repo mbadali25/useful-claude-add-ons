@@ -427,10 +427,9 @@ _R20_ROWS = (
      '    if ps and head not in ("cp", "mv"):\n        return word.lower() in _D7_PS_FLAGS[kind]\n',
      [_BLOCK.format("ps-cp-bash-letters")]),
     ("S53 D7 reads a quoted or escaped Bash word as a source (rev 8)",
-     '    for word in words[1:-1]:\n        if word.startswith("-"):\n',
+     '    for word in words[1:-1]:\n',
      '    for word in words[1:-1]:\n'
-     '        word = word if ps or not set(word) & {"\'", \'"\', chr(92)} else "$Q"\n'
-     '        if word.startswith("-"):\n',
+     '        word = word if ps or not set(word) & {"\'", \'"\', chr(92)} else "$Q"\n',
      [_BLOCK.format(i) for i in ("cp-quoted-target-flag", "cp-dquoted-target-flag",
                                  "cp-part-quoted-target-flag", "cp-escaped-target-flag",
                                  "cp-quoted-target-long", "mv-quoted-target-flag",
@@ -500,6 +499,15 @@ _R20_ROWS = (
      '    if len(_CLAUDE_RE.findall(_QUOTE_RE.sub("", reading))) != len(matches):\n',
      "    if False:\n",
      [_BLOCK.format("msg-launder-claude")]),
+    ("S70 D4 (b) reads a message flag after git's `--` (review round 1)",
+     '        if word.value == "--":\n'
+     "            break  # every word after `--` is a pathspec or operand, never a message\n", "",
+     [_BLOCK.format(i) for i in ("msg-after-double-dash", "msg-after-double-dash-eq")]),
+    ("S71 a D7 source may name the crew dir (review round 1)",
+     "        if _CREW_DIR_RE.search(word):\n"
+     "            return False  # only the destination may name the crew dir\n", "",
+     [_BLOCK.format(i) for i in ("cp-crew-source-relative", "cp-crew-source-nested",
+                                 "ps-crew-source-relative")]),
 )
 
 def _case(target):

@@ -1443,6 +1443,13 @@ _R20_BLOCK = [
     ("cp-dquoted-source", "Bash", "cp \"$SRC\" ~/.claude/crew/config.json.bak"),
     ("cp-double-dash", "Bash", "cp -- $SRC ~/.claude/crew/config.json.bak"),
     ("cp-mixed-word", "Bash", "cp $SRC/a.json ~/.claude/crew/config.json.bak"),
+    # review round 1: a source may not name the crew dir (only the destination may)
+    ("cp-crew-source-relative", "Bash", "cp .claude/crew/example $SRC ~/.claude/crew/backup"),
+    ("cp-crew-source-nested", "Bash", "cp -r x/.claude/crew/a $SRC ~/.claude/crew/bak"),
+    ("ps-crew-source-relative", "PowerShell", "Copy-Item .claude\\crew\\example $S ~\\.claude\\crew\\backup"),
+    # review round 1: after git's `--` every word is a pathspec, never a message D4 (b) drops
+    ("msg-after-double-dash", "Bash", "git commit -m 'notes' -- -m 'run-approvals'"),
+    ("msg-after-double-dash-eq", "Bash", "git commit -m 'notes' -- --message='run-approvals'"),
     # rev 10: a dropped message read back and run (the owner's MUST-BLOCK)
     ("msg-launder-store", "Bash",
      "git commit --allow-empty -m 'cp forged.json "

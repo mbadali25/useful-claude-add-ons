@@ -1437,6 +1437,8 @@ def _message_args(cmd, tool):
     flags, spans, k = _MESSAGE_FLAGS[name], [], 1
     while k < len(words):
         word = words[k]
+        if word.value == "--":
+            break  # every word after `--` is a pathspec or operand, never a message
         if word.value in flags and k + 1 < len(words):
             if words[k + 1].quoted:
                 spans.append((words[k + 1].start, words[k + 1].end))
@@ -1681,7 +1683,8 @@ def _destination_only(reading, tool):
     `<cp|mv> [<flag or source>...] ~/.claude/crew/<segment>[/<segment>...]`,
     every word matching its form in full. No quote, escape, glob, comma,
     separator or non-ASCII character is in any form, so the shell rewrites
-    nothing and the last word is the destination."""
+    nothing and the last word is the destination. No source or flag names
+    the crew dir: the destination is the only word that may."""
     if not isinstance(reading, str):
         return False
     ps = tool == "PowerShell"
@@ -1695,6 +1698,8 @@ def _destination_only(reading, tool):
     if kind is None:  # D7: only cp, mv, Copy-Item, Move-Item
         return False
     for word in words[1:-1]:
+        if _CREW_DIR_RE.search(word):
+            return False  # only the destination may name the crew dir
         if word.startswith("-"):
             if not _d7_flag(word, head, kind, ps):
                 return False
