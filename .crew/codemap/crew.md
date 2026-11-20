@@ -245,6 +245,18 @@ row `completion-audit.sh` is also in `DIRECT` (accept `(0, 2)`); the dispatcher 
 marker on that and on a verdict, never on a timeout. `_audit_scope_unknown` (`CLAUDE_PROJECT_DIR` unset/empty, or `_audit_tmp` cannot
 name the wrapper's `${TMPDIR:-/tmp}`: `TMPDIR` set to a missing directory, or unset/empty without an absolute, drive-qualified `CREW_HOOK_POSIX_TMP`
 directory, which `crew-hook.sh` sets to `/tmp` on the dispatcher's command line since crew 1.3.147) makes `direct_plan` return None, so the wrapper keeps the whole sequence. Test: `plugin/crew/tests/test_crew_hook_stop_native.py`.
+DERIVED (B-124 / CLDDEV-124, `plugin/crew/hooks/scripts/crew_hook.py`): an ARMED `Stop` whose strict Git Bash probe is kind
+`unknown` no longer returns `_no_bash` before any row runs (`dispatch`, `:822-830`); `absent`, `broken`, every other event and an
+unarmed repo still do. The rows with a believed direct route (the completion audit) run; each row that needs bash gets an
+`unchecked` result from `run_wrapper` (`:867`) and is never spawned; `_settle` (`:1019`) hands them to `_settle_stop_unknown`
+(`:1101`): a real block or a fault in a row that ran still exits 2 with an `UNKNOWN (Git Bash could not be told, not a pass)`
+notice; otherwise `_stop_unknown_verdict` (`:1073`) lets through a continuation by verify-gate.sh's own narrow rule
+(`_gate_continuation` `:572`, the two literal spellings before the first NUL, deliberately not `_STOP_ACTIVE`), blocks a fresh Stop
+up to `UNKNOWN_STOP_BLOCKS` (`:581`, 2) per session and project, then lets it through with a `systemMessage`. The count is a file
+`<tempdir>/crew-stop-unknown.<sid>-<cksum(normcase(abspath(root)))>` (`_stop_unknown_path` `:584`; `dispatch(stop_state=)` points
+it elsewhere), unreadable or unnamable is could-not-tell and blocks, and a Stop whose probe answered removes it (`:830`). Each
+outcome writes a `gitbash-unknown` row through `crew_config._log_guard` (`:1062`). The LKG-before-probe idea is out of scope
+(the cache lives in `crew_shell.py`, outside the harness). Test: `plugin/crew/tests/test_crew_stop_unknown.py`.
 Tests: `test_crew_hook_direct.py`. With no usable python `crew-hook.sh` runs the event's `.sh` scripts directly from a static
 list and `crew-hook.ps1` fails an armed repo closed on the three blocking events. Tests:
 `plugin/crew/tests/test_crew_hook_parity.py`, `test_crew_hook_merge.py`, `test_crew_hook_faults.py`,

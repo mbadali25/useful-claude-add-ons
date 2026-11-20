@@ -32,6 +32,7 @@ import re
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from collections import namedtuple
@@ -561,6 +562,81 @@ def _flat(raw):
     return raw.replace(b"\x00", b"").replace(b"\r", b"").replace(b"\n", b"")
 
 
+# verify-gate.sh's own continuation test (verify-gate.sh:730-735), byte for byte: its `read -r -d ''` keeps the
+# bytes before the first NUL, and its `case` exits 0 only on these two literal spellings. Deliberately NOT
+# `_STOP_ACTIVE`: that is completion-audit.sh's wider rule (any whitespace, NULs dropped), and on a payload only the
+# wide rule matches verify-gate.sh still runs its checks and can block (B-124).
+_GATE_CONTINUATION = (b'"stop_hook_active": true', b'"stop_hook_active":true')
+
+
+def _gate_continuation(raw):
+    """True when verify-gate.sh would read this Stop as a continuation and exit 0 before any check."""
+    head = raw.split(b"\x00", 1)[0]
+    return any(spelling in head for spelling in _GATE_CONTINUATION)
+
+
+# B-124: a Stop whose strict Git Bash probe said `unknown` (it exists but did not answer: a busy host) blocks at
+# most this many fresh Stops per session and project; after that it is let through with a visible UNKNOWN notice.
+# A constant on purpose: no config key, no env override (an env var that stands a guard down is the L-0850 class).
+UNKNOWN_STOP_BLOCKS = 2
+
+
+def _stop_unknown_path(raw, root, state_dir=None):
+    """The count file for this session and project: `<temp>/crew-stop-unknown.<sid>-<cksum(project)>`. The
+    project is `dispatch`'s own `root` (CLAUDE_PROJECT_DIR, else the hook's cwd), normalised so two spellings of
+    one directory share a count. ValueError when the project cannot be named (empty, or a path that does not
+    encode): never hashed as "", so two projects never quietly share one count."""
+    found = _SESSION_ID.match(_flat(raw))
+    sid = found.group(1).decode("ascii") if found else "nosession"
+    if not root:
+        raise ValueError("the project cannot be named")
+    key = os.path.normcase(os.path.abspath(root)).encode("utf-8")  # UnicodeEncodeError is a ValueError
+    base = tempfile.gettempdir() if state_dir is None else state_dir
+    return os.path.join(base, f"crew-stop-unknown.{sid}-{_posix_cksum(key)}")
+
+
+def _stop_unknown_read(path):
+    """The blocks already counted: 0 when there is no file, None when it could not be told (unreadable, not a
+    non-negative integer). None is never read as exhausted."""
+    try:
+        with open(path, "rb") as handle:
+            data = handle.read(64)
+    except (FileNotFoundError, NotADirectoryError):
+        return 0
+    except OSError:
+        return None
+    try:
+        count = int(data.decode("ascii").strip())
+    except (UnicodeDecodeError, ValueError):
+        return None
+    return count if count >= 0 else None
+
+
+def _stop_unknown_write(path, count):
+    """Write the count through a temp file and `os.replace` (never open the target "w"). False on failure."""
+    tmp = f"{path}.{os.getpid()}.tmp"
+    text = str(count)
+    try:
+        with open(tmp, "w", encoding="ascii") as handle:
+            handle.write(text)
+        os.replace(tmp, path)
+        return True
+    except OSError:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        return False
+
+
+def _stop_unknown_clear(raw, root, state_dir=None):
+    """A Stop whose probe answered starts the next overload at block 1 again. Errors change nothing."""
+    try:
+        os.remove(_stop_unknown_path(raw, root, state_dir))
+    except (OSError, ValueError):
+        pass
+
+
 def _posix_cksum(data):
     """POSIX `cksum` of `data` (CRC-32/0x04C11DB7, MSB first, the length folded in), as the wrapper's
     `printf | cksum | cut -d' ' -f1` gives it."""
@@ -694,12 +770,14 @@ def _timing(path, event, argv, res):
 
 
 def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_bash=None,
-             resolve_pwsh=None, scripts=SCRIPTS, armed_fn=None, direct=None):
+             resolve_pwsh=None, scripts=SCRIPTS, armed_fn=None, direct=None, stop_state=None):
     """Run the event's rows; returns (exit, stdout bytes, stderr bytes). `deadline_ms` is
     the epoch deadline the launcher handed over; it is turned into a monotonic one here, so
     a clock that steps cannot stretch or shrink any bound after this point. `direct` (default:
     on Windows unless CREW_HOOK_DIRECT=0) lets the rows in `DIRECT` run their Python file
-    without the Git Bash wrapper; see the comment at `DIRECT`."""
+    without the Git Bash wrapper; see the comment at `DIRECT`. `stop_state` (default: the
+    system temp directory) is where an armed Stop with an `unknown` Git Bash keeps its
+    per-session block count (B-124, `_settle_stop_unknown`)."""
     mono_end = time.monotonic() + (deadline_ms - now_ms()) / 1000.0
     windows = _windows() if windows is None else windows
     direct = (windows and env.get("CREW_HOOK_DIRECT") != "0") if direct is None else direct
@@ -740,8 +818,16 @@ def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_
                 import crew_shell  # pylint: disable=import-outside-toplevel
                 resolve_pwsh = crew_shell.resolve_pwsh
             pwsh = resolve_pwsh()[0]
+    stop_unknown = None
     if bash is None:
-        return _no_bash(event, bash_problem, root, armed_fn)
+        # B-124: an armed Stop whose Git Bash could not be told runs what it can and reports the rest as
+        # unchecked; `_settle_stop_unknown` bounds the blocks. absent/broken, and every other event, refuse as before.
+        if event == "Stop" and getattr(bash_problem, "kind", "absent") == "unknown" and armed_fn(root):
+            stop_unknown = {"problem": bash_problem, "raw": raw, "state": stop_state}
+        else:
+            return _no_bash(event, bash_problem, root, armed_fn)
+    elif windows and event == "Stop" and bash != "bash":
+        _stop_unknown_clear(raw, root, stop_state)  # the probe answered: the next overload starts at block 1
     trace = env.get("CREW_HOOK_TRACE_FILE", "")
     timing = env.get("CREW_HOOK_TIMING_FILE", "")
     results = [None] * len(chosen)
@@ -778,11 +864,12 @@ def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_
 
     def run_wrapper(row, argv, own):
         use_bash = bash
-        if windows and bash == "bash":  # not resolved up front: every row so far ran directly
+        if windows and bash in ("bash", None):  # not resolved up front, or resolved as could-not-tell (B-124)
             use_bash, problem = get_bash()
             if use_bash is None:
+                # never spawned; on the B-124 Stop path the row is reported as unchecked, not as a fault
                 return {"exit": None, "stdout": b"", "stderr": b"", "timed_out": False, "pid": 0,
-                        "error": _no_bash_message(problem)}
+                        "error": _no_bash_message(problem), "unchecked": stop_unknown is not None}
         command, flavour = _argv_for(argv, scripts, use_bash, pwsh)
         if command is None:
             return {"exit": None, "stdout": b"", "stderr": b"", "timed_out": False, "pid": 0,
@@ -836,7 +923,7 @@ def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_
         thread.start()
     for thread in threads:
         thread.join()
-    return _settle(event, chosen, results, root, armed_fn)
+    return _settle(event, chosen, results, root, armed_fn, stop_unknown)
 
 
 def _no_bash_message(problem):
@@ -924,11 +1011,14 @@ def _unknown_label(res):
     return ""
 
 
-def _settle(event, chosen, results, root, armed_fn):
+def _settle(event, chosen, results, root, armed_fn, stop_unknown=None):
     """Turn the children's raw results into merge input, applying B8."""
-    merge_in, notes, faults, heard = [], [], [], []
+    merge_in, notes, faults, heard, unchecked = [], [], [], [], []
     for (row, argv), res in zip(chosen, results):
         name = " ".join(argv)
+        if stop_unknown is not None and res.get("unchecked"):
+            unchecked.append((name, row.guard))  # never ran: Git Bash could not be told (B-124)
+            continue
         undecided = not res["error"] and not res["timed_out"] and res["exit"] not in (0, 2)
         if res["error"] or res["timed_out"] or undecided:
             attempts = res.get("attempts", 1)
@@ -952,6 +1042,8 @@ def _settle(event, chosen, results, root, armed_fn):
             # a guard's own "no usable python" refusal still blocks, but it is not a policy deny
             stderr = UNKNOWN_PYTHON + "\n" + stderr
         merge_in.append({"exit": res["exit"], "stdout": _text(res["stdout"]), "stderr": stderr})
+    if unchecked:
+        return _settle_stop_unknown(event, merge_in, notes, faults, heard, unchecked, root, armed_fn, stop_unknown)
     if faults and armed_fn(root):
         text = "".join((f"{label}\n" if label else "") + f"{line}; failing closed (armed repo).\n"
                        for label, line in faults)
@@ -962,6 +1054,76 @@ def _settle(event, chosen, results, root, armed_fn):
     merged = merge(event, merge_in)
     stderr = merged["stderr"] + "".join(heard) + "".join(notes)
     return merged["exit"], merged["stdout"].encode("utf-8"), stderr.encode("utf-8")
+
+
+UNKNOWN_STOP = "crew-hook: UNKNOWN (Git Bash could not be told, not a pass)"
+
+
+def _stop_unknown_log(root, decision, rows):
+    """One guard.log row per B-124 outcome. `_log_guard` never creates `.crew/` and never raises; the wrap is so
+    that not even an import failure changes a verdict."""
+    try:
+        import crew_config  # pylint: disable=import-outside-toplevel
+        crew_config._log_guard(root, (str(int(time.time())), "crew-hook", "Stop", "gitbash-unknown",  # pylint: disable=protected-access
+                                      decision, ",".join(rows)))
+    except Exception:  # noqa: BLE001  pylint: disable=broad-exception-caught
+        pass
+
+
+def _stop_unknown_verdict(raw, root, state_dir):
+    """(block, why, decision) for a Stop whose guard rows could not run because Git Bash could not be told.
+    A continuation verify-gate.sh itself would exit on is let through; a fresh Stop blocks up to
+    UNKNOWN_STOP_BLOCKS times per session and project, then is let through. A count that cannot be told or
+    cannot be written always blocks (an unknown is never read as exhausted)."""
+    if _gate_continuation(raw):
+        return False, ("this is a stop_hook_active continuation turn, on which those checks would not have blocked "
+                       "(context-watch's auto-clear was skipped)"), "allowed-unchecked:continuation"
+    try:
+        path = _stop_unknown_path(raw, root, state_dir)
+    except ValueError:
+        return True, "The Stop-block count could not be told (the project cannot be named), so it was not counted.", \
+            "blocked count-unknown"
+    count = _stop_unknown_read(path)
+    if count is None:
+        return True, "The Stop-block count for this session could not be read, so this Stop is blocked.", \
+            "blocked count-unknown"
+    if count >= UNKNOWN_STOP_BLOCKS:
+        return False, (f"the {UNKNOWN_STOP_BLOCKS}-block bound for this session was reached (verify-gate's checks "
+                       "and context-watch's handoff request were skipped)"), "allowed-unchecked:bound"
+    count += 1
+    if not _stop_unknown_write(path, count):
+        return True, "This Stop block could not be counted (the count file could not be written).", \
+            "blocked uncounted"
+    return True, (f"Stop block {count} of {UNKNOWN_STOP_BLOCKS} this session; after {UNKNOWN_STOP_BLOCKS} the Stop "
+                  "is let through with an UNKNOWN notice."), f"blocked {count}/{UNKNOWN_STOP_BLOCKS}"
+
+
+def _settle_stop_unknown(event, merge_in, notes, faults, heard, unchecked, root, armed_fn, stop):
+    """B-124 D7: the rows that ran are judged as usual; the rows that could not run (Git Bash could not be told)
+    are named. A real block or a fault in a row that ran still blocks, with the UNKNOWN notice added. Otherwise an
+    unchecked guard applies the continuation rule and the per-session bound; an unchecked non-guard is a note."""
+    rows = [name for name, _ in unchecked]
+    problem = stop["problem"]
+    notice = f"{UNKNOWN_STOP}: Stop checks {', '.join(rows)} did not run: {problem}."
+    merged = merge(event, merge_in)
+    if merged["exit"] == 2 or (faults and armed_fn(root)):
+        text = "".join((f"{label}\n" if label else "") + f"{line}; failing closed (armed repo).\n"
+                       for label, line in faults)
+        _stop_unknown_log(root, "blocked-by-checks", rows)
+        return 2, b"", (merged["stderr"] + "".join(heard) + text + notice + "\n").encode("utf-8")
+    if not any(guard for _, guard in unchecked):
+        stderr = merged["stderr"] + "".join(heard) + "".join(notes) + notice + "\n"
+        return merged["exit"], merged["stdout"].encode("utf-8"), stderr.encode("utf-8")
+    block, why, decision = _stop_unknown_verdict(stop["raw"], root, stop["state"])
+    _stop_unknown_log(root, decision, rows)
+    if block:
+        message = f"{_no_bash_message(problem)} {why}\n"
+        return 2, b"", (merged["stderr"] + "".join(heard) + "".join(notes) + message).encode("utf-8")
+    line = f"{notice} Let through because {why}."
+    merge_in = merge_in + [{"exit": 0, "stdout": json.dumps({"systemMessage": line}) + "\n", "stderr": line + "\n"}]
+    merged = merge(event, merge_in)
+    stderr = merged["stderr"] + "".join(heard) + "".join(notes)
+    return 0, merged["stdout"].encode("utf-8"), stderr.encode("utf-8")
 
 
 def parse_args(argv):
