@@ -1,0 +1,127 @@
+{
+  "qa": {
+    "provider": "auto",
+    "order": [
+      "codex",
+      "kimi",
+      "copilot",
+      "claude"
+    ],
+    "fallback": "claude-sonnet-5",
+    "codex": {
+      "model": "gpt-6.2-sol",
+      "reasoningEffort": null
+    },
+    "copilot": {
+      "model": null
+    },
+    "kimi": {
+      "model": null
+    },
+    "roles": {}
+  },
+  "dev": {
+    "provider": "claude",
+    "fallback": "claude-sonnet-5",
+    "codex": {
+      "model": null,
+      "reasoningEffort": null
+    },
+    "copilot": {
+      "model": null
+    },
+    "kimi": {
+      "model": null
+    },
+    "roles": {}
+  },
+  "secondOpinion": {
+    "provider": "none",
+    "mode": "cli",
+    "model": null
+  },
+  "memory": {
+    "mode": "repo",
+    "vaultPath": null
+  },
+  "notify": {
+    "provider": null,
+    "tokenEnv": null,
+    "chatId": null,
+    "events": [
+      "blocker",
+      "deploy",
+      "question"
+    ]
+  },
+  "pm": {
+    "authority": "report-only",
+    "maxDispatches": 3
+  },
+  "context": {
+    "autoClear": {
+      "enabled": null,
+      "method": "auto",
+      "delaySeconds": 3,
+      "minHandoffLines": 5,
+      "onlyRepos": null,
+      "onlySessions": null,
+      "wrapUp": null
+    }
+  },
+  "resume": {
+    "auto": null
+  },
+  "humanOnly": {
+    "approve": null,
+    "promoteMarker": null
+  },
+  "worktrees": {
+    "root": null
+  },
+  "promote": {
+    "deadlineSeconds": null
+  },
+  "reaper": {
+    "enabled": false,
+    "dryRun": true,
+    "spinCpuPct": 50,
+    "spinMinAgeMin": 15,
+    "blockedMinAgeHours": 2,
+    "protectedRegex": null,
+    "intervalMin": 10,
+    "onSessionStart": false
+  },
+  "install": {
+    "policy": "manual"
+  },
+  "guards": {
+    "profile": "off",
+    "overrides": {},
+    "git": {
+      "allow": null
+    }
+  },
+  "environments": {
+    "prodUnattended": false
+  },
+  "change": {
+    "requireForProduction": false
+  },
+  "git": {
+    "forbiddenTrailers": []
+  },
+  "route": {
+    "enabled": false
+  },
+  "unattendedCloud": {
+    "aws": {
+      "readOnly": {
+        "profile": null,
+        "identity": null,
+        "region": null
+      },
+      "nonProd": {}
+    }
+  }
+}

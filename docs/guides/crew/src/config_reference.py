@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate crew's configuration reference from the code (T-0048, L-0725).
 
-Writes two files, both whole, from `crew_config.default_config()` /
+Writes six files, all whole, from `crew_config.default_config()` /
 `default_global_config()` (the defaults and the key set), the ratchet tables in
 `crew_guards` / `crew_config` (the layer), the guard profile table
 (`crew_guards.PROFILE_MAP`) and `crew_keys.KEY_META` (the values, summaries,
@@ -12,12 +12,18 @@ families and arrival versions):
   Since L-0725 it is generated whole: nothing in it is hand-written, so a
   one-byte edit anywhere makes `--check` fail. The reasoning behind the keys
   lives in `docs/crew/config-rationale.md`.
+- `plugin/crew/docs/configuration/` (R-C2): `config.blank.json` and
+  `global.blank.json`, one copy-safe blank per layer (every key at its default
+  minus `crew_keys.BLANK_EXCLUDED`, so copying one into an empty layer changes
+  no effective value); `keys.json`, the per-key facts; and
+  `template.annotated.md`, both blanks with each key's facts beside it. None
+  carries a crew version or a date, so a version bump never stales them.
 
 It never reads a config FILE -- no `read_global_config`, no `load_config` --
 so the output is the same on every machine, whatever `~/.claude/crew/` holds.
 
 Usage:
-    config_reference.py --write   # regenerate both
+    config_reference.py --write   # regenerate all six
     config_reference.py --check   # exit 1 naming each stale file, 2 on any error
 
 `--check` is what `scripts/check-marketplace.py` runs. An error is exit 2 with
@@ -31,6 +37,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import tempfile
 
 sys.dont_write_bytecode = True
 
@@ -39,6 +46,11 @@ ROOT = os.path.abspath(os.path.join(SRC, os.pardir, os.pardir, os.pardir, os.par
 SCRIPTS = os.path.join(ROOT, "plugin", "crew", "hooks", "scripts")
 REFERENCE = os.path.join(SRC, "configuration-reference.md")
 CONFIG_MD = os.path.join(ROOT, "plugin", "crew", "CONFIG.md")
+CONF_DIR = os.path.join(ROOT, "plugin", "crew", "docs", "configuration")
+REPO_BLANK = os.path.join(CONF_DIR, "config.blank.json")
+GLOBAL_BLANK = os.path.join(CONF_DIR, "global.blank.json")
+KEYS_JSON = os.path.join(CONF_DIR, "keys.json")
+ANNOTATED = os.path.join(CONF_DIR, "template.annotated.md")
 COMMAND = "python3 docs/guides/crew/src/config_reference.py --write"
 RATIONALE = "docs/crew/config-rationale.md"
 
@@ -809,10 +821,153 @@ def render_config_md(model=None):
     return "\n".join(out).rstrip("\n") + "\n"
 
 
+# --- R-C2: the blanks, the key list and the annotated template ------------------
+
+DO_NOT_EDIT = ("Generated from the code by " + COMMAND + ". Do not edit by hand: "
+               "python3 scripts/check-marketplace.py fails when this file is stale.")
+_BLANK_FILES = {"repo": ("config.blank.json", ".crew/config.json", "--repo"),
+                "machine": ("global.blank.json", "~/.claude/crew/config.json", "--global")}
+
+
+def _blank_json(blank):
+    return json.dumps(blank, indent=2) + "\n"
+
+
+def render_repo_blank(model=None):
+    """`config.blank.json`: every repo-layer key at its default, minus
+    `crew_keys.BLANK_EXCLUDED["repo"]` (rule R1)."""
+    model = model or Model()
+    return _blank_json(model.keys.blank_config("repo"))
+
+
+def render_global_blank(model=None):
+    """`global.blank.json`: every machine-layer key at its default, minus
+    `crew_keys.BLANK_EXCLUDED["machine"]` (rule R2)."""
+    model = model or Model()
+    return _blank_json(model.keys.blank_config("machine"))
+
+
+def _blank_state(model, layer, key, blank_keys):
+    if key in model.keys.BLANK_EXCLUDED[layer]:
+        return "excluded: " + model.keys.BLANK_EXCLUDED[layer][key]
+    if key in blank_keys:
+        return "included"
+    return "not in this layer"
+
+
+def render_keys_json(model=None):
+    """`keys.json`: the per-key facts, in `all_leaves()` order. No crew version
+    and no date, so a version bump never stales it."""
+    model = model or Model()
+    keys = model.keys
+    in_blank = {layer: set(model.config.leaf_paths(keys.blank_config(layer)))
+                for layer in keys.BLANK_LAYERS}
+    rows = []
+    for key in model.leaves:
+        row = keys.KEY_META[key]
+        default = {}
+        for layer in keys.BLANK_LAYERS:
+            found, value = keys.layer_default(layer, key)
+            if found:
+                default[layer] = value
+        vals = keys.values_of(key)
+        by_os = row["values_by_os"]
+        rows.append({
+            "key": key, "family": row["family"], "layer": keys.layer_of(key),
+            "kind": row["kind"], "default": default,
+            "values": list(vals) if vals is not None else None,
+            "valuesByOs": ({name: list(v) for name, v in by_os.items()}
+                           if by_os is not None else None),
+            "type": row["type"], "source": row["source"], "summary": row["summary"],
+            "since": row["since"],
+            "blank": {layer: _blank_state(model, layer, key, in_blank[layer])
+                      for layer in keys.BLANK_LAYERS},
+        })
+    doc = {"generatedBy": COMMAND, "doNotEdit": DO_NOT_EDIT,
+           "layers": dict(LAYER_TERMS),
+           "exclusionReasons": dict(keys.EXCLUSION_REASONS),
+           "keys": rows}
+    return json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
+
+
+ANNOTATED_HEAD = """\
+# crew configuration blanks
+
+Generated from the code by `{command}`. Do not edit by hand:
+`python3 scripts/check-marketplace.py` fails when this file is stale.
+
+This folder holds two blanks, whole config files with every key at crew's
+default:
+
+- `config.blank.json`, for a repo's `.crew/config.json`;
+- `global.blank.json`, for the machine file `~/.claude/crew/config.json`.
+
+Copying a blank into a layer that has no file changes nothing crew does until
+you edit a value. To keep that true, each blank leaves out the keys whose value
+at the default would still change something; each one is listed, with the
+reason, under "Left out of this blank". Set one of those only when you want a
+value other than the one you would otherwise get.
+
+The repo blank is not the `/crew:init` template
+(`templates/config.template.json`): that one also spells the two-layer keys at
+their defaults, so it holds your machine values down. `keys.json` holds the
+same facts for every key, for tools. The reasons behind the rules are in
+`{rationale}`; every key's full description is in `plugin/crew/CONFIG.md`.
+"""
+
+
+def _annotated_layer(model, layer):
+    keys = model.keys
+    name, target, flag = _BLANK_FILES[layer]
+    blank = keys.blank_config(layer)
+    members = model.config.leaf_paths(blank)
+    excluded = keys.BLANK_EXCLUDED[layer]
+    title = "Repo blank" if layer == "repo" else "Machine blank"
+    out = [f"## {title}: `{name}`", "",
+           f"Copy to `{target}`. {len(members)} keys in the blank, {len(excluded)} left out.",
+           ""]
+    by_family = {family: [] for family in keys.FAMILIES}
+    for key in members:
+        by_family[keys.KEY_META[key]["family"]].append(key)
+    for family in keys.FAMILIES:
+        if not by_family[family]:
+            continue
+        out += [f"### `{family}`", "",
+                "| Key | Blank value | Layer | Allowed values | Since | What it does |",
+                "|---|---|---|---|---|---|"]
+        for key in by_family[family]:
+            row = keys.KEY_META[key]
+            value = keys.layer_default(layer, key)[1]
+            out.append("| " + " | ".join(_cell(c) for c in (
+                f"`{key}`", f"`{json.dumps(value)}`", keys.layer_of(key),
+                model.values(key), _since(row["since"]), row["summary"])) + " |")
+        out.append("")
+    out += ["### Left out of this blank", "",
+            "| Key | Why | Set it with |", "|---|---|---|"]
+    for key in model.leaves:
+        if key in excluded:
+            out.append("| " + " | ".join(_cell(c) for c in (
+                f"`{key}`", excluded[key],
+                f"`crew_config.py --set {key}=JSON --apply {flag}`")) + " |")
+    out.append("")
+    return out
+
+
+def render_annotated(model=None):
+    """`template.annotated.md`: both blanks, each key's facts beside it."""
+    model = model or Model()
+    out = [ANNOTATED_HEAD.format(command=COMMAND, rationale=RATIONALE)]
+    for layer in model.keys.BLANK_LAYERS:
+        out += _annotated_layer(model, layer)
+    return "\n".join(out).rstrip("\n") + "\n"
+
+
 def expected():
-    """`{path: full expected text}` for both files."""
+    """`{path: full expected text}` for all six files."""
     model = Model()
-    return {REFERENCE: render_reference(model), CONFIG_MD: render_config_md(model)}
+    return {REFERENCE: render_reference(model), CONFIG_MD: render_config_md(model),
+            REPO_BLANK: render_repo_blank(model), GLOBAL_BLANK: render_global_blank(model),
+            KEYS_JSON: render_keys_json(model), ANNOTATED: render_annotated(model)}
 
 
 def _read(path):
@@ -843,10 +998,22 @@ def write():
     for path, text in texts.items():
         if _read(path) == text:
             continue
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
-            fh.write(text)
-        os.replace(tmp, path)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        # A per-writer staging name (GEN-02): two concurrent --write runs
+        # never share one temp file, so neither can rename the other's half.
+        fd, tmp = tempfile.mkstemp(prefix=os.path.basename(path) + ".",
+                                   suffix=".tmp", dir=os.path.dirname(path))
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(text)
+            os.chmod(tmp, 0o644)  # mkstemp opens 0600; a doc stays readable
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
         print(f"wrote {os.path.relpath(path, ROOT)}")
 
 

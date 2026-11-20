@@ -1,0 +1,2191 @@
+{
+  "generatedBy": "python3 docs/guides/crew/src/config_reference.py --write",
+  "doNotEdit": "Generated from the code by python3 docs/guides/crew/src/config_reference.py --write. Do not edit by hand: python3 scripts/check-marketplace.py fails when this file is stale.",
+  "layers": {
+    "repo": "only `.crew/config.json` may set it; the global file's value is pruned on read and refused on write.",
+    "both": "either file may set it; the repo value wins over the machine one.",
+    "both, ratchet": "either file may set it, and the NARROWER of the two wins (`crew_guards.RATCHETED_KEYS`). A repo can tighten what the machine allows, never loosen it.",
+    "both, widening warned": "either file may set it and the repo wins, but a write that widens it is flagged (`crew_config._RATCHETED`).",
+    "both, stricter wins": "a personal key (`crew_guards.PERSONAL_KEYS`): either file may set it, and where both do the STRICTER value wins; a layer that is silent (absent or `null`) imposes nothing, so a machine value is your default for every repo and a repo may only narrow it.",
+    "machine-arms": "only the global file can turn it on (exactly `true`); a repo may only veto it with `false` (`crew_config.REPO_VETO_ONLY`).",
+    "machine-only": "read from the global file alone; a repo's own value is never consulted.",
+    "human-only opt-out": "a `humanOnly` key (`crew_humanonly`): `false` opts out only from the machine file or an untracked repo file, only after the owner types `/crew:confirm-config <change_id>` twice, and a `true` in either layer vetoes it. Not acted on by any hook yet (see the section below)."
+  },
+  "exclusionReasons": {
+    "shadows": "a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+    "personal": "a personal key: at its default it holds your machine value down (stricter wins)"
+  },
+  "keys": [
+    {
+      "key": "schema",
+      "family": "core",
+      "layer": "repo",
+      "kind": "unvalidated",
+      "default": {
+        "repo": 8
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "integer",
+      "source": "hooks/scripts/crew_state.py",
+      "summary": "Config schema version; `/crew:migrate` upgrades an older one.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "qa.provider",
+      "family": "providers",
+      "layer": "both",
+      "kind": "tuple",
+      "default": {
+        "repo": "auto",
+        "machine": "auto"
+      },
+      "values": [
+        "auto",
+        "claude",
+        "codex",
+        "copilot",
+        "kimi"
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": null,
+      "summary": "Who reviews: `auto` walks `qa.order`; a named provider is used as-is.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "qa.order",
+      "family": "providers",
+      "layer": "both",
+      "kind": "tuple",
+      "default": {
+        "repo": [
+          "codex",
+          "kimi",
+          "copilot",
+          "claude"
+        ],
+        "machine": [
+          "codex",
+          "kimi",
+          "copilot",
+          "claude"
+        ]
+      },
+      "values": [
+        "claude",
+        "codex",
+        "copilot",
+        "kimi"
+      ],
+      "valuesByOs": null,
+      "type": "list of",
+      "source": null,
+      "summary": "The reviewers `auto` tries, in order. A list is one leaf, replaced wholesale.",
+      "since": "0.14.6",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "qa.fallback",
+      "family": "providers",
+      "layer": "both",
+      "kind": "unvalidated",
+      "default": {
+        "repo": "claude-sonnet-5",
+        "machine": "claude-sonnet-5"
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "model id",
+      "source": "commands/review.md",
+      "summary": "Model a gone pin falls back to, on its family's provider (L-0712).",
+      "since": "0.16.6",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "qa.codex.model",
+      "family": "providers",
+      "layer": "both",
+      "kind": "unvalidated",
+      "default": {
+        "repo": "gpt-6.2-sol",
+        "machine": "gpt-6.2-sol"
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "string or null",
+      "source": "commands/review.md",
+      "summary": "Codex model for review; defaults to `gpt-6.2-sol` (1.3.166), null passes no flag.",
+      "since": "0.14.6",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "qa.codex.reasoningEffort",
+      "family": "providers",
+      "layer": "both",
+      "kind": "prose",
+      "default": {
+        "repo": null,
+        "machine": null
+      },
+      "values": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": "commands/review.md",
+      "summary": "Codex reasoning effort for review; null passes no flag.",
+      "since": "0.14.6",
+      "blank": {
+        "repo": "included",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "qa.copilot.model",
+      "family": "providers",
+      "layer": "both",
+      "kind": "unvalidated",
+      "default": {
+        "repo": null,
+        "machine": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "string or null",
+      "source": "commands/review.md",
+      "summary": "Copilot model for review; null uses the CLI default.",
+      "since": "0.14.6",
+      "blank": {
+        "repo": "included",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "qa.kimi.model",
+      "family": "providers",
+      "layer": "both",
+      "kind": "unvalidated",
+      "default": {
+        "repo": null,
+        "machine": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "string or null",
+      "source": "commands/review.md",
+      "summary": "Kimi Code model id for review (`k3`, `kimi-for-coding`, ...); null uses the CLI's own default.",
+      "since": "1.0.39",
+      "blank": {
+        "repo": "included",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "qa.roles",
+      "family": "providers",
+      "layer": "both",
+      "kind": "open-table",
+      "default": {
+        "repo": {},
+        "machine": {}
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "object of role pins; each pin's provider is checked",
+      "source": "hooks/scripts/crew_config.py",
+      "summary": "Per-role reviewer pins, `qa.roles.<role>.provider` / `.model`; a pin beats the provider block for that role.",
+      "since": "0.16.6",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "dev.provider",
+      "family": "providers",
+      "layer": "both",
+      "kind": "tuple",
+      "default": {
+        "repo": "claude",
+        "machine": "claude"
+      },
+      "values": [
+        "claude",
+        "codex",
+        "copilot",
+        "kimi"
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": null,
+      "summary": "Who implements.",
+      "since": "0.14.6",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "dev.fallback",
+      "family": "providers",
+      "layer": "both",
+      "kind": "unvalidated",
+      "default": {
+        "repo": "claude-sonnet-5",
+        "machine": "claude-sonnet-5"
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "model id",
+      "source": "skills/crew-providers/SKILL.md",
+      "summary": "Model a gone dev pin falls back to, on its family's provider.",
+      "since": "0.16.6",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "dev.codex.model",
+      "family": "providers",
+      "layer": "both",
+      "kind": "unvalidated",
+      "default": {
+        "repo": null,
+        "machine": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "string or null",
+      "source": "skills/crew-providers/SKILL.md",
+      "summary": "Codex model for implementation.",
+      "since": "0.14.6",
+      "blank": {
+        "repo": "included",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "dev.codex.reasoningEffort",
+      "family": "providers",
+      "layer": "both",
+      "kind": "prose",
+      "default": {
+        "repo": null,
+        "machine": null
+      },
+      "values": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": "commands/review.md",
+      "summary": "Codex reasoning effort for implementation.",
+      "since": "0.14.6",
+      "blank": {
+        "repo": "included",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "dev.copilot.model",
+      "family": "providers",
+      "layer": "both",
+      "kind": "unvalidated",
+      "default": {
+        "repo": null,
+        "machine": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "string or null",
+      "source": "skills/crew-providers/SKILL.md",
+      "summary": "Copilot model for implementation.",
+      "since": "0.14.6",
+      "blank": {
+        "repo": "included",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "dev.kimi.model",
+      "family": "providers",
+      "layer": "both",
+      "kind": "unvalidated",
+      "default": {
+        "repo": null,
+        "machine": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "string or null",
+      "source": "skills/crew-providers/SKILL.md",
+      "summary": "Kimi Code model id for implementation, as `qa.kimi.model`.",
+      "since": "1.0.39",
+      "blank": {
+        "repo": "included",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "dev.roles",
+      "family": "providers",
+      "layer": "both",
+      "kind": "open-table",
+      "default": {
+        "repo": {},
+        "machine": {}
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "object of role pins; each pin's provider is checked",
+      "source": "hooks/scripts/crew_config.py",
+      "summary": "Per-role dev pins, as `qa.roles`.",
+      "since": "0.16.6",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "secondOpinion.provider",
+      "family": "providers",
+      "layer": "both",
+      "kind": "unvalidated",
+      "default": {
+        "repo": "none",
+        "machine": "none"
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "string",
+      "source": "commands/plan.md",
+      "summary": "Second-opinion provider for plans; `none` is off.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "secondOpinion.mode",
+      "family": "providers",
+      "layer": "both",
+      "kind": "unvalidated",
+      "default": {
+        "repo": "cli",
+        "machine": "cli"
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "string",
+      "source": "skills/crew-providers/SKILL.md",
+      "summary": "How the second opinion is reached.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "secondOpinion.model",
+      "family": "providers",
+      "layer": "both",
+      "kind": "unvalidated",
+      "default": {
+        "repo": null,
+        "machine": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "string or null",
+      "source": "skills/crew-providers/SKILL.md",
+      "summary": "Second-opinion model.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "included",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "tracker",
+      "family": "trackers",
+      "layer": "repo",
+      "kind": "tuple",
+      "default": {
+        "repo": "files"
+      },
+      "values": [
+        "files",
+        "obsidian",
+        "jira",
+        "sdp"
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": null,
+      "summary": "Where tickets live; `crew_tracker.resolve` answers `could not tell` when two configs disagree.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "jira.project",
+      "family": "trackers",
+      "layer": "repo",
+      "kind": "unvalidated",
+      "default": {
+        "repo": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "string or null",
+      "source": "commands/jira-sync.md",
+      "summary": "Jira project key. No consumer found (docs/crew/config-rationale.md).",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "jira.cloudId",
+      "family": "trackers",
+      "layer": "repo",
+      "kind": "unvalidated",
+      "default": {
+        "repo": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "string or null",
+      "source": "commands/jira-sync.md",
+      "summary": "Jira cloud id, cached by `/crew:jira-sync`; read by nothing.",
+      "since": "0.19.10",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "obsidian.vaultPath",
+      "family": "trackers",
+      "layer": "repo",
+      "kind": "unvalidated",
+      "default": {
+        "repo": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "path or null",
+      "source": "hooks/scripts/crew_tracker.py",
+      "summary": "Vault holding the board; falls back to `memory.vaultPath` and must hold `.obsidian/`.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "obsidian.boardDir",
+      "family": "trackers",
+      "layer": "repo",
+      "kind": "unvalidated",
+      "default": {
+        "repo": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "path or null",
+      "source": "hooks/scripts/crew_tracker.py",
+      "summary": "Board folder inside the vault (relative, no `..`).",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "memory.mode",
+      "family": "memory",
+      "layer": "both",
+      "kind": "unvalidated",
+      "default": {
+        "repo": "repo",
+        "machine": "repo"
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "string",
+      "source": "skills/crew-memory/SKILL.md",
+      "summary": "Where memory lives (`repo`, or a vault).",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "memory.vaultPath",
+      "family": "memory",
+      "layer": "both",
+      "kind": "unvalidated",
+      "default": {
+        "repo": null,
+        "machine": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "path or null",
+      "source": "hooks/scripts/crew_recall.py",
+      "summary": "The Obsidian vault used for memory.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "included",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "verifyGate",
+      "family": "core",
+      "layer": "repo",
+      "kind": "unvalidated",
+      "default": {
+        "repo": true
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "boolean",
+      "source": "hooks/scripts/verify-gate.sh",
+      "summary": "Run the Stop verify gate.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "context.enabled",
+      "family": "context",
+      "layer": "repo",
+      "kind": "unvalidated",
+      "default": {
+        "repo": true
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "boolean",
+      "source": "hooks/scripts/context-watch.sh",
+      "summary": "Run the context watcher.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "context.warnAt",
+      "family": "context",
+      "layer": "repo",
+      "kind": "unvalidated",
+      "default": {
+        "repo": 0.4
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "number",
+      "source": "hooks/scripts/context-watch.sh",
+      "summary": "Fraction of the budget at which the watcher warns, wraps up and auto-clears; default 0.4 since 1.2.40 (was 0.5), an explicit value is kept.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "context.reserveTokens",
+      "family": "context",
+      "layer": "repo",
+      "kind": "unvalidated",
+      "default": {
+        "repo": 0
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "integer or null",
+      "source": "hooks/scripts/context-watch.sh",
+      "summary": "Tokens held back from the budget; `null` means off.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "context.autoClear.enabled",
+      "family": "context",
+      "layer": "machine-arms",
+      "kind": "branch",
+      "default": {
+        "repo": null,
+        "machine": null
+      },
+      "values": [
+        null,
+        true,
+        false
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": "hooks/scripts/crew_autocycle.py",
+      "summary": "Auto-clear after a wrap-up. Only the machine file can arm it (exactly `true`); a repo `false` vetoes it.",
+      "since": "0.19.10",
+      "blank": {
+        "repo": "included",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "context.autoClear.method",
+      "family": "context",
+      "layer": "both",
+      "kind": "tuple",
+      "default": {
+        "repo": "auto",
+        "machine": "auto"
+      },
+      "values": [
+        "auto",
+        "none",
+        "notify",
+        "tmux",
+        "xdotool",
+        "wtype"
+      ],
+      "valuesByOs": {
+        "linux": [
+          "auto",
+          "none",
+          "notify",
+          "tmux",
+          "xdotool",
+          "wtype"
+        ],
+        "macos": [
+          "auto",
+          "none",
+          "notify",
+          "tmux"
+        ],
+        "windows": [
+          "auto",
+          "none",
+          "notify"
+        ],
+        "windows-bash": [
+          "auto",
+          "none",
+          "notify",
+          "tmux"
+        ]
+      },
+      "type": null,
+      "source": null,
+      "summary": "How `/clear` is typed. `auto` picks per platform; a method this OS lacks stands auto-clear down.",
+      "since": "0.19.10",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "context.autoClear.delaySeconds",
+      "family": "context",
+      "layer": "both",
+      "kind": "type",
+      "default": {
+        "repo": 3,
+        "machine": 3
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "number",
+      "source": "hooks/scripts/crew_autocycle.py",
+      "summary": "Delay before typing; an unusable value warns and reads as 3.",
+      "since": "0.19.10",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "context.autoClear.minHandoffLines",
+      "family": "context",
+      "layer": "both",
+      "kind": "type",
+      "default": {
+        "repo": 5,
+        "machine": 5
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "number",
+      "source": "hooks/scripts/crew_autocycle.py",
+      "summary": "Shortest handoff that may be cleared after; a non-number reads as 5.",
+      "since": "0.19.10",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "context.autoClear.onlyRepos",
+      "family": "context",
+      "layer": "machine-only",
+      "kind": "type",
+      "default": {
+        "repo": null,
+        "machine": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "list of absolute repo paths, or null",
+      "source": "hooks/scripts/crew_autocycle.py",
+      "summary": "Narrowing only, machine file only: null narrows nothing, a list arms only those repos, `[]` or a non-list arms nothing.",
+      "since": "1.0.25",
+      "blank": {
+        "repo": "not in this layer",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "context.autoClear.onlySessions",
+      "family": "context",
+      "layer": "machine-only",
+      "kind": "type",
+      "default": {
+        "repo": null,
+        "machine": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "list of session ids, or null",
+      "source": "hooks/scripts/crew_autocycle.py",
+      "summary": "As `onlyRepos`, for session ids; with both set, both must match.",
+      "since": "1.0.25",
+      "blank": {
+        "repo": "not in this layer",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "context.autoClear.wrapUp",
+      "family": "context",
+      "layer": "machine-arms",
+      "kind": "branch",
+      "default": {
+        "repo": null,
+        "machine": null
+      },
+      "values": [
+        null,
+        true,
+        false
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": "hooks/scripts/crew_autocycle.py",
+      "summary": "Auto wrap-up before auto-clear (T-0017): the warning becomes the wrap-up procedure and the clear waits for its results. Only the machine file arms it (exactly `true`), only where `enabled` is armed; a repo `false` vetoes it.",
+      "since": "1.0.334",
+      "blank": {
+        "repo": "included",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "resume.auto",
+      "family": "context",
+      "layer": "machine-arms",
+      "kind": "branch",
+      "default": {
+        "repo": null,
+        "machine": null
+      },
+      "values": [
+        null,
+        true,
+        false
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": "hooks/scripts/crew_resume.py",
+      "summary": "Auto-resume after `/clear` or a manual `/compact`. Only the machine file can arm it (exactly `true`); a repo `false` vetoes it.",
+      "since": "1.0.40",
+      "blank": {
+        "repo": "included",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "humanOnly.approve",
+      "family": "core",
+      "layer": "human-only opt-out",
+      "kind": "branch",
+      "default": {
+        "repo": null,
+        "machine": null
+      },
+      "values": [
+        null,
+        true,
+        false
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": "hooks/scripts/crew_humanonly.py",
+      "summary": "The owner's opt-out of `/crew:approve` being human-only. null or `true` keeps it human-only; `false` opts out only from the machine file or an untracked repo file, only after `/crew:confirm-config` twice, and a `true` in either layer vetoes. crew 1.3.27: with an opt-out in force a cli-recorded approval counts (`crew_ticket.cli_approval_allowed`).",
+      "since": "1.3.9",
+      "blank": {
+        "repo": "included",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "humanOnly.promoteMarker",
+      "family": "core",
+      "layer": "human-only opt-out",
+      "kind": "branch",
+      "default": {
+        "repo": null,
+        "machine": null
+      },
+      "values": [
+        null,
+        true,
+        false
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": "hooks/scripts/crew_humanonly.py",
+      "summary": "The same opt-out for the production promote marker `.crew/.approved-<env>-<sha>`, under the same rules. crew 1.3.9: no hook acts on it yet, and no hook today checks who created the marker.",
+      "since": "1.3.9",
+      "blank": {
+        "repo": "included",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "worktrees.root",
+      "family": "core",
+      "layer": "both",
+      "kind": "type",
+      "default": {
+        "repo": null,
+        "machine": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "absolute path or null",
+      "source": "hooks/scripts/crew_worktrees.py",
+      "summary": "The base directory for this repo's git worktrees, OUTSIDE the repo: they go in `<root>/<repo>-<digest>/<name>`. null is `~/.claude/crew/worktrees`; `~` is expanded, a relative path or one inside the repo is refused (never replaced by the default). It places the worktrees crew places (`/crew:emergency`, `crew_worktrees.py path`) and, once the owner registers the opt-in `WorktreeCreate` hook, the ones Claude Code creates; without the hook Claude Code keeps using `.claude/worktrees/`.",
+      "since": "1.3.19",
+      "blank": {
+        "repo": "included",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "promote.deadlineSeconds",
+      "family": "core",
+      "layer": "both",
+      "kind": "type",
+      "default": {
+        "repo": null,
+        "machine": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "number of seconds, or null",
+      "source": "hooks/scripts/_promote_gate.py",
+      "summary": "How many seconds the promote gate (`promote-gate.sh`) may run, counted from the moment its shell began, before it gives up and blocks (a hook that times out is not a block, so the gate stops itself first). null derives it from the guard's hook timeout less a 4 s margin: 16 s of the 20 s row. A number above the timeout less 2 s (18 s of 20) is clamped to that, so the setting can never let the gate outlive its hook; zero, a negative, a string or a boolean reads as null. The hook timeout is the guard's row in the dispatcher's table, not a setting.",
+      "since": "1.3.41",
+      "blank": {
+        "repo": "included",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "verify.stopBudgetSeconds",
+      "family": "core",
+      "layer": "repo",
+      "kind": "type",
+      "default": {
+        "repo": 60
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "whole number of seconds, 1 to 540, or null",
+      "source": "hooks/scripts/verify-gate.sh",
+      "summary": "How many seconds the Stop row of the verify gate (`verify-gate.sh`) may spend running rules, cheapest first, before it defers the rest to CI and names them. Default 60, which is what the gate used before the key was settable. A write must be a whole number from 1 to 540 (the Stop hook's timeout less the gate's 60 s margin); anything else is refused, never stored as a value the gate would quietly replace with 60. null removes the setting. Repo file only: what a rule costs is a fact about the checkout. `--all` and `--ci` ignore it. A hand-edited string, boolean or negative reads as 60, never as no limit (a number the writer would refuse, such as 0 or 1e9, is still taken as written).",
+      "since": "1.3.158",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "reaper.enabled",
+      "family": "core",
+      "layer": "both",
+      "kind": "type",
+      "default": {
+        "repo": false,
+        "machine": false
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "boolean",
+      "source": "hooks/scripts/crew_reaper.py",
+      "summary": "Whether scheduled and session-start passes of the orphan reaper (`crew_reaper.py --scheduled`) do anything. false by default; a manual `crew_reaper.py` run always works and is a dry run unless given `--apply`. Read from the machine file only: a repo value is ignored, because the reaper ends processes on this machine.",
+      "since": "1.3.50",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "reaper.dryRun",
+      "family": "core",
+      "layer": "both",
+      "kind": "type",
+      "default": {
+        "repo": true,
+        "machine": true
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "boolean",
+      "source": "hooks/scripts/crew_reaper.py",
+      "summary": "When true (the default) a scheduled or session-start pass only logs what it would end to `~/.claude/crew/reaper.log`; set false to let it end processes. Only a scheduled pass reads it; a manual run ends processes only with `--apply`.",
+      "since": "1.3.50",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "reaper.spinCpuPct",
+      "family": "core",
+      "layer": "both",
+      "kind": "type",
+      "default": {
+        "repo": 50,
+        "machine": 50
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "percent of one core",
+      "source": "hooks/scripts/crew_reaper.py",
+      "summary": "An orphan is SPINNING when it used at least this percentage of one core over the reaper's short sample (5 s) and is older than `spinMinAgeMin`. A number above 0; anything else reads as 50.",
+      "since": "1.3.50",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "reaper.spinMinAgeMin",
+      "family": "core",
+      "layer": "both",
+      "kind": "type",
+      "default": {
+        "repo": 15,
+        "machine": 15
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "number of minutes",
+      "source": "hooks/scripts/crew_reaper.py",
+      "summary": "Minutes an orphan must be running before the spinning rule (and the self-matching `until pgrep -f` watcher rule) may end it. A number above 0; anything else reads as 15.",
+      "since": "1.3.50",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "reaper.blockedMinAgeHours",
+      "family": "core",
+      "layer": "both",
+      "kind": "type",
+      "default": {
+        "repo": 2,
+        "machine": 2
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "number of hours",
+      "source": "hooks/scripts/crew_reaper.py",
+      "summary": "Hours an orphan using under 1% of a core must be running before it counts as BLOCKED and may be ended. A number above 0; anything else reads as 2.",
+      "since": "1.3.50",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "reaper.protectedRegex",
+      "family": "core",
+      "layer": "both",
+      "kind": "type",
+      "default": {
+        "repo": null,
+        "machine": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "regular expression, or null",
+      "source": "hooks/scripts/crew_reaper.py",
+      "summary": "A regular expression; a process whose image name or command line matches is never ended, it REPLACES the built-in list (claude, node, MCP servers, ai-connect, psmux/tmux, tailscale, language servers, obsidian, perplexity, vscode, wsl/docker/vm, Defender, ssh). null keeps the built-in list; an invalid expression reads as null.",
+      "since": "1.3.50",
+      "blank": {
+        "repo": "included",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "reaper.intervalMin",
+      "family": "core",
+      "layer": "both",
+      "kind": "type",
+      "default": {
+        "repo": 10,
+        "machine": 10
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "whole number of minutes",
+      "source": "hooks/scripts/crew_reaper.py",
+      "summary": "Minutes between runs of the scheduled task `crew_reaper.py --install-task` creates, and the least gap between two session-start passes. A whole number from 1; anything else reads as 10. The task is never installed by default.",
+      "since": "1.3.50",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "reaper.onSessionStart",
+      "family": "core",
+      "layer": "both",
+      "kind": "type",
+      "default": {
+        "repo": false,
+        "machine": false
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "boolean",
+      "source": "hooks/scripts/crew_reaper.py",
+      "summary": "When true and `reaper.enabled` is true, the SessionStart context hook starts one detached reaper pass (at most one per `intervalMin`) and does not wait for it. false by default.",
+      "since": "1.3.50",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "emergency.standDown",
+      "family": "core",
+      "layer": "repo",
+      "kind": "unvalidated",
+      "default": {
+        "repo": true
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "boolean",
+      "source": "hooks/scripts/_common.sh",
+      "summary": "Whether a declared incident may stand gates down; `false` forbids it.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "emergency.maxTtlMinutes",
+      "family": "core",
+      "layer": "repo",
+      "kind": "type",
+      "default": {
+        "repo": 480
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "integer",
+      "source": "hooks/scripts/crew_incident.py",
+      "summary": "Longest incident lifetime; never below `ttlMinutes`.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "notify.provider",
+      "family": "notify",
+      "layer": "both",
+      "kind": "type",
+      "default": {
+        "repo": null,
+        "machine": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "telegram, teams, none or null; any other value sends nothing",
+      "source": "hooks/scripts/crew_notify.py",
+      "summary": "Where notifications go: `telegram`, `teams` or `none` (off). A repo null inherits the machine provider; a repo `none` opts this repo out.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "included",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "notify.tokenEnv",
+      "family": "notify",
+      "layer": "machine-only",
+      "kind": "unvalidated",
+      "default": {
+        "repo": null,
+        "machine": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "string or null",
+      "source": "hooks/scripts/crew_notify.py",
+      "summary": "Name of the environment variable holding the Telegram bot token; null may be filled from the notify skill's `bot_token_env`. Honoured from the machine file only.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "not in this layer",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "notify.chatId",
+      "family": "notify",
+      "layer": "both",
+      "kind": "unvalidated",
+      "default": {
+        "repo": null,
+        "machine": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "string or null",
+      "source": "hooks/scripts/crew_notify.py",
+      "summary": "Telegram chat id; null may be filled from the notify skill's `chat_id`, and the skill's example value counts as unset.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "included",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "notify.events",
+      "family": "notify",
+      "layer": "both",
+      "kind": "type",
+      "default": {
+        "repo": [
+          "blocker",
+          "deploy",
+          "question"
+        ],
+        "machine": [
+          "blocker",
+          "deploy",
+          "question"
+        ]
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "list of event names; an unknown name is dropped with a notice",
+      "source": "hooks/scripts/crew_notify.py",
+      "summary": "Events that notify: `deploy`, `question`, and `blocker` (T-0060's four blocker reasons). The pre-1.0 names `gate`, `waiting`, `phase`, `review` and `done` are mapped with a notice. A list is one leaf.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "platform.os",
+      "family": "platform",
+      "layer": "repo",
+      "kind": "unvalidated",
+      "default": {
+        "repo": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "string or null",
+      "source": "hooks/scripts/crew_platform.py",
+      "summary": "Detected OS, stamped by platform-sync.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "platform.wsl",
+      "family": "platform",
+      "layer": "repo",
+      "kind": "unvalidated",
+      "default": {
+        "repo": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "boolean or null",
+      "source": "hooks/scripts/crew_platform.py",
+      "summary": "Detected WSL, stamped by platform-sync.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "platform.shell",
+      "family": "platform",
+      "layer": "repo",
+      "kind": "unvalidated",
+      "default": {
+        "repo": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "string or null",
+      "source": "hooks/scripts/crew_platform.py",
+      "summary": "Detected shell, stamped by platform-sync.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "platform.windowsHostIp",
+      "family": "platform",
+      "layer": "repo",
+      "kind": "unvalidated",
+      "default": {
+        "repo": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "string or null",
+      "source": "hooks/scripts/crew_platform.py",
+      "summary": "Windows host IP seen from WSL.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "pm.authority",
+      "family": "core",
+      "layer": "both, widening warned",
+      "kind": "tuple",
+      "default": {
+        "repo": "report-only",
+        "machine": "report-only"
+      },
+      "values": [
+        "report-only",
+        "act",
+        "autonomous"
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": null,
+      "summary": "How much the PM may do unasked. A widening is warned about; the two layers combine by precedence.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "pm.maxDispatches",
+      "family": "core",
+      "layer": "both",
+      "kind": "type",
+      "default": {
+        "repo": 3,
+        "machine": 3
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "integer",
+      "source": "hooks/scripts/crew_state.py",
+      "summary": "Roles the PM may dispatch in one pass.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "graph.out",
+      "family": "core",
+      "layer": "repo",
+      "kind": "unvalidated",
+      "default": {
+        "repo": "graphify-out"
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "path",
+      "source": "hooks/scripts/crew_state.py",
+      "summary": "Where the code graph is written.",
+      "since": "<=0.11.0",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "install.policy",
+      "family": "core",
+      "layer": "both, ratchet",
+      "kind": "ratchet",
+      "default": {
+        "repo": "manual",
+        "machine": "manual"
+      },
+      "values": [
+        "manual",
+        "ask",
+        "auto"
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": null,
+      "summary": "Whether crew may install a missing prerequisite.",
+      "since": "0.19.18",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "guards.profile",
+      "family": "guards",
+      "layer": "both, ratchet",
+      "kind": "tuple",
+      "default": {
+        "repo": "off",
+        "machine": "off"
+      },
+      "values": [
+        "off",
+        "standard",
+        "strict"
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": null,
+      "summary": "One word for the twelve guards: `off` (today's defaults), `standard` or `strict`. Expands per layer; each guard's ratchet then runs on the expanded values.",
+      "since": "1.2.62",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "guards.overrides",
+      "family": "guards",
+      "layer": "both, ratchet",
+      "kind": "open-table",
+      "default": {
+        "repo": {},
+        "machine": {}
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "object of guard name to tier",
+      "source": "hooks/scripts/crew_guards.py",
+      "summary": "`guards.overrides.<guard>`: one guard's tier, replacing the profile's value for it. Each entry is checked against that guard's own tiers; a bad one reads as the floor.",
+      "since": "1.2.62",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "guards.git.allow",
+      "family": "guards",
+      "layer": "both",
+      "kind": "type",
+      "default": {
+        "repo": null,
+        "machine": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "null, `\"off\"`, `\"all\"` or a list of git subcommand names",
+      "source": "hooks/scripts/crew_gitallow.py",
+      "summary": "The owner's switch that stops crew's command guards blocking or asking on git commands: `\"all\"` lets a line of only plain git commands past the force-push rule and the promote gate (unless a declared deploy is itself a git command); a list of subcommands (`[\"commit\", \"push\"]`) lets only those through, with every option they take (listing `push` lets `push --force` through). null or `\"off\"` changes nothing. Machine file only, and only after `/crew:confirm-config` twice (`crew_confirm_config.py propose --key guards.git.allow --value ...`); a value written any other way, or any later change to the machine file outside crew's config writer, reads as off, and a repo `\"off\"` or unreadable repo file vetoes it. FAIL-CLOSED ALLOWLIST: a line is exempt only when it is ONE command, exactly `git` with plain literal words (no `$`, backtick, glob, brace, leading `~`, parenthesis, PowerShell expression or `%NAME%`; no separator, redirection, heredoc, continuation or comment, so a chain is judged as before); a git command carrying `-c`, a command to run (`rebase --exec`, `push --receive-pack`, `submodule foreach`, ...) or a `git config` write is never exempt.",
+      "since": "1.3.125",
+      "blank": {
+        "repo": "included",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "production.databases",
+      "family": "cloud",
+      "layer": "repo",
+      "kind": "unvalidated",
+      "default": {
+        "repo": []
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "list of globs",
+      "source": "hooks/scripts/crew_config.py",
+      "summary": "Globs naming production databases.",
+      "since": "0.19.30",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "production.hosts",
+      "family": "cloud",
+      "layer": "repo",
+      "kind": "unvalidated",
+      "default": {
+        "repo": []
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "list of globs",
+      "source": "hooks/scripts/crew_config.py",
+      "summary": "Globs naming production hosts.",
+      "since": "0.19.30",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "cloud.awsProfiles",
+      "family": "cloud",
+      "layer": "repo",
+      "kind": "unvalidated",
+      "default": {
+        "repo": []
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "list of names",
+      "source": "hooks/scripts/cloud_guard.py",
+      "summary": "AWS profiles this repo may use.",
+      "since": "1.0.25",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "cloud.awsRegions",
+      "family": "cloud",
+      "layer": "repo",
+      "kind": "unvalidated",
+      "default": {
+        "repo": []
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "list of names",
+      "source": "hooks/scripts/cloud_guard.py",
+      "summary": "AWS regions this repo may use.",
+      "since": "1.0.25",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "cloud.azureSubscriptions",
+      "family": "cloud",
+      "layer": "repo",
+      "kind": "unvalidated",
+      "default": {
+        "repo": []
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "list of names",
+      "source": "hooks/scripts/cloud_guard.py",
+      "summary": "Azure subscriptions this repo may use.",
+      "since": "1.0.25",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "environments.nonProd",
+      "family": "cloud",
+      "layer": "repo",
+      "kind": "unvalidated",
+      "default": {
+        "repo": []
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "list of globs",
+      "source": "hooks/scripts/crew_config.py",
+      "summary": "Terraform targets that are not production and may run unattended.",
+      "since": "1.0.37",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "environments.prodUnattended",
+      "family": "cloud",
+      "layer": "both, ratchet",
+      "kind": "ratchet",
+      "default": {
+        "repo": false,
+        "machine": false
+      },
+      "values": [
+        false,
+        true
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": null,
+      "summary": "Whether production terraform may run unattended; `true` only when both layers say so.",
+      "since": "1.0.37",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "environments.workflows",
+      "family": "cloud",
+      "layer": "repo",
+      "kind": "unvalidated",
+      "default": {
+        "repo": {}
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "object of glob to string",
+      "source": "hooks/scripts/crew_config.py",
+      "summary": "Deploy workflow globs, each mapped to its environment or `input:<name>`.",
+      "since": "1.1.16",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "environments.preProduction",
+      "family": "cloud",
+      "layer": "repo",
+      "kind": "unvalidated",
+      "default": {
+        "repo": {}
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "object of exact name to {reason, targets}",
+      "source": "hooks/scripts/crew_preprod.py",
+      "summary": "Environments labelled production that are not live yet: exact name -> `reason` (+ optional exact `targets`); judged non-production by the cloud guard, with an audit line.",
+      "since": "1.3.20",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "change.requireForProduction",
+      "family": "core",
+      "layer": "both, ratchet",
+      "kind": "ratchet",
+      "default": {
+        "repo": false,
+        "machine": false
+      },
+      "values": [
+        true,
+        false
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": null,
+      "summary": "Require an approved change request before `/crew:promote production`: a repo may turn it on, never off.",
+      "since": "0.19.31",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "git.forbiddenTrailers",
+      "family": "core",
+      "layer": "both",
+      "kind": "branch",
+      "default": {
+        "repo": [],
+        "machine": []
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "list of trailer tokens (letters, digits and `-`, no `:`)",
+      "source": "hooks/scripts/crew_trailers.py",
+      "summary": "Commit trailer tokens the owner forbids, reported by `/crew:done`. The two layers combine by union, so a repo can add a token and never remove the machine owner's; a value that is not a list of tokens makes the list unknown, never empty (docs/crew/config-rationale.md).",
+      "since": "1.0.328",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "scope.mode",
+      "family": "core",
+      "layer": "repo",
+      "kind": "tuple",
+      "default": {
+        "repo": "off"
+      },
+      "values": [
+        "off",
+        "report",
+        "block",
+        "auto"
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": null,
+      "summary": "Whether the scope guard enforces a ticket's Touch list; a value outside these fails closed to `block`.",
+      "since": "1.0.25",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "scope.allowCliApproval",
+      "family": "core",
+      "layer": "repo",
+      "kind": "branch",
+      "default": {
+        "repo": false
+      },
+      "values": [
+        false,
+        true
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": "hooks/scripts/crew_ticket.py",
+      "summary": "Whether a CLI-written approval receipt counts; only exactly `true` allows it. `autopilot.approval: self` or `risk` needs it, and `autopilot.mode: plan` or `backlog`, to approve anything. A hand edit by the owner in the repo's `.crew/config.json` (`\"scope\": {\"allowCliApproval\": true}`); `crew_config.py --set` refuses it.",
+      "since": "1.0.25",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "autopilot.mode",
+      "family": "autopilot",
+      "layer": "both, stricter wins",
+      "kind": "branch",
+      "default": {
+        "repo": "off",
+        "machine": "off"
+      },
+      "values": [
+        "off",
+        "plan",
+        "backlog"
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": "hooks/scripts/crew_autopilot.py",
+      "summary": "Only the exact strings `plan` (one ticket per run) and `backlog` (L-0541: a goal's tickets in dependency order, inside the caps) arm `/crew:autopilot`; anything else reads as off, with a warning.",
+      "since": "1.0.41",
+      "blank": {
+        "repo": "excluded: a personal key: at its default it holds your machine value down (stricter wins)",
+        "machine": "excluded: a personal key: at its default it holds your machine value down (stricter wins)"
+      }
+    },
+    {
+      "key": "autopilot.maxPhases",
+      "family": "autopilot",
+      "layer": "both, stricter wins",
+      "kind": "branch",
+      "default": {
+        "repo": 12,
+        "machine": 12
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "positive integer",
+      "source": "hooks/scripts/crew_autopilot.py",
+      "summary": "Phases one run may take; anything but a positive integer reads as 12, with a warning.",
+      "since": "1.0.41",
+      "blank": {
+        "repo": "excluded: a personal key: at its default it holds your machine value down (stricter wins)",
+        "machine": "excluded: a personal key: at its default it holds your machine value down (stricter wins)"
+      }
+    },
+    {
+      "key": "autopilot.deploy",
+      "family": "autopilot",
+      "layer": "both, stricter wins",
+      "kind": "tuple",
+      "default": {
+        "repo": "none",
+        "machine": "none"
+      },
+      "values": [
+        "none",
+        "nonprod",
+        "all"
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": null,
+      "summary": "Where a deploy may run without asking; anything else reads as `none`.",
+      "since": "1.0.42",
+      "blank": {
+        "repo": "excluded: a personal key: at its default it holds your machine value down (stricter wins)",
+        "machine": "excluded: a personal key: at its default it holds your machine value down (stricter wins)"
+      }
+    },
+    {
+      "key": "autopilot.approval",
+      "family": "autopilot",
+      "layer": "both, stricter wins",
+      "kind": "tuple",
+      "default": {
+        "repo": "risk",
+        "machine": "risk"
+      },
+      "values": [
+        "human",
+        "self",
+        "risk"
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": null,
+      "summary": "Who approves a ticket under autopilot; anything else reads as `human`. `risk` and `self` also need `autopilot.mode: plan` (or `backlog`) and `scope.allowCliApproval: true` (a hand edit of the repo's `.crew/config.json`); a refused `approve` lists each unmet one, with its value as written, the file that holds it and, under `risk`, the spec risk that blocks.",
+      "since": "1.0.42",
+      "blank": {
+        "repo": "excluded: a personal key: at its default it holds your machine value down (stricter wins)",
+        "machine": "excluded: a personal key: at its default it holds your machine value down (stricter wins)"
+      }
+    },
+    {
+      "key": "autopilot.questions",
+      "family": "autopilot",
+      "layer": "both, stricter wins",
+      "kind": "tuple",
+      "default": {
+        "repo": "risk",
+        "machine": "risk"
+      },
+      "values": [
+        "human",
+        "self",
+        "risk"
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": null,
+      "summary": "Who answers a ticket's open questions under autopilot; anything else reads as `human`.",
+      "since": "1.0.42",
+      "blank": {
+        "repo": "excluded: a personal key: at its default it holds your machine value down (stricter wins)",
+        "machine": "excluded: a personal key: at its default it holds your machine value down (stricter wins)"
+      }
+    },
+    {
+      "key": "autopilot.maxAutoReplans",
+      "family": "autopilot",
+      "layer": "repo",
+      "kind": "branch",
+      "default": {
+        "repo": 0
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "non-negative integer",
+      "source": "hooks/scripts/crew_autopilot.py",
+      "summary": "Successor plans autopilot may start by rejecting an out-of-rounds BLOCK review itself; 0 is off, and anything but a non-negative integer reads as 0, and above 5 as 5, with a warning.",
+      "since": "1.0.339",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "autopilot.ship",
+      "family": "autopilot",
+      "layer": "repo",
+      "kind": "tuple",
+      "default": {
+        "repo": "merge"
+      },
+      "values": [
+        "pr",
+        "merge"
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": null,
+      "summary": "After `/crew:done`: `pr` pushes and opens the PR; `merge` also merges it (a merge commit) once the required checks allow. Anything else reads as `pr`, with a warning.",
+      "since": "1.0.349",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "autopilot.sleep.schedule",
+      "family": "autopilot",
+      "layer": "repo",
+      "kind": "branch",
+      "default": {
+        "repo": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "HH:MM-HH:MM or null",
+      "source": "hooks/scripts/crew_sleep.py",
+      "summary": "A nightly window, `HH:MM-HH:MM` in machine local time (may cross midnight); inside it the two sleep overrides apply. Anything else is could not tell: only a stricter override applies.",
+      "since": "1.0.332",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "autopilot.sleep.approval",
+      "family": "autopilot",
+      "layer": "repo",
+      "kind": "branch",
+      "default": {
+        "repo": null
+      },
+      "values": [
+        null,
+        "human",
+        "self",
+        "risk"
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": "hooks/scripts/crew_sleep.py",
+      "summary": "`autopilot.approval` inside the sleep window; null keeps the day value; anything else counts as human, the strictest, with a warning.",
+      "since": "1.0.332",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "autopilot.sleep.questions",
+      "family": "autopilot",
+      "layer": "repo",
+      "kind": "branch",
+      "default": {
+        "repo": null
+      },
+      "values": [
+        null,
+        "human",
+        "self",
+        "risk"
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": "hooks/scripts/crew_sleep.py",
+      "summary": "`autopilot.questions` inside the sleep window; null keeps the day value; anything else counts as human, the strictest, with a warning.",
+      "since": "1.0.332",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "autopilot.sleep.deploy",
+      "family": "autopilot",
+      "layer": "repo",
+      "kind": "branch",
+      "default": {
+        "repo": null
+      },
+      "values": [
+        null,
+        "nonprod",
+        "none"
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": "hooks/scripts/crew_sleep.py",
+      "summary": "`autopilot.deploy` inside the sleep window (L-0654): null keeps the day value, `nonprod` or `none` replaces it; anything else, `all` included, is refused with a warning. Asleep, an effective `all` reads as `nonprod`: production never runs unattended asleep.",
+      "since": "1.1.21",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "autopilot.maxTicketsPerRun",
+      "family": "autopilot",
+      "layer": "repo",
+      "kind": "branch",
+      "default": {
+        "repo": 3
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "positive integer",
+      "source": "hooks/scripts/crew_autopilot_backlog.py",
+      "summary": "Tickets one goal run (one session) may start; the next one stops the run. Anything but a positive integer reads as 3, with a warning.",
+      "since": "1.1.21",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "autopilot.maxTokensPerSession",
+      "family": "autopilot",
+      "layer": "repo",
+      "kind": "branch",
+      "default": {
+        "repo": 2000000
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "positive integer",
+      "source": "hooks/scripts/crew_autopilot_backlog.py",
+      "summary": "Input plus output tokens one goal session may spend, each assistant message counted once, before the run stops; a transcript that cannot be read stops too. Anything but a positive integer reads as 2000000, with a warning.",
+      "since": "1.1.21",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "autopilot.maxLanes",
+      "family": "autopilot",
+      "layer": "repo",
+      "kind": "branch",
+      "default": {
+        "repo": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "positive integer or null",
+      "source": "hooks/scripts/crew_wave.py",
+      "summary": "Lanes one `/crew:autopilot wave` runs at once; null is the resolved `pm.maxDispatches`, a larger value is capped to it and anything but a positive integer reads as it, each with a warning.",
+      "since": "1.1.6",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "autopilot.reviewPolicy",
+      "family": "autopilot",
+      "layer": "repo",
+      "kind": "tuple",
+      "default": {
+        "repo": "stop"
+      },
+      "values": [
+        "stop",
+        "clean-only",
+        "fix-and-rereview"
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": null,
+      "summary": "What autopilot does with a review verdict. A wave lane: `stop` ends at the first verdict, `clean-only` takes a CLEAN round on to the done checks, `fix-and-rereview` fixes within the ledger's rounds. A single-ticket run (T-0067): only `fix-and-rereview` acts, fixing a non-final FINDINGS round's BLOCK and FIX lines itself (the `fix` phase) and re-reviewing. Anything else reads as `stop`, with a warning; no setting accepts a review.",
+      "since": "1.1.6",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "tickets.baseBranch",
+      "family": "core",
+      "layer": "repo",
+      "kind": "branch",
+      "default": {
+        "repo": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "branch name or null",
+      "source": "hooks/scripts/scope_base.py",
+      "summary": "The branch ticket branches are cut from; null tries origin/HEAD's target, then origin/main, then main. A value that is not a branch name, or names no commit, makes the scope base could not tell.",
+      "since": "1.0.158",
+      "blank": {
+        "repo": "included",
+        "machine": "not in this layer"
+      }
+    },
+    {
+      "key": "route.enabled",
+      "family": "core",
+      "layer": "both",
+      "kind": "branch",
+      "default": {
+        "repo": false,
+        "machine": false
+      },
+      "values": [
+        false,
+        true
+      ],
+      "valuesByOs": null,
+      "type": null,
+      "source": "hooks/scripts/crew_route.py",
+      "summary": "Route plain-text prompts to `/crew:` commands; only the JSON value `true` arms it.",
+      "since": "1.0.42",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "unattendedCloud.aws.readOnly.profile",
+      "family": "cloud",
+      "layer": "machine-only",
+      "kind": "type",
+      "default": {
+        "machine": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "profile name, or null",
+      "source": "hooks/scripts/crew_unattended.py",
+      "summary": "The AWS profile an unattended run exports credentials from (`aws configure export-credentials`); it must yield temporary credentials. Machine file only.",
+      "since": "1.1.10",
+      "blank": {
+        "repo": "not in this layer",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "unattendedCloud.aws.readOnly.identity",
+      "family": "cloud",
+      "layer": "machine-only",
+      "kind": "type",
+      "default": {
+        "machine": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "ARN prefix ending in `/`, or null",
+      "source": "hooks/scripts/crew_unattended.py",
+      "summary": "The assumed-role ARN prefix STS must report for that profile, ending in `/`; null refuses every launch. Machine file only.",
+      "since": "1.1.10",
+      "blank": {
+        "repo": "not in this layer",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "unattendedCloud.aws.readOnly.region",
+      "family": "cloud",
+      "layer": "machine-only",
+      "kind": "type",
+      "default": {
+        "machine": null
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "region, or null",
+      "source": "hooks/scripts/crew_unattended.py",
+      "summary": "The AWS region the unattended run gets; null is `us-east-1`. Machine file only.",
+      "since": "1.1.10",
+      "blank": {
+        "repo": "not in this layer",
+        "machine": "included"
+      }
+    },
+    {
+      "key": "unattendedCloud.aws.nonProd",
+      "family": "cloud",
+      "layer": "machine-only",
+      "kind": "open-table",
+      "default": {
+        "machine": {}
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "object: environment name -> {profile, identity, region?}",
+      "source": "hooks/scripts/crew_unattended.py",
+      "summary": "Environment name -> `{profile, identity, region?}` (region optional, default `us-east-1`) for `launch --environment NAME`; usable only where the repo's `environments.nonProd` agrees. Machine file only.",
+      "since": "1.1.10",
+      "blank": {
+        "repo": "not in this layer",
+        "machine": "included"
+      }
+    }
+  ]
+}

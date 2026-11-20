@@ -739,3 +739,75 @@ def test_a_layer_with_no_definition_stops_the_generator(monkeypatch):  # B7
 
 def test_the_nonprod_table_describes_its_shape():  # A6
     assert (crew_keys.KEY_META["unattendedCloud.aws.nonProd"]["type"] or "").strip()
+
+
+# --- R-C2: the copy-safe blanks (BLANK_EXCLUDED and the rules R1/R2) ----------
+
+def _with_exclusions(monkeypatch, layer, **changes):
+    table = {name: dict(rows) for name, rows in crew_keys.BLANK_EXCLUDED.items()}
+    for key, reason in changes.items():
+        key = key.replace("__", ".")
+        if reason is None:
+            table[layer].pop(key, None)
+        else:
+            table[layer][key] = reason
+    monkeypatch.setattr(crew_keys, "BLANK_EXCLUDED", table)
+    return crew_keys.problems()
+
+
+def test_the_committed_exclusions_have_no_problem():
+    assert crew_keys.blank_problems() == []
+
+
+def test_a_two_layer_key_back_in_the_repo_blank_breaks_r1(monkeypatch):
+    found = _with_exclusions(monkeypatch, "repo", dev__provider=None)
+    assert [p for p in found if p.startswith("blank R1: dev.provider ")], found
+
+
+def test_a_personal_key_back_in_the_machine_blank_breaks_r2(monkeypatch):
+    found = _with_exclusions(monkeypatch, "machine", autopilot__mode=None)
+    assert [p for p in found if p.startswith("blank R2: autopilot.mode ")], found
+
+
+def test_a_blank_exclusion_reason_is_a_problem(monkeypatch):
+    found = _with_exclusions(monkeypatch, "repo", autopilot__mode="  ")
+    assert "no exclusion reason: repo autopilot.mode" in found
+
+
+def test_an_exclusion_outside_the_registry_is_a_problem(monkeypatch):
+    found = _with_exclusions(monkeypatch, "machine", zz__nokey="a reason")
+    assert "bad exclusion: machine zz.nokey is not a registry key" in found
+
+
+def test_an_exclusion_outside_its_layer_is_a_problem(monkeypatch):
+    # `scope.mode` is repo-only: the machine file never sets it.
+    found = _with_exclusions(monkeypatch, "machine", scope__mode="a reason")
+    assert [p for p in found
+            if p.startswith("bad exclusion: machine scope.mode is not a machine-layer key")]
+
+
+def test_a_repo_layer_key_needs_no_exclusion():
+    # A repo-only key and a null-default two-layer key pass R1 as they are.
+    assert crew_keys.blank_rule_problem("repo", "scope.mode") is None
+    assert crew_keys.blank_rule_problem("repo", "qa.codex.reasoningEffort") is None
+    assert crew_keys.blank_rule_problem("repo", "qa.codex.model") is not None
+
+
+def test_a_blank_that_drops_a_layer_key_breaks_the_partition(monkeypatch):
+    real = crew_keys.blank_config
+
+    def short(layer):
+        out = real(layer)
+        if layer == "repo":
+            out.pop("verifyGate")
+        return out
+    monkeypatch.setattr(crew_keys, "blank_config", short)
+    found = crew_keys.problems()
+    assert [p for p in found if p.startswith("blank partition: repo") and "verifyGate" in p]
+
+
+def test_an_exclusion_problem_stops_the_generator(monkeypatch):
+    module = _load_config_reference()
+    _with_exclusions(monkeypatch, "repo", dev__provider=None)
+    with pytest.raises(RuntimeError, match="blank R1: dev.provider"):
+        module.Model()
