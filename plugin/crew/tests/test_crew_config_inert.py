@@ -137,21 +137,25 @@ def test_an_open_table_entry_is_quiet(tmp_path):
 
 
 _CONFIG_MD = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, "CONFIG.md")
+# R-C4: CONFIG.md is the key index; the family tables are in reference.md.
+_REFERENCE_MD = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir,
+                             "docs", "configuration", "reference.md")
 
 
 def _documented_keys():
-    """Every backticked dotted key in the first column of a CONFIG.md table,
-    plus every leaf of the committed template."""
+    """Every backticked dotted key in the first column of a table in CONFIG.md
+    or reference.md, plus every leaf of the committed template."""
     tops = set(crew_config.default_config())
     keys = set()
-    with open(_CONFIG_MD, encoding="utf-8") as fh:
-        for line in fh:
-            if not line.startswith("|"):
-                continue
-            first = line.strip().strip("|").split("|")[0]
-            for key in re.findall(r"`([A-Za-z][A-Za-z0-9_.]*)`", first):
-                if "." in key and key.split(".")[0] in tops:
-                    keys.add(key)
+    for document in (_CONFIG_MD, _REFERENCE_MD):
+        with open(document, encoding="utf-8") as fh:
+            for line in fh:
+                if not line.startswith("|"):
+                    continue
+                first = line.strip().strip("|").split("|")[0]
+                for key in re.findall(r"`([A-Za-z][A-Za-z0-9_.]*)`", first):
+                    if "." in key and key.split(".")[0] in tops:
+                        keys.add(key)
     with open(_TEMPLATE_PATH, encoding="utf-8") as fh:
         keys.update(crew_config.leaf_paths(json.load(fh)))
     return sorted(keys)

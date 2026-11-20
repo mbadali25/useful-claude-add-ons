@@ -19,7 +19,8 @@ The repo blank is not the `/crew:init` template
 (`templates/config.template.json`): that one also spells the two-layer keys at
 their defaults, so it holds your machine values down. `keys.json` holds the
 same facts for every key, for tools. The reasons behind the rules are in
-`docs/crew/config-rationale.md`; every key's full description is in `plugin/crew/CONFIG.md`.
+`docs/crew/config-rationale.md`; every key's full description is in `reference.md`, beside this
+file (`plugin/crew/CONFIG.md` is the one-line-per-key index).
 
 ## Repo blank: `config.blank.json`
 

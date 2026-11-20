@@ -175,7 +175,7 @@ repo file" in `README.md` §11.
 One global block is machine-only in the stronger sense: `unattendedCloud`
 (T-0044), the cloud identity `crew_unattended.py launch` hands an unattended
 run, is read from the machine file alone. Never write it into a repo's
-`config.json`; a repo copy is ignored and reported (`CONFIG.md`,
+`config.json`; a repo copy is ignored and reported (`docs/configuration/reference.md`,
 "`unattendedCloud`"). Its template shape, all `null` and naming nothing:
 `"unattendedCloud": {"aws": {"readOnly": {"profile": null, "identity": null, "region": null}, "nonProd": {}}}`.
 `tiers` (R-05) is `{}` in both templates, so every target is `unknown`. The

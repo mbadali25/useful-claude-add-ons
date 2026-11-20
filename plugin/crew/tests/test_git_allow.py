@@ -2535,8 +2535,13 @@ def test_every_mutation_anchor_is_present_exactly_once():
 
 
 def test_the_switch_is_documented_in_config_md():
-    text = (pathlib.Path(__file__).resolve().parents[1] / "CONFIG.md").read_text(encoding="utf-8")
-    assert f"`{KEY}`" in text
+    plugin = pathlib.Path(__file__).resolve().parents[1]
+    text = (plugin / "CONFIG.md").read_text(encoding="utf-8")
+    assert any(line.startswith(f"| `{KEY}` |") for line in text.splitlines())
+    # R-C4: the prose section moved to reference.md; CONFIG.md keeps the key's row.
+    reference = (plugin / "docs" / "configuration" / "reference.md").read_text(encoding="utf-8")
+    section = reference.split("## Git commands", 1)[1].split("\n## ", 1)[0]
+    assert f"`{KEY}`" in section
     assert os.path.isfile(_SCRIPTS / "crew_gitallow.py")
 
 

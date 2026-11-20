@@ -239,8 +239,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.200**: `CONFIG.md` becomes a generated key index (R-C4). `crew` 1.3.200 turns `plugin/crew/CONFIG.md` into a short generated index with one line per key, so it stays well under its 600-line cap as key families are added; the full reference moves to `plugin/crew/docs/configuration/reference.md`.
 - **crew 1.3.197**: The Configuration Guide and CI-checked worked examples (R-C3). `crew` 1.3.197 adds `plugin/crew/docs/configuration/guide.md`, a hand-written guide to crew's two configuration layers, the owner's set-up, the procedure an AI model follows to change a key, and worked example files, every one of which CI checks.
-- **crew 1.3.195**: `crew_policy.classify`, the closed serious list, report-only (R-P6). `crew` 1.3.195 adds `crew_policy.classify`, which places one action's effects into the closed list of eight serious classes, or reports them as unplaced, and treats an operation it cannot place as serious. Nothing acts on the answer yet.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
