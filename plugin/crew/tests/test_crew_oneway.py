@@ -1,8 +1,10 @@
-"""R-34a, R-34b: the one-way lane's command-text tripwire (`crew_oneway.py`), report-only.
+"""R-34a, R-34b, R-34c: the one-way lane's command-text tripwire (`crew_oneway.py`), report-only.
 
 R-34b adds state-file writes (redirections, head-keyed rows, the git table)
 and file-tool payloads, all under the same operation, and keeps a recorded
-redirection target's whitespace (F1).
+redirection target's whitespace (F1). R-34c adds `delete-others-branch` and
+`delete-others-worktree`, decided from a caller-supplied context; its path
+rows run under `ntpath` and under `posixpath`.
 
 Must-block rows (verdict `hit`, operation `hand-edit-terraform-state`), must-allow
 rows (verdict `clear`, including the known false negatives pinned so the ticket
@@ -19,7 +21,9 @@ import check runs in a subprocess with cwd and HOME on throwaway directories.
 """
 import ast
 import json
+import ntpath
 import os
+import posixpath
 import random
 import subprocess
 import sys
@@ -41,6 +45,8 @@ PLUGIN = os.path.dirname(os.path.dirname(SCRIPTS))
 MODULE = os.path.join(SCRIPTS, "crew_oneway.py")
 ME = os.path.abspath(__file__)
 OP = crew_oneway.TF_STATE
+BR = crew_oneway.BRANCH
+WT = crew_oneway.WORKTREE
 # pylint: disable=protected-access
 
 
@@ -57,10 +63,14 @@ def rules(result):
     return [f["rule"] for f in result["findings"]]
 
 
-def assert_hit(mod, command, rule=None, shell="bash"):
-    result = run(mod, command, shell)
+def _ops(op):
+    return [op] if op else []
+
+
+def assert_hit(mod, command, rule=None, shell="bash", op=OP, ctx=None):
+    result = run(mod, command, shell, ctx)
     assert result["verdict"] == "hit", (command, result)
-    assert result["operations"] == [OP], (command, result)
+    assert result["operations"] == _ops(op), (command, result)
     if rule is not None:
         assert rule in rules(result), (command, result)
     return result
@@ -73,13 +83,49 @@ def assert_clear(mod, command, shell="bash", ctx=None):
     return result
 
 
-def assert_cnt(mod, command, rule=None, shell="bash"):
-    result = run(mod, command, shell)
+def assert_cnt(mod, command, rule=None, shell="bash", op=OP, ctx=None):
+    result = run(mod, command, shell, ctx)
     assert result["verdict"] == "could-not-tell", (command, result)
-    assert result["operations"] == [OP], (command, result)
+    assert result["operations"] == _ops(op), (command, result)
     if rule is not None:
         assert rule in rules(result), (command, result)
     return result
+
+
+# --- R-34c contexts: paths built through the path module under test (C6) ---------------------
+
+OWN_BRANCHES = ["worktree-R-34", "feat/r-34-x"]
+
+
+def _p(pathmod, *parts):
+    return pathmod.join("C:\\" if pathmod is ntpath else "/", *parts)
+
+
+def _without(ctx, key):
+    return {k: v for k, v in ctx.items() if k != key}
+
+
+def own(pathmod=os.path):
+    """The default context `OWN`: cwd /w/r34, which is the one own worktree."""
+    w34 = _p(pathmod, "w", "r34")
+    return {"cwd": w34, "own_branches": list(OWN_BRANCHES), "own_worktrees": [w34]}
+
+
+CONTEXTS = {
+    "OWN": own,
+    "OTHER": lambda p: dict(own(p), cwd=_p(p, "other", "repo")),
+    "R34X": lambda p: dict(own(p), cwd=_p(p, "w", "r34x")),
+    "SUB": lambda p: dict(own(p), cwd=_p(p, "w", "r34", "plugin", "crew")),
+    "NO_CWD": lambda p: _without(own(p), "cwd"),
+    "NO_WORKTREES": lambda p: _without(own(p), "own_worktrees"),
+    "BRANCHES_STR": lambda p: dict(own(p), own_branches="worktree-R-34"),
+    "EMPTY": lambda p: {},
+    "NONE": lambda p: None,
+}
+
+
+def ctx_of(name, pathmod=os.path):
+    return CONTEXTS[name](pathmod)
 
 
 # --- the tables ------------------------------------------------------------------------------
@@ -529,6 +575,29 @@ def test_a_long_command_is_judged_in_linear_time(command, verdict):
     assert took < LONG_BUDGET_SECONDS, took
 
 
+# R-34c: every git start reads at most GIT_WINDOW words after its subcommand
+# (C14), so a chain of git deletes stays linear. (The spec's row put the shell
+# builtin `exec` before each `git`; `exec` is not a head prefix -- wrappers
+# are R-34d -- so that row is clear today and the chain is written with
+# terragrunt's `exec --` instead.)
+GIT_LONG_COMMANDS = (
+    ("terragrunt " + "exec -- git branch -D a " * LONG, "hit"),
+    ("git branch -D " + "worktree-R-34 " * LONG, "could-not-tell"),
+    ("git worktree remove " + "-f " * LONG + "/w/r35", "could-not-tell"),
+)
+
+
+@pytest.mark.parametrize("command,verdict", GIT_LONG_COMMANDS,
+                         ids=[str(n) for n in range(len(GIT_LONG_COMMANDS))])
+@pytest.mark.parametrize("ctx", ["OWN", "NONE"])
+def test_a_long_git_command_is_judged_in_linear_time(command, verdict, ctx):
+    started = time.perf_counter()
+    got = run(crew_oneway, command, ctx=ctx_of(ctx))["verdict"]
+    took = time.perf_counter() - started
+    assert got == (verdict if ctx == "OWN" else "could-not-tell")
+    assert took < LONG_BUDGET_SECONDS, took
+
+
 @pytest.mark.parametrize("repeat", [1, 100, 300, 2000])
 def test_a_long_exec_chain_gives_a_verdict(repeat):
     assert_hit(crew_oneway, "terragrunt exec -- " * repeat + "terraform state rm x",
@@ -589,10 +658,296 @@ def test_findings_name_rule_operation_and_place_only():
         assert finding["word"] is None or isinstance(finding["word"], int)
 
 
-def test_context_is_accepted_and_ignored():
-    for ctx in (None, {}, {"ownership": "own"}, "x", 1):
+def test_context_does_not_change_a_terraform_row():
+    """R-34c narrows R-34a's "accepted and ignored": no terraform row reads it."""
+    for ctx in (None, {}, {"ownership": "own"}, "x", 1, own()):
         assert_clear(crew_oneway, "terraform state list", ctx=ctx)
         assert run(crew_oneway, "terraform state rm x", ctx=ctx)["verdict"] == "hit"
+
+
+# --- R-34c: branch and worktree deletes ------------------------------------------------------
+
+DEL = "branch-delete-other"
+WDEL = "worktree-remove-other"
+
+# (shell, command, operation, rule, context)
+GIT_BLOCK = (
+    ("bash", "git branch -D feature-x", BR, DEL, "OWN"),
+    ("bash", "git branch -d feature-x", BR, DEL, "OWN"),
+    ("bash", "git branch --delete feature-x", BR, DEL, "OWN"),
+    ("bash", "git branch --del feature-x", BR, DEL, "OWN"),
+    ("bash", "git branch -fD feature-x", BR, DEL, "OWN"),
+    ("bash", "git branch -D worktree-R-34 feature-x", BR, DEL, "OWN"),
+    ("bash", "git -C x branch -D feature-x", BR, DEL, "OWN"),
+    ("bash", "git -c core.x=y branch -D feature-x", BR, DEL, "OWN"),
+    ("bash", "git branch -D feature-x", BR, DEL, "OTHER"),
+    ("bash", "git push origin --delete feature-x", BR, DEL, "OWN"),
+    ("bash", "git push --delete origin feature-x", BR, DEL, "OWN"),
+    ("bash", "git push -d origin feature-x", BR, DEL, "OWN"),
+    ("bash", "git push origin feature-x --delete", BR, DEL, "OWN"),
+    ("bash", "git push -o ci.skip --delete origin feature-x", BR, DEL, "OWN"),
+    ("bash", "git push origin :feature-x", BR, DEL, "OWN"),
+    ("bash", "git push origin +:feature-x", BR, DEL, "OWN"),
+    ("bash", "git push origin --delete refs/heads/feature-x", BR, DEL, "OWN"),
+    ("bash", "git update-ref -d refs/heads/feature-x", BR, DEL, "OWN"),
+    # git reads update-ref's options anywhere before `--`.
+    ("bash", "git update-ref refs/heads/feature-x -d", BR, DEL, "OWN"),
+    ("bash", "git update-ref -m why -d refs/heads/feature-x", BR, DEL, "OWN"),
+    ("bash", "git fetch && git branch -D feature-x", BR, DEL, "OWN"),
+    ("bash", "for b in a b; do git branch -D feature-x; done", BR, DEL, "OWN"),
+    ("bash", "if true; then git branch -D feature-x; fi", BR, DEL, "OWN"),
+    ("bash", "! git branch -D feature-x", BR, DEL, "OWN"),
+    ("bash", "command git branch -D feature-x", BR, DEL, "OWN"),
+    ("bash", "git branch -D feature-x > out.txt", BR, DEL, "OWN"),
+    ("bash", "terragrunt exec -- git branch -D feature-x", BR, DEL, "OWN"),
+    ("powershell", "git.exe branch -D feature-x", BR, DEL, "OWN"),
+    ("bash", "git worktree remove ../r35", WT, WDEL, "OWN"),
+    ("bash", "git worktree remove --force /w/r35", WT, WDEL, "OWN"),
+    ("bash", "git -C ../r35 worktree remove .", WT, WDEL, "OWN"),
+    ("bash", "git -C .. -C r35 worktree remove .", WT, WDEL, "OWN"),
+    ("bash", "git worktree list; git worktree remove ../r35", WT, WDEL, "OWN"),
+    ("bash", "if true; then true; else git worktree remove ../r35; fi", WT, WDEL, "OWN"),
+)
+
+# (shell, command, operation, rule, context)
+GIT_CNT = (
+    # an own name where the command does not run inside an own worktree.
+    ("bash", "git branch -D worktree-R-34", BR, "branch-own-outside", "OTHER"),
+    ("bash", "git branch -D worktree-R-34", BR, "branch-own-outside", "R34X"),
+    ("bash", "git branch -D worktree-R-34", BR, "branch-own-outside", "NO_CWD"),
+    ("bash", "git -C ../other branch -D worktree-R-34", BR, "branch-own-outside", "OWN"),
+    ("bash", "git push origin --delete feat/r-34-x", BR, "branch-own-outside", "OTHER"),
+    # no own list.
+    ("bash", "git branch -D feature-x", BR, "branch-owner-unseen", "EMPTY"),
+    ("bash", "git branch -D feature-x", BR, "branch-owner-unseen", "NONE"),
+    ("bash", "git branch -D feature-x", BR, "branch-owner-unseen", "BRANCHES_STR"),
+    ("bash", "git worktree remove ../r35", WT, "worktree-owner-unseen", "NO_WORKTREES"),
+    # an expansion or a glob.
+    ("bash", 'git branch -D "$B"', BR, "branch-target-unseen", "OWN"),
+    ("powershell", "git branch -D %B%", BR, "branch-target-unseen", "OWN"),
+    ("bash", "git branch -D feat*", BR, "branch-target-unseen", "OWN"),
+    ("bash", 'git update-ref -d "$R"', BR, "branch-target-unseen", "OWN"),
+    ("bash", "git worktree remove $W", WT, "worktree-target-unseen", "OWN"),
+    ("bash", "git worktree remove ~/w/r35", WT, "worktree-target-unseen", "OWN"),
+    ("bash", 'for b in $(git branch --merged); do git branch -D "$b"; done', BR,
+     "branch-target-unseen", "OWN"),
+    # a repository crew cannot see.
+    ("bash", "git --git-dir=/o/.git branch -D worktree-R-34", BR, "git-repo-unseen", "OWN"),
+    ("bash", "git --git-dir /o/.git branch -D feature-x", BR, "git-repo-unseen", "OWN"),
+    ("bash", "git --work-tree=/o worktree remove .", WT, "git-repo-unseen", "OWN"),
+    ("bash", "git --namespace=n branch -D feature-x", BR, "git-repo-unseen", "OWN"),
+    ("bash", "git --namespace n branch -D feature-x", BR, "git-repo-unseen", "OWN"),
+    ("bash", "GIT_DIR=/o/.git git branch -D worktree-R-34", BR, "git-repo-unseen", "OWN"),
+    ("bash", "env GIT_WORK_TREE=/o git worktree remove .", WT, "git-repo-unseen", "OWN"),
+    ("bash", 'git -C "$D" branch -D worktree-R-34', BR, "git-repo-unseen", "OWN"),
+    ("bash", "git -C %D% branch -D feature-x", BR, "git-repo-unseen", "OWN"),
+    # no directory to resolve a worktree path against.
+    ("bash", "git worktree remove /w/r35", WT, "worktree-owner-unseen", "NO_CWD"),
+    ("bash", "git -C ../r35 worktree remove .", WT, "worktree-owner-unseen", "NO_CWD"),
+    # no target.
+    ("bash", "git branch -D", BR, "branch-target-unseen", "OWN"),
+    ("bash", "git push --delete origin", BR, "branch-target-unseen", "OWN"),
+    ("bash", "git worktree remove", WT, "worktree-target-unseen", "OWN"),
+    ("bash", "git push --prune origin", BR, "push-prune", "OWN"),
+    ("bash", "git push --mirror origin", BR, "push-prune", "OWN"),
+    ("bash", "git $SUB -D x", None, "git-sub-unseen", "OWN"),
+    # C3: a state reading as bad as git-sub-unseen keeps its operation.
+    ("bash", "git $SUB terraform.tfstate", OP, "tfstate-git-unseen", "OWN"),
+    ("bash", "git branch -D " + "worktree-R-34 " * 300, BR, "git-window-exceeded", "OWN"),
+    ("bash", "git worktree remove " + "-f " * 300 + "/w/r34", WT, "git-window-exceeded", "OWN"),
+)
+
+# (shell, command, context)
+GIT_ALLOW = (
+    ("bash", "git branch -D worktree-R-34", "OWN"),
+    ("bash", "git branch -D worktree-R-34", "SUB"),
+    ("bash", "git branch -d feat/r-34-x", "OWN"),
+    ("bash", "git -C /w/r34 branch -D worktree-R-34", "OWN"),
+    ("bash", "git -c core.x=y branch -D worktree-R-34", "OWN"),
+    ("bash", "for b in a b; do git branch -D worktree-R-34; done", "OWN"),
+    ("bash", "git push origin --delete feat/r-34-x", "OWN"),
+    ("bash", "git push --delete origin feat/r-34-x", "OWN"),
+    ("bash", "git branch -dr origin/feature-x", "OWN"),
+    ("bash", "git branch -r -d origin/feature-x", "OWN"),
+    ("bash", "git push origin --delete refs/tags/v1", "OWN"),
+    ("bash", "git update-ref -d refs/tags/v1", "OWN"),
+    ("bash", "git update-ref -d feature-x", "OWN"),
+    ("bash", "git push -ostuffd origin feature-x", "OWN"),
+    ("bash", "git branch -uorigin/dev", "OWN"),
+    ("bash", "git branch feature-y", "OWN"),
+    ("bash", "git branch -m old new", "OWN"),
+    ("bash", "git branch --list", "OWN"),
+    ("bash", "git log --decorate", "OWN"),
+    ("bash", "git push origin feat/r-34-x", "OWN"),
+    ("bash", "git --git-dir=/o/.git status", "OWN"),
+    ("bash", "git --version", "OWN"),
+    ("bash", "git worktree remove .", "OWN"),
+    ("bash", "git worktree remove /w/r34", "OWN"),
+    ("bash", "git -C . worktree remove .", "OWN"),
+    ("bash", "git -C ../r35 worktree remove ../r34", "OWN"),
+    ("bash", "git worktree prune", "OWN"),
+    ("bash", "git worktree list", "OWN"),
+    ("bash", "git worktree add ../r34b -b x", "OWN"),
+)
+
+# Known false negatives, pinned clear under OWN; the sibling that flips each.
+GIT_FALSE_NEGATIVES = (
+    "xargs git branch -D feature-x",  # R-34d
+    "git branch --merged | xargs git branch -d",  # R-34d
+    "sudo -u bob git branch -D feature-x",  # R-34d
+    "env -C /other git branch -D worktree-R-34",  # R-34d
+    "cd ../r35 && git worktree remove .",  # R-34d
+    "export GIT_DIR=/o/.git; git branch -D worktree-R-34",  # R-34d
+    "exec git branch -D feature-x",  # R-34d: the shell builtin is not a head prefix
+    "gh api -X DELETE repos/o/r/git/refs/heads/feature-x",  # R-34e
+    "gh pr merge 12 --delete-branch",  # R-34e
+    "git update-ref --stdin",  # follow-up
+    "rm -rf ../r35",  # follow-up: needs the all-worktrees list
+)
+
+# Known over-reports and limits, pinned: (command, verdict, operation, rule, context).
+GIT_PINNED = (
+    # only the branch rule reads "inside" (INFERRED: git refuses this anyway).
+    ("git worktree remove .", "hit", WT, WDEL, "SUB"),
+    # a tag by its short name reads as a branch.
+    ("git push --delete origin v1.0", "hit", BR, DEL, "OWN"),
+    # the remote is not compared.
+    ("git push other-remote --delete feat/r-34-x", "clear", None, None, "OWN"),
+)
+
+PATH_MODULES = pytest.mark.parametrize("pathmod", [ntpath, posixpath],
+                                       ids=["ntpath", "posixpath"])
+
+
+@pytest.fixture(name="paths")
+def _paths(request, monkeypatch):
+    monkeypatch.setattr(crew_oneway, "_PATH", request.param)
+    return request.param
+
+
+ON_BOTH = pytest.mark.parametrize("paths", [ntpath, posixpath], ids=["ntpath", "posixpath"],
+                                  indirect=True)
+
+
+@ON_BOTH
+@pytest.mark.parametrize("shell,command,op,rule,ctx", GIT_BLOCK)
+def test_git_must_block(paths, shell, command, op, rule, ctx):
+    assert_hit(crew_oneway, command, rule, shell, op, ctx_of(ctx, paths))
+
+
+@ON_BOTH
+@pytest.mark.parametrize("shell,command,op,rule,ctx", GIT_CNT)
+def test_git_could_not_tell(paths, shell, command, op, rule, ctx):
+    assert_cnt(crew_oneway, command, rule, shell, op, ctx_of(ctx, paths))
+
+
+@ON_BOTH
+@pytest.mark.parametrize("shell,command,ctx", GIT_ALLOW)
+def test_git_must_allow(paths, shell, command, ctx):
+    assert_clear(crew_oneway, command, shell, ctx_of(ctx, paths))
+
+
+@ON_BOTH
+@pytest.mark.parametrize("command", GIT_FALSE_NEGATIVES)
+def test_git_false_negatives_are_pinned_clear(paths, command):
+    assert_clear(crew_oneway, command, ctx=ctx_of("OWN", paths))
+
+
+@ON_BOTH
+@pytest.mark.parametrize("command,verdict,op,rule,ctx", GIT_PINNED)
+def test_git_over_reports_and_limits_are_pinned(paths, command, verdict, op, rule, ctx):
+    result = run(crew_oneway, command, ctx=ctx_of(ctx, paths))
+    assert result["verdict"] == verdict, result
+    assert result["operations"] == _ops(op), result
+    assert rule is None or rule in rules(result), result
+
+
+def test_a_delete_and_a_state_write_in_one_segment_report_the_delete():
+    """C3: one finding per segment, the head's delete reading first."""
+    result = assert_hit(crew_oneway, "git branch -D feature-x > terraform.tfstate", DEL,
+                        op=BR, ctx=own())
+    assert rules(result) == [DEL] and len(result["findings"]) == 1
+
+
+def test_mixed_operations_are_listed_sorted():
+    result = run(crew_oneway, "git branch -D feature-x; terraform state rm x", ctx=own())
+    assert result["verdict"] == "hit"
+    assert result["operations"] == sorted([BR, OP])
+
+
+def test_without_context_no_delete_is_clear():
+    """C1: an unknown never collapses into clear."""
+    for _shell, command, _op, _rule, _ctx in GIT_BLOCK:
+        assert run(crew_oneway, command, _shell)["verdict"] != "clear", command
+
+
+@pytest.mark.parametrize("shell,command", MUST_ALLOW)
+def test_every_terraform_must_allow_row_stays_clear_with_context(shell, command):
+    assert_clear(crew_oneway, command, shell, own())
+
+
+@pytest.mark.parametrize("shell,command,rule", MUST_BLOCK)
+def test_every_terraform_must_block_row_stays_a_hit_with_context(shell, command, rule):
+    assert_hit(crew_oneway, command, rule, shell, ctx=own())
+
+
+@pytest.mark.parametrize("command,rule", COULD_NOT_TELL)
+def test_every_terraform_could_not_tell_row_stays_with_context(command, rule):
+    assert_cnt(crew_oneway, command, rule, ctx=own())
+
+
+@pytest.mark.parametrize("given,expected", [
+    (None, (None, None, None)),
+    ("x", (None, None, None)),
+    ({"cwd": "", "own_branches": "a", "own_worktrees": ("a",)}, (None, None, None)),
+    ({"cwd": 3, "own_branches": ["a", 1], "own_worktrees": ["a", ""]}, (None, None, None)),
+    ({"cwd": "/w", "own_branches": [], "own_worktrees": ["/w"]}, ("/w", (), ("/w",))),
+])
+def test_the_context_is_read_once_and_junk_is_absent(given, expected):
+    assert tuple(crew_oneway._read_context(given)) == expected
+
+
+@PATH_MODULES
+def test_inside_an_own_worktree_is_by_whole_components(pathmod, monkeypatch):
+    monkeypatch.setattr(crew_oneway, "_PATH", pathmod)
+    own_list = [_p(pathmod, "w", "r34")]
+    assert crew_oneway._inside(_p(pathmod, "w", "r34"), own_list)
+    assert crew_oneway._inside(_p(pathmod, "w", "r34", "plugin"), own_list)
+    assert not crew_oneway._inside(_p(pathmod, "w", "r34x"), own_list)
+    assert not crew_oneway._inside(_p(pathmod, "w"), own_list)
+    assert not crew_oneway._inside(None, own_list)
+    assert not crew_oneway._inside(_p(pathmod, "w", "r34"), None)
+    assert crew_oneway._inside(_p(pathmod, "x"), [_p(pathmod)])  # a root own worktree
+
+
+def _cleanup_calls(path):
+    """C16: the `_git(...)` calls whose leading string constants are
+    `worktree remove` or `branch -d`, found by content."""
+    with open(path, encoding="utf-8") as handle:
+        tree = ast.parse(handle.read())
+    found = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "_git"):
+            continue
+        words = [arg.value if isinstance(arg, ast.Constant) and isinstance(arg.value, str)
+                 else None for arg in node.args[1:]]
+        if words[:2] in (["worktree", "remove"], ["branch", "-d"]):
+            found.append(tuple(words))
+    return found
+
+
+@pytest.mark.parametrize("name", ["crew_wave.py", "crew_worktrees.py"])
+def test_crews_own_cleanup_reads_as_a_delete_of_anothers(name):
+    calls = _cleanup_calls(os.path.join(SCRIPTS, name))
+    shapes = {call[:2] for call in calls}
+    assert shapes == {("worktree", "remove"), ("branch", "-d")}, calls
+    fill = {("worktree", "remove"): "/w/r35", ("branch", "-d"): "worktree-R-35"}
+    for call in calls:
+        assert call[2:] == (None,), call  # the target is the one non-constant argument
+        command = " ".join(("git",) + call[:2] + (fill[call[:2]],))
+        op = WT if call[0] == "worktree" else BR
+        assert_hit(crew_oneway, command, op=op, ctx=own())
 
 
 # --- payloads --------------------------------------------------------------------------------
@@ -937,6 +1292,31 @@ def test_gitallow_helper_pins():
     assert crew_gitallow.UNSEEN is None
 
 
+@pytest.mark.parametrize("word,option,expected", [
+    ("--del", "--delete", True), ("--d", "--delete", True), ("--delete=x", "--delete", True),
+    ("-fD", "-D", True), ("-dr", "-d", True), ("--remote", "--remotes", True),
+    ("--prun", "--prune", True), ("-fD", "-d", False), ("--dry-run", "--delete", False),
+])
+def test_option_hit_pins(word, option, expected):
+    """R-34c (C9) reads git's delete options through `_option_hit` as it stands."""
+    assert crew_gitallow._option_hit(word, option) is expected
+
+
+def test_gitallow_helper_pins_for_deletes():
+    """R-34c (C4, C5): how git's globals and `-C` values read today."""
+    assert crew_gitallow.subcommand(["--namespace", "n", "branch", "-D", "x"]) == "branch"
+    assert crew_gitallow._global_split(["--namespace=n", "branch"]) == (["--namespace=n"], 1)
+    assert crew_gitallow._global_split(["-C", "a", "-C", "b", "worktree", "remove", "."]) == (
+        ["-C", "a", "-C", "b"], 4)
+    assert crew_gitallow.target_dirs(["-C", "../r35", "worktree"]) == ("../r35",)
+    assert crew_gitallow.target_dirs(["--namespace=n", "branch"]) == ()
+    assert crew_gitallow.target_dirs(["--git-dir=/o/.git", "branch"]) is None
+    assert crew_gitallow.target_dirs(["--work-tree", "/o", "branch"]) is None
+    assert crew_gitallow.target_dirs(["-C", "", "branch"]) is None
+    # why C5 checks `%` and `--namespace` itself: target_dirs flags neither.
+    assert crew_gitallow.target_dirs(["-C", "%X%", "branch"]) == ("%X%",)
+
+
 def test_guards_helper_pins():
     skip = crew_guards.tf_skip_options
     assert skip(["-chdir=infra", "state", "rm"], 0) == 1
@@ -966,28 +1346,37 @@ def _emitted():
         names.update(run(crew_oneway, command)["operations"])
     for tool, tool_input in FILE_TOOL_BLOCK + FILE_TOOL_UNSEEN:
         names.update(_tool(tool, tool_input)["operations"])
+    for shell, command, _op, _rule, ctx in GIT_BLOCK + GIT_CNT:
+        names.update(run(crew_oneway, command, shell, ctx_of(ctx))["operations"])
+    for _shape, _rule, _verdict, operation in crew_oneway.SHAPES:
+        names.update([operation] if operation else [])
     return names
 
 
-def test_the_emitted_name_is_a_human_row_the_owner_answers():
-    assert _emitted() == {OP}
-    assert crew_policy.OPERATIONS[OP].lane == "human"
-    for presence in crew_policy.PRESENCE:
-        for tier in crew_policy.TIERS:
-            got = crew_policy.decide({"operation": OP, "presence": presence, "tier": tier,
-                                      "machine_layer": "clear"})
-            assert (got["outcome"], got["rule"]) == ("ask-owner", "human"), got
+EMITTED = (OP, BR, WT)
 
 
-def test_nothing_waves_the_one_way_row_through():
+def test_the_emitted_names_are_human_rows_the_owner_answers():
+    assert _emitted() == set(EMITTED) == set(crew_oneway.OPERATIONS_EMITTED)
+    for name in EMITTED:
+        assert crew_policy.OPERATIONS[name].lane == "human"
+        for presence in crew_policy.PRESENCE:
+            for tier in crew_policy.TIERS:
+                got = crew_policy.decide({"operation": name, "presence": presence, "tier": tier,
+                                          "machine_layer": "clear"})
+                assert (got["outcome"], got["rule"]) == ("ask-owner", "human"), got
+
+
+@pytest.mark.parametrize("name", EMITTED)
+def test_nothing_waves_a_one_way_row_through(name):
     emergency = {"declared_by": "owner", "incident": "i", "target": "t",
-                 "action": OP, "expiry": "2999-01-01T00:00:00Z", "uses_left": 1}
+                 "action": name, "expiry": "2999-01-01T00:00:00Z", "uses_left": 1}
     for presence in crew_policy.PRESENCE:
         for tier in crew_policy.TIERS:
             for layer in crew_policy.MACHINE_LAYER:
                 for provenance in crew_policy.PROVENANCE:
                     got = crew_policy.decide({
-                        "operation": OP, "presence": presence, "tier": tier,
+                        "operation": name, "presence": presence, "tier": tier,
                         "machine_layer": layer, "provenance": provenance,
                         "plan_covers": True, "attested": True, "prodcheck": "pass",
                         "target": "t", "emergency": emergency})
@@ -1015,6 +1404,10 @@ def test_no_finding_carries_a_word_of_the_command():
             assert target not in shown, (command, shown)
     shown = json.dumps(crew_oneway.judge_payload(OUTPUT_PAYLOAD))
     assert '"hit"' in shown and "tfstate\"" not in shown and "envs" not in shown, shown
+    for command in ("git branch -D secret-branch-x", "git worktree remove /w/secret-dir",
+                    "git push origin :secret-branch-x"):
+        shown = json.dumps(run(crew_oneway, command, ctx=own()))
+        assert '"hit"' in shown and "secret" not in shown, shown
 
 
 # --- inertness -------------------------------------------------------------------------------
@@ -1139,8 +1532,21 @@ def test_the_cli(tmp_path):
     assert done.returncode == 0 and json.loads(done.stdout)["verdict"] == "hit"
     done = cli("shapes")
     assert done.returncode == 0
-    for _, rule, _ in crew_oneway.SHAPES:
-        assert rule in done.stdout
+    lines = [line.split("\t") for line in done.stdout.splitlines()]
+    assert [(r, v, o) for _, r, v, o in lines] == [
+        (r, v, o or "-") for _, r, v, o in crew_oneway.SHAPES]
+    # R-34c: the context flags (C15).
+    done = cli("judge", "--", "git branch -D feature-x")
+    assert done.returncode == 0 and json.loads(done.stdout)["verdict"] == "could-not-tell"
+    flags = ("--cwd", "/w/r34", "--own-branch", "worktree-R-34", "--own-branch", "feat/r-34-x",
+             "--own-worktree", "/w/r34")
+    done = cli("judge", *flags, "--", "git branch -D feature-x")
+    assert done.returncode == 0 and json.loads(done.stdout)["operations"] == [BR]
+    assert json.loads(done.stdout)["verdict"] == "hit"
+    done = cli("judge", *flags, "--", "git branch -D feat/r-34-x")
+    assert done.returncode == 0 and json.loads(done.stdout)["verdict"] == "clear"
+    done = cli("judge", *flags, "--", "git worktree remove ../r35")
+    assert done.returncode == 0 and json.loads(done.stdout)["operations"] == [WT]
     assert cli("payload", stdin="not json").returncode == 2
     # an integer longer than int() converts is still JSON: the field is not
     # read, so the verdict is the command's.
@@ -1592,6 +1998,97 @@ def case_block_declined_hash_holding_a_quote(mod):
     assert_hit(mod, "echo a\\  # it's\necho 'x # y'; terraform state rm x", "tf-state-write")
 
 
+# R-34c. Every case runs with the module's own `_PATH` (os.path).
+
+def case_allow_own_branch(mod):
+    assert_clear(mod, "git branch -D worktree-R-34", ctx=own())
+
+
+def case_cnt_no_own_list(mod):
+    assert_cnt(mod, "git branch -D feature-x", "branch-owner-unseen", op=BR, ctx={})
+
+
+def case_block_own_and_other(mod):
+    assert_hit(mod, "git branch -D worktree-R-34 feature-x", DEL, op=BR, ctx=own())
+
+
+def case_allow_remote_delete(mod):
+    assert_clear(mod, "git branch -dr origin/feature-x", ctx=own())
+
+
+def case_block_delete_abbreviation(mod):
+    assert_hit(mod, "git branch --del feature-x", DEL, op=BR, ctx=own())
+
+
+def case_block_push_colon_ref(mod):
+    assert_hit(mod, "git push origin :feature-x", DEL, op=BR, ctx=own())
+
+
+def case_allow_remove_own_worktree_dot(mod):
+    assert_clear(mod, "git worktree remove .", ctx=own())
+
+
+def case_block_dash_c_worktree(mod):
+    assert_hit(mod, "git -C ../r35 worktree remove .", WDEL, op=WT, ctx=own())
+
+
+def case_cnt_dash_c_own_branch_elsewhere(mod):
+    assert_cnt(mod, "git -C ../other branch -D worktree-R-34", "branch-own-outside", op=BR,
+               ctx=own())
+
+
+def case_block_dash_c_branch(mod):
+    assert_hit(mod, "git -C x branch -D feature-x", DEL, op=BR, ctx=own())
+
+
+def case_cnt_git_dir(mod):
+    assert_cnt(mod, "git --git-dir=/o/.git branch -D worktree-R-34", "git-repo-unseen", op=BR,
+               ctx=own())
+
+
+def case_block_push_delete_before_remote(mod):
+    assert_hit(mod, "git push --delete origin feature-x", DEL, op=BR, ctx=own())
+
+
+def case_cnt_own_branch_other_cwd(mod):
+    assert_cnt(mod, "git branch -D worktree-R-34", "branch-own-outside", op=BR,
+               ctx=ctx_of("OTHER"))
+
+
+def case_cnt_own_branch_no_cwd(mod):
+    assert_cnt(mod, "git branch -D worktree-R-34", "branch-own-outside", op=BR,
+               ctx=ctx_of("NO_CWD"))
+
+
+def case_cnt_own_branch_prefix_sibling(mod):
+    assert_cnt(mod, "git branch -D worktree-R-34", "branch-own-outside", op=BR,
+               ctx=ctx_of("R34X"))
+
+
+def case_allow_own_branch_below_worktree(mod):
+    assert_clear(mod, "git branch -D worktree-R-34", ctx=ctx_of("SUB"))
+
+
+def case_allow_push_delete_tag(mod):
+    assert_clear(mod, "git push origin --delete refs/tags/v1", ctx=own())
+
+
+def case_cnt_push_prune(mod):
+    assert_cnt(mod, "git push --prune origin", "push-prune", op=BR, ctx=own())
+
+
+def case_cnt_namespace(mod):
+    assert_cnt(mod, "git --namespace=n branch -D feature-x", "git-repo-unseen", op=BR, ctx=own())
+
+
+def case_cnt_percent_dash_c(mod):
+    assert_cnt(mod, "git -C %D% branch -D feature-x", "git-repo-unseen", op=BR, ctx=own())
+
+
+def case_block_git_rm_with_context(mod):
+    assert_hit(mod, "git rm terraform.tfstate", "tfstate-git-remove", ctx=own())
+
+
 MUTATIONS = (
     ("1 rm added to the state read set",
      'STATE_READ = frozenset(("list", "show", "pull", "identities"))',
@@ -1608,10 +2105,12 @@ MUTATIONS = (
     ("5 the -help check dropped",
      "    if scan.help_from[at + 1]:\n        return _CLEAR\n", "",
      ("case_allow_help",)),
+    # Re-anchored by R-34c: the context is read where `del context` stood.
     ("11 a missing context is could-not-tell",
-     "    del context  # accepted and ignored by every terraform row (A4)\n",
+     "    ctx = _read_context(context)\n",
      "    if not isinstance(context, dict):\n"
-     '        return _result([_finding(COULD_NOT_TELL, "no-context", TF_STATE)])\n',
+     '        return _result([_finding(COULD_NOT_TELL, "no-context", TF_STATE)])\n'
+     "    ctx = _read_context(context)\n",
      ("case_allow_with_no_context",)),
     ("12 could-not-tell collapses to clear",
      "    if COULD_NOT_TELL in verdicts:\n        return COULD_NOT_TELL",
@@ -1620,7 +2119,8 @@ MUTATIONS = (
      '        where = {"pass": "raw", "command": number}\n',
      '        where = {"pass": "raw", "command": number, "targets": segment["targets"]}\n',
      ("case_no_target_in_output",)),
-    ("19 raw pass skipped", "    if commands is None:\n        return _raw_pass(command, shell)",
+    ("19 raw pass skipped",
+     "    if commands is None:\n        return _raw_pass(command, shell, ctx)",
      "    if commands is None:\n        return []", ("case_block_raw_chain",)),
     ("29 only assignments, env and sudo stripped",
      'HEAD_PREFIXES = frozenset(("env", "sudo", "command", "time", "then", "do", "else", "!",\n'
@@ -1735,9 +2235,11 @@ MUTATIONS = (
     ("9 the file-tool branch dropped",
      "    if isinstance(tool, str) and tool in FILE_TOOLS:\n        return _file_tool(payload)\n",
      "", ("case_block_write_tool",)),
+    # Re-anchored by R-34c: the git head now reads deletes, then state words (C3).
     ("23 the whole git head clear on a state word",
-     "        return _git_state(info, index)\n", "        return _CLEAR\n",
-     ("case_block_git_rm",)),
+     "    deleted, stated = _git_delete(info, start, head), _git_state(info, head)\n",
+     "    deleted, stated = _git_delete(info, start, head), _CLEAR\n",
+     ("case_block_git_rm", "case_block_git_rm_with_context")),
     ("24 every git subcommand could-not-tell",
      "    if sub in GIT_READ_SUBS:\n",
      '    return (COULD_NOT_TELL, "tfstate-git-unseen", git_first)\n    if sub in GIT_READ_SUBS:\n',
@@ -1760,7 +2262,7 @@ MUTATIONS = (
      '    if ">" not in operator:\n        return _CLEAR\n', "",
      ("case_allow_input_redirect", "case_allow_input_here_string")),
     ("35 the plain pass replaced by the raw pass",
-     "    return _plain_pass(commands)\n", "    return _raw_pass(command, shell)\n",
+     "    return _plain_pass(commands, ctx)\n", "    return _raw_pass(command, shell, ctx)\n",
      ("case_allow_plain_pass_quoted_operator_commit",
       "case_allow_plain_pass_quoted_operator_echo")),
     ("36 commit dropped from the git clear list",
@@ -1870,6 +2372,68 @@ MUTATIONS = (
      '                          " \\t\\n-_./:=,;&|")\n',
      '                          " \\t\\n-_./:=,;&|\\\\`\\"\'")\n',
      ("case_block_declined_hash_holding_a_quote", "case_block_hash_in_quotes")),
+    # R-34c. The numbers are the parent spec's sabotage rows.
+    ("10 the own list ignored (every target hits)",
+     "    if name not in ctx.own_branches:\n", "    if True:\n", ("case_allow_own_branch",)),
+    ("11b an absent own list read as empty",
+     "    if ctx.own_branches is None:\n"
+     '        return (COULD_NOT_TELL, "branch-owner-unseen", offset)\n',
+     "    if ctx.own_branches is None:\n        ctx = ctx._replace(own_branches=())\n",
+     ("case_cnt_no_own_list",)),
+    ("13 only the first target judged",
+     "    for offset, name in named:\n", "    for offset, name in named[:1]:\n",
+     ("case_block_own_and_other",)),
+    ("14 -r deletes read as branch deletes",
+     '    if any(hit(word, "-r") or hit(word, "--remotes") for word in cut):\n'
+     "        return None\n", "", ("case_allow_remote_delete",)),
+    ("15 exact --delete match only",
+     '    if not any(hit(word, "-d") or hit(word, "-D") or hit(word, "--delete") for word in cut):\n',
+     '    if not any(hit(word, "-d") or hit(word, "-D") or word == "--delete" for word in cut):\n',
+     ("case_block_delete_abbreviation",)),
+    ("16 the :ref push form dropped",
+     '        elif spec.startswith((":", "+:")):\n'
+     '            targets.append((at, spec.partition(":")[2]))\n', "",
+     ("case_block_push_colon_ref",)),
+    ("17 worktree paths compared without resolving against eff",
+     "    removed = _norm(_PATH.join(eff, path))\n", "    removed = _norm(path)\n",
+     ("case_allow_remove_own_worktree_dot",)),
+    ("20 -C ignored",
+     "        eff = _PATH.normpath(_PATH.join(eff, value))\n", "        eff = eff\n",
+     ("case_block_dash_c_worktree", "case_cnt_dash_c_own_branch_elsewhere")),
+    ("21 the subcommand is the first word after git",
+     "    sub_at = head + 1 + split\n",
+     "    sub_at = head + 1 + split\n    sub = args[0]\n",
+     ("case_block_dash_c_branch",)),
+    ("22 --git-dir and --work-tree read as ordinary options",
+     "    dirs = crew_gitallow.target_dirs(globals_)\n",
+     "    dirs = crew_gitallow.target_dirs([word for word in globals_ if word.split(\"=\", 1)[0]\n"
+     "                                      not in (\"--git-dir\", \"--work-tree\")])\n",
+     ("case_cnt_git_dir",)),
+    ("26 the push delete option accepted only after the remote",
+     '            deleting = deleting or hit(cut, "-d") or hit(cut, "--delete")\n',
+     "            deleting = deleting or (bool(positional) and (\n"
+     '                hit(cut, "-d") or hit(cut, "--delete")))\n',
+     ("case_block_push_delete_before_remote",)),
+    ("32a/32b an own name clear wherever the command runs",
+     "    if own_inside:\n", "    if True:\n",
+     ("case_cnt_own_branch_other_cwd", "case_cnt_own_branch_no_cwd")),
+    ("33 inside by string prefix",
+     "        if here == entry or here.startswith(entry.rstrip(_PATH.sep) + _PATH.sep):\n",
+     "        if here.startswith(entry):\n", ("case_cnt_own_branch_prefix_sibling",)),
+    ("34 inside by equality",
+     "        if here == entry or here.startswith(entry.rstrip(_PATH.sep) + _PATH.sep):\n",
+     "        if here == entry:\n", ("case_allow_own_branch_below_worktree",)),
+    ("C-tags refs/tags/ read as a branch",
+     '        if target.startswith("refs/tags/"):\n            continue\n', "",
+     ("case_allow_push_delete_tag",)),
+    ("C-prune the --prune/--mirror row dropped",
+     "        if pruning:\n", "        if False:\n", ("case_cnt_push_prune",)),
+    ("C-ns the --namespace repo check dropped",
+     '    if any(word.split("=", 1)[0] == "--namespace" for word in globals_):\n'
+     "        return True\n", "", ("case_cnt_namespace",)),
+    ("C-pct the % and ~ -C repo check dropped",
+     '    return any(_unseen(value) or value.startswith("~") for value in dirs)\n',
+     "    return False\n", ("case_cnt_percent_dash_c",)),
 )
 
 
