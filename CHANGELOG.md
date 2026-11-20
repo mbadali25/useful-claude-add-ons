@@ -152,6 +152,12 @@ read entries under any `## [` heading.
 - crew 1.3.159: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); the accepted-value test changed plugin/crew after the number was set, so the branch moved to 1.3.160; the change is recorded under crew 1.3.160
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Added — crew 1.3.197: the Configuration Guide and CI-checked worked examples (R-C3)
+
+- **Summary.** `crew` 1.3.197 adds `plugin/crew/docs/configuration/guide.md`, a hand-written guide to crew's two configuration layers, the owner's set-up, the procedure an AI model follows to change a key, and worked example files, every one of which CI checks.
+- **What.** Five example files under `docs/configuration/examples/` (a minimal repo, a repo production block, codex-first and kimi-first reviewer pins, a tier map). Repo examples must pass `crew_config.py --check` and machine examples `--check-global`; every command, subcommand, flag, script path and key the guide names must exist. No config key, default or hook changes.
+- **Tests.** `test_config_examples.py` adds must-pass rows for each example and the guide, must-fail rows for bad values, shapes, removed commands, unknown subcommands and escaping paths, and sabotage rows that each go red on a weakened checker.
+
 ### Added — crew 1.3.195: `crew_policy.classify`, the closed serious list, report-only (R-P6)
 
 - **Summary.** `crew` 1.3.195 adds `crew_policy.classify`, which places one action's effects into the closed list of eight serious classes, or reports them as unplaced, and treats an operation it cannot place as serious. Nothing acts on the answer yet.
