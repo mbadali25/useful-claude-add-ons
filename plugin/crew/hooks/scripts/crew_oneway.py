@@ -20,15 +20,17 @@ count. In `-x=v` the value `v` is read, and the word is an *option value*.
 A state file is written by:
 
 - a redirection whose operator holds `>` into a state word, whatever the
-  head (`tfstate-redirect`); an unexpanded write target (`$`, backtick, `%`)
-  in a segment that holds a state word is `could-not-tell`;
+  head (`tfstate-redirect`; a target's quotes are joined as the shell joins
+  them); an unexpanded write target (`$`, backtick, `%`) in a segment that
+  holds a state word, a lifted input target included, is `could-not-tell`;
 - a state word after a writing head: the remove, move, write and in-place
   heads, the last positional of a copy head, `aws s3 rm|mv|cp`, `gsutil
   rm|cp`, `az storage blob upload|delete`, and `git rm|mv|checkout|restore`
   after git's global options. A read head (`cat`, `jq`, `ls`, ...) or a git
   read (`status`, `diff`, `add`, `commit`, ...) is clear; any other head
-  with a state word after it is `could-not-tell`. A terraform head is judged
-  by its own table only (head precedence);
+  with a state word after it is `could-not-tell`. Every word after the
+  command's first `--` is a positional, never an option. A terraform head is
+  judged by its own table only (head precedence);
 - `Write`, `Edit`, `MultiEdit` or `NotebookEdit` naming a state file, its
   paths read as `scope_guard.targets` reads them; with no readable path the
   payload is `could-not-tell`.
@@ -272,18 +274,22 @@ def _quotes(text, quote, skip, escape):
 def _tokens(piece):
     """(tokens, gaps) of one raw segment: `gaps[i]` is the whitespace the
     command had before `tokens[i]`, the one space `_protect` pads a lifted
-    operator with on each side taken off (F1). A token that is only brackets
-    is dropped; a token that is only quotes is kept (an empty word)."""
+    operator with on each side taken off (F1). Every token is kept, one that
+    is only brackets too, so a quoted target keeps a literal `(`; `_lift`
+    drops such a token as a word and `_target` skips it before a target."""
     tokens, gaps, after_mark = [], [], False
     for match in re.finditer(r"(\s*)(\S+)", piece):
         gap, token = match.groups()
         mark = token.startswith(_MARK)
-        gap = gap[after_mark:len(gap) - mark]
+        gaps.append(gap[after_mark:len(gap) - mark])
+        tokens.append(token)
         after_mark = mark
-        if token.strip(_STRIP) or any(quote in token for quote in _QUOTES):
-            tokens.append(token)
-            gaps.append(gap)
     return tokens, gaps
+
+
+def _bare(token):
+    """Whether `token` is only brackets (no quote): not a word."""
+    return not token.strip(_STRIP) and not any(quote in token for quote in _QUOTES)
 
 
 def _target(tokens, gaps, index, escape="\\"):
@@ -296,7 +302,10 @@ def _target(tokens, gaps, index, escape="\\"):
     escaped space joins the next token. An operator lifted from inside the
     quotes is put back as it stood, and the whitespace between the target's
     tokens is the command's own (`gaps`). When nothing in the segment closes
-    the quote, the rest of the segment is the unseen target."""
+    the quote, the rest of the segment is the unseen target. Tokens that
+    are only brackets before the target are not it."""
+    while index < len(tokens) and _bare(tokens[index]):
+        index += 1
     if index >= len(tokens) or tokens[index].startswith(_MARK) or _comment(tokens[index]):
         return None, index
     parts, quote, skip = [], None, False
@@ -579,8 +588,12 @@ class _StateWords:  # pylint: disable=too-few-public-methods
     first index at or after `i` holding a state word of any kind / a
     positional one (`len(words)` when none); `next_plain[i]` the first word
     there not starting with `-`; `next_dashdash[i]` the first `--`;
-    `inplace_from[i]` whether an in-place option stands there or later;
-    `last_plain` the last word not starting with `-` (-1 when none)."""
+    `next_inplace[i]` the first in-place option; `last_plain` the last word
+    not starting with `-` (-1 when none).
+
+    These read each word alone. Every word after the command's first `--`
+    is a positional (B5), whatever it starts with; that `--` depends on
+    where the command starts, so the methods below take the head."""
 
     def __init__(self, words):
         count = len(words)
@@ -590,7 +603,7 @@ class _StateWords:  # pylint: disable=too-few-public-methods
         self.next_word = [count] * (count + 1)
         self.next_plain = [count] * (count + 1)
         self.next_dashdash = [count] * (count + 1)
-        self.inplace_from = [False] * (count + 1)
+        self.next_inplace = [count] * (count + 1)
         self.last_plain = -1
         for i in range(count - 1, -1, -1):
             word, kind = words[i], self.kind[i]
@@ -599,9 +612,29 @@ class _StateWords:  # pylint: disable=too-few-public-methods
             self.next_word[i] = i if kind == "word" else self.next_word[i + 1]
             self.next_plain[i] = i if plain else self.next_plain[i + 1]
             self.next_dashdash[i] = i if word == "--" else self.next_dashdash[i + 1]
-            self.inplace_from[i] = self.inplace_from[i + 1] or bool(_INPLACE_RE.match(word))
+            self.next_inplace[i] = i if _INPLACE_RE.match(word) else self.next_inplace[i + 1]
             if plain and self.last_plain < 0:
                 self.last_plain = i
+
+    def positional_state(self, after):
+        """Whether a state word stands at `after` or later as a positional:
+        a word not starting with `-`, or any state word after the first
+        `--` at or after `after` (B5)."""
+        dashdash = self.next_dashdash[after]
+        return (self.next_word[after] < len(self.words)
+                or self.next_state[min(dashdash + 1, len(self.words))] < len(self.words))
+
+    def inplace(self, after):
+        """Whether an in-place option stands at `after` or later, before
+        the first `--` (after it, `-i` is an operand)."""
+        return self.next_inplace[after] < self.next_dashdash[after]
+
+    def plain(self, index, dashdash):
+        """The first positional at `index` or later, `dashdash` being the
+        command's first `--` (`len(words)` when none)."""
+        if index > dashdash:
+            return index
+        return min(self.next_plain[index], dashdash + 1, len(self.words))
 
 
 def _last_positional(info, head):
@@ -626,11 +659,12 @@ def _positional(info, index, nth):
     """The `nth` word not starting with `-` from `index` (0 is the first),
     or None."""
     count = len(info.words)
-    index = info.next_plain[min(index, count)]
+    dashdash = info.next_dashdash[min(index, count)]
+    index = info.plain(min(index, count), dashdash)
     for _ in range(nth):
         if index >= count:
             return None
-        index = info.next_plain[index + 1]
+        index = info.plain(index + 1, dashdash)
     return info.words[index] if index < count else None
 
 
@@ -665,7 +699,7 @@ def _git_state(info, head):
     if git_first >= len(info.words):
         return _CLEAR
     if sub in GIT_READ_SUBS:
-        if info.next_word[after] < len(info.words):
+        if info.positional_state(after):
             return _CLEAR
         return (COULD_NOT_TELL, "tfstate-option-value", git_first)
     if sub == "commit":
@@ -693,7 +727,7 @@ def _state_head(info, start):
         return (HIT, "tfstate-move", first)
     if head in COPY_HEADS:
         return _destination(info, index, "tfstate-overwrite")
-    if head in INPLACE_HEADS and info.inplace_from[index + 1]:
+    if head in INPLACE_HEADS and info.inplace(index + 1):
         return (HIT, "tfstate-inplace", first)
     if head in WRITE_HEADS:
         return (HIT, "tfstate-write", first)
@@ -702,10 +736,16 @@ def _state_head(info, start):
         if remote is not None:
             return remote
     if head in READ_HEADS:
-        if info.next_word[index + 1] < len(info.words):
+        if info.positional_state(index + 1):
             return _CLEAR
         return (COULD_NOT_TELL, "tfstate-option-value", first)
     return (COULD_NOT_TELL, "tfstate-head-unseen", first)
+
+
+def _unquoted(target):
+    """`target` with its quote characters taken out, as the shell joins a
+    word built from quoted and unquoted parts (`terra"form.tf"state`)."""
+    return target.replace('"', "").replace("'", "")
 
 
 def _write_reading(operator, target, held):
@@ -714,7 +754,7 @@ def _write_reading(operator, target, held):
     test, so `> "$D/terraform.tfstate"` is a hit (B3)."""
     if ">" not in operator:
         return _CLEAR
-    if _state_path(target):
+    if _state_path(_unquoted(target)):
         return (HIT, "tfstate-redirect", None)
     if held and _unseen(target):
         return (COULD_NOT_TELL, "tfstate-redirect-unseen", None)
@@ -751,7 +791,10 @@ def _raw_pass(text, shell):
     for number, segment in enumerate(raw_segments(text, shell)):
         where = {"pass": "raw", "command": number}
         readings = [_judge_words(segment["words"])]
-        held = any(_state_kind(word) for word in segment["words"])
+        # A lifted target is part of the segment too (B3): in
+        # `cat < terraform.tfstate > $OUT` the state word is the input's.
+        held = any(_state_kind(word) for word in segment["words"]) or any(
+            _state_path(_unquoted(target)) for _op, target in segment["targets"])
         readings += [_write_reading(op, target, held) for op, target in segment["targets"]]
         verdict, rule, word = _first_worst(readings)
         if segment["dangling"] and verdict != HIT:

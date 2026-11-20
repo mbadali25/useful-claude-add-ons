@@ -175,6 +175,9 @@ MUST_BLOCK = (
     ("powershell", "echo x > terraform.tfstate", "tfstate-redirect"),
     # the state-word test runs before the expansion test.
     ("bash", 'cat x.json > "$D/terraform.tfstate"', "tfstate-redirect"),
+    # review round 1: a target built from quoted and unquoted parts.
+    ("bash", 'echo x > terra"form.tf"state', "tfstate-redirect"),
+    ("bash", "echo x > 'terraform'.tfstate", "tfstate-redirect"),
     # R-34b (B5): a state word after a writing head.
     ("bash", "rm terraform.tfstate", "tfstate-remove"),
     ("bash", "rm -f envs/prod/terraform.tfstate.backup", "tfstate-remove"),
@@ -191,6 +194,10 @@ MUST_BLOCK = (
     ("powershell", "Remove-Item terraform.tfstate", "tfstate-remove"),
     ("powershell", "Set-Content terraform.tfstate x", "tfstate-write"),
     ("bash", "terragrunt exec -- rm terraform.tfstate", "tfstate-remove"),
+    # review round 1: terragrunt's `--` is not the inner command's.
+    ("bash", "terragrunt exec -- sed -i s/a/b/ terraform.tfstate", "tfstate-inplace"),
+    ("bash", "sed -i -- s/a/b/ terraform.tfstate", "tfstate-inplace"),
+    ("bash", "aws s3 cp -- x s3://b/terraform.tfstate", "tfstate-remote"),
     # R-34b (B6): the git table, state words after the subcommand.
     ("bash", "git rm terraform.tfstate", "tfstate-git-remove"),
     # a known over-report (`--cached` keeps the file), pinned here.
@@ -281,6 +288,10 @@ MUST_ALLOW = (
     # the plain pass: nothing is lifted from inside the quotes.
     ("bash", 'git commit -m "a > terraform.tfstate"'),
     ("bash", 'echo "a>terraform.tfstate"'),
+    # review round 1 (B5): every word after `--` is a positional.
+    ("bash", "cat -- -report.tfstate"),
+    ("bash", "git diff -- -report.tfstate"),
+    ("bash", "terragrunt exec -- cat -- -report.tfstate"),
 )
 
 # Known false negatives (Risks): terragrunt's `stack run` and `graph` run
@@ -341,6 +352,10 @@ COULD_NOT_TELL = (
     ("git diff --output=terraform.tfstate", "tfstate-option-value"),
     ("cat --x=terraform.tfstate", "tfstate-option-value"),
     ("jq '.serial=5' terraform.tfstate > $T", "tfstate-redirect-unseen"),
+    # review round 1 (B3): the state word is a lifted input target.
+    ("cat < terraform.tfstate > $OUT", "tfstate-redirect-unseen"),
+    # review round 1 (B5): after `--`, `-i` is sed's program, not an option.
+    ("sed -- -i terraform.tfstate", "tfstate-head-unseen"),
 )
 
 # Known over-reports pinned as hits (Risks).
@@ -1370,6 +1385,29 @@ def case_cnt_option_value(mod):
     assert_cnt(mod, "cat --x=terraform.tfstate", "tfstate-option-value")
 
 
+def case_cnt_input_target_held(mod):
+    assert_cnt(mod, "cat < terraform.tfstate > $OUT", "tfstate-redirect-unseen")
+
+
+def case_allow_after_dashdash(mod):
+    assert_clear(mod, "cat -- -report.tfstate")
+    assert_clear(mod, "git diff -- -report.tfstate")
+
+
+def case_cnt_sed_operand_after_dashdash(mod):
+    assert_cnt(mod, "sed -- -i terraform.tfstate", "tfstate-head-unseen")
+
+
+def case_block_quoted_parts_target(mod):
+    assert_hit(mod, 'echo x > terra"form.tf"state', "tfstate-redirect")
+
+
+def case_reader_target_keeps_brackets(mod):
+    assert mod.raw_segments('echo x >"a  (  b.tfstate"') == [
+        seg(["echo", "x"], [(">", "a  (  b.tfstate")])]
+    assert mod.raw_segments("( echo x ) > ( out") == [seg(["echo", "x"], [(">", "out")])]
+
+
 MUTATIONS = (
     ("1 rm added to the state read set",
      'STATE_READ = frozenset(("list", "show", "pull", "identities"))',
@@ -1464,8 +1502,8 @@ MUTATIONS = (
      "    return args[j + 1] in AMBIGUOUS_SUBS or _unseen(args[j + 1])\n",
      "    return args[j + 1] in AMBIGUOUS_SUBS\n", ("case_cnt_swallowed_unseen_sub",)),
     ("R17 a quoted empty word dropped before the redirections are lifted",
-     "        if token.strip(_STRIP) or any(quote in token for quote in _QUOTES):\n",
-     "        if token.strip(_STRIP):\n", ("case_block_empty_here_string",)),
+     "    return not token.strip(_STRIP) and not any(quote in token for quote in _QUOTES)\n",
+     "    return not token.strip(_STRIP)\n", ("case_block_empty_here_string",)),
     ("R18 a quoted target ends at its first token",
      "        if quote is None and not skip and not glued:\n            break\n",
      "        break\n",
@@ -1491,7 +1529,7 @@ MUTATIONS = (
      "        segment = _lift(piece, _ESCAPE[shell])\n", "        segment = _lift(piece)\n",
      ("case_block_escaped_quote_in_target",)),
     ("R25 an operator inside a quoted target keeps the reader's padding",
-     "        gap = gap[after_mark:len(gap) - mark]\n", "",
+     "        gaps.append(gap[after_mark:len(gap) - mark])\n", "        gaps.append(gap)\n",
      ("case_reader_operator_inside_quoted_target",)),
     ("R26 an operator inside a quoted target keeps the reader's marker",
      "            text, right = text[2:].translate(_SHOW), text[1] in \"23\"\n",
@@ -1553,9 +1591,9 @@ MUTATIONS = (
      '        piece = text if not parts else " " + text\n',
      ("case_reader_target_whitespace",)),
     ("B3 the expansion test run before the state-word test",
-     "    if _state_path(target):\n        return (HIT, \"tfstate-redirect\", None)\n",
+     "    if _state_path(_unquoted(target)):\n        return (HIT, \"tfstate-redirect\", None)\n",
      '    if _unseen(target):\n        return (COULD_NOT_TELL, "tfstate-redirect-unseen", None)\n'
-     "    if _state_path(target):\n        return (HIT, \"tfstate-redirect\", None)\n",
+     "    if _state_path(_unquoted(target)):\n        return (HIT, \"tfstate-redirect\", None)\n",
      ("case_block_redirect_state_before_expansion",)),
     ("B5 the in-place bundle read as -i only",
      '_INPLACE_RE = re.compile(r"^(?:-[A-Za-z]*i.*|--in-place(?:=.*)?)$", re.S)',
@@ -1566,8 +1604,30 @@ MUTATIONS = (
      "        scan.memo[start] = (_CLEAR if found is None\n",
      ("case_block_exec_unwraps_a_state_head",)),
     ("B5 a read head's option value read as a positional",
-     "        if info.next_word[index + 1] < len(info.words):\n",
+     "        if info.positional_state(index + 1):\n",
      "        if True:\n", ("case_cnt_option_value",)),
+    ("B3 a lifted input target not counted as held",
+     "        held = any(_state_kind(word) for word in segment[\"words\"]) or any(\n"
+     "            _state_path(_unquoted(target)) for _op, target in segment[\"targets\"])\n",
+     "        held = any(_state_kind(word) for word in segment[\"words\"])\n",
+     ("case_cnt_input_target_held",)),
+    ("B5 a word after -- read by its own spelling",
+     "                or self.next_state[min(dashdash + 1, len(self.words))] < len(self.words))\n",
+     "                or False)\n",
+     ("case_allow_after_dashdash",)),
+    ("B5 an in-place option read after --",
+     "        return self.next_inplace[after] < self.next_dashdash[after]\n",
+     "        return self.next_inplace[after] < len(self.words)\n",
+     ("case_cnt_sed_operand_after_dashdash",)),
+    ("B3 a target's quotes kept for the state-word test",
+     '    return target.replace(\'"\', "").replace("\'", "")\n',
+     "    return target\n",
+     ("case_block_quoted_parts_target",)),
+    ("F1 a bracket-only token dropped from a target",
+     "        gaps.append(gap[after_mark:len(gap) - mark])\n        tokens.append(token)\n",
+     "        if not _bare(token):\n"
+     "            gaps.append(gap[after_mark:len(gap) - mark])\n            tokens.append(token)\n",
+     ("case_reader_target_keeps_brackets",)),
 )
 
 
