@@ -57,9 +57,17 @@ subcommand) the raw pass left holding a quote, a word after the subcommand
 the raw pass may have misread (an empty `""` it dropped, half of a quoted
 space, a word holding an escape), or a repository crew cannot
 see (`--git-dir`, `--work-tree`, `--namespace`, a `-C` holding `$` ` % * ?
-[ or a leading `~`, a leading `GIT_DIR=`/`GIT_WORK_TREE=`/`GIT_NAMESPACE=`,
-a global the raw pass may have misread such as `--git-"dir"=x`)
-is could-not-tell, never clear. A `git branch` operand is a branch name as
+[ or a leading `~`, a leading `GIT_DIR=`/`GIT_WORK_TREE=`/`GIT_NAMESPACE=`/
+`GIT_COMMON_DIR=`, a global the raw pass may have misread such as
+`--git-"dir"=x`) is could-not-tell, never clear. A word the raw pass may
+have misread keeps a command that is no delete clear only when no reading of
+it could be an option, a `:ref` refspec or the worktree subcommand
+(`git branch --list --format "a b" > out` is clear). A bash
+backslash-newline (a PowerShell backtick-newline) is read both as the text
+has it and joined, the worse kept (`GIT_\\<newline>DIR=x`). A matching
+refspec (`:`, `+:`) deletes nothing. A UNC share's root (`-C //srv/share`)
+resets the directory. The own lists are indexed once per judgement, so
+many deletes against long own lists stay linear. A `git branch` operand is a branch name as
 spelled (`refs/heads/x` is not `x` there); push and update-ref read refs. A
 value-taking `git branch` option takes the next word whatever it is
 (`--sort -r` is no `--remotes`, `--sort -- -D x` deletes `x`, and in
@@ -823,8 +831,8 @@ class _StateWords:  # pylint: disable=too-few-public-methods
         self.heads = heads
         self.prefix_end = _prefix_ends(heads)
         self.git_memo = {}  # (git head, assigned) -> reading (`_git`)
-        # the first index at or after `i` assigning GIT_DIR, GIT_WORK_TREE
-        # or GIT_NAMESPACE (C5), so a start reads its assignments at once.
+        # the first index at or after `i` assigning one of `_REPO_VARS`
+        # (C5), so a start reads its assignments at once.
         self.repo_assign = [count] * (count + 1)
         for i in range(count - 1, -1, -1):
             sets_repo = (_ASSIGN_RE.match(heads[i]) is not None
@@ -975,8 +983,8 @@ def _git_state(info, head):
 # unknown), never "empty"; an empty own list is a known empty list. `quoted`
 # is not the caller's: the raw pass sets it per segment to the sorted
 # indexes of the words it may have misread (`_lift`).
-_Context = collections.namedtuple("_Context", ("cwd", "own_branches", "own_worktrees", "quoted"),
-                                  defaults=((),))
+_Context = collections.namedtuple("_Context", ("cwd", "own_branches", "own_worktrees", "quoted",
+                                               "owned"), defaults=((), None))
 NO_CONTEXT = _Context(None, None, None)
 # C6: every path function is called through this one attribute, so the test
 # can run each path row under `ntpath` and under `posixpath`.
@@ -984,7 +992,8 @@ _PATH = os.path
 
 GIT_WINDOW = 256
 DELETE_SUBS = {"branch": BRANCH, "push": BRANCH, "update-ref": BRANCH, "worktree": WORKTREE}
-_REPO_VARS = frozenset(("GIT_DIR", "GIT_WORK_TREE", "GIT_NAMESPACE"))
+# GIT_COMMON_DIR names the ref store a linked worktree shares (fix round 6).
+_REPO_VARS = frozenset(("GIT_DIR", "GIT_WORK_TREE", "GIT_NAMESPACE", "GIT_COMMON_DIR"))
 _TARGET_UNSEEN = ("$", "`", "%", "*", "?", "[")
 # C10: push options that take the next word when written without `=`. git
 # also takes any unambiguous prefix of a long option (`--receiv`), so a
@@ -1020,26 +1029,61 @@ def _read_context(context):
     if not isinstance(context, dict):
         return NO_CONTEXT
     cwd = context.get("cwd")
-    return _Context(cwd if isinstance(cwd, str) and cwd else None,
-                    _own_list(context.get("own_branches")),
-                    _own_list(context.get("own_worktrees")))
+    branches = _own_list(context.get("own_branches"))
+    worktrees = _own_list(context.get("own_worktrees"))
+    return _Context(cwd if isinstance(cwd, str) and cwd else None, branches, worktrees,
+                    owned=_Owned(branches, worktrees))
 
 
 def _norm(path):
     return _PATH.normcase(_PATH.normpath(path))
 
 
+class _Owned:  # pylint: disable=too-few-public-methods
+    """The own lists indexed once per judgement (fix round 6): each delete
+    then looks its target up in constant time in the lists' length, so
+    commands and lists growing together stay linear, not quadratic.
+    `branches` is a set of the own names; `paths` the own worktrees
+    normalised (`_norm`); `roots` maps a length to the own worktrees of
+    that length with trailing separators taken off, so `inside` tests only
+    the prefixes of a path that end where an own worktree could; `memo`
+    keeps each answer of `inside`."""
+
+    def __init__(self, branches, worktrees):
+        self.branches = frozenset(branches) if branches is not None else None
+        self.paths = frozenset(_norm(entry) for entry in worktrees or ())
+        self.roots = {}
+        for path in self.paths:
+            root = path.rstrip(_PATH.sep)
+            self.roots.setdefault(len(root), set()).add(root)
+        self.memo = {}
+
+    def inside(self, eff):
+        """C7: whether `eff` is an own worktree or below one, by whole
+        path components. An unknown `eff` or no own worktree is never
+        inside."""
+        if eff is None or not self.paths:
+            return False
+        here = _norm(eff)
+        if here not in self.memo:
+            found, at = here in self.paths, here.find(_PATH.sep)
+            while not found and at >= 0:
+                found = at in self.roots and here[:at] in self.roots[at]
+                at = here.find(_PATH.sep, at + 1)
+            self.memo[here] = found
+        return self.memo[here]
+
+
+def _owned(ctx):
+    """`ctx`'s index of its own lists (`_Owned`), built here when the
+    context was not read by `_read_context`."""
+    return ctx.owned if ctx.owned is not None else _Owned(ctx.own_branches, ctx.own_worktrees)
+
+
 def _inside(eff, own_worktrees):
-    """C7: whether `eff` is an own worktree or below one, by whole path
-    components. An unknown `eff` or no own list is never inside."""
-    if eff is None or not own_worktrees:
-        return False
-    here = _norm(eff)
-    for entry in own_worktrees:
-        entry = _norm(entry)
-        if here == entry or here.startswith(entry.rstrip(_PATH.sep) + _PATH.sep):
-            return True
-    return False
+    """C7 for one list (`_Owned.inside`): whether `eff` is an own worktree
+    or below one, by whole path components."""
+    return _Owned(None, own_worktrees).inside(eff)
 
 
 def _short(word, stop):
@@ -1093,8 +1137,13 @@ def _effective(cwd, dirs):
             tail.append(value)
             continue
         own = _PATH.splitdrive(value)[0]
-        if own and (len(own) != len(drive) or own.lower() != drive.lower()):
-            drive, base, tail = own, value[len(own):], []  # another drive
+        unc = len(own) > 1 and own[0] in "/\\" and own[1] in "/\\"
+        if own and (unc or len(own) != len(drive) or own.lower() != drive.lower()):
+            # another drive, or a UNC share: a share has no current
+            # directory of its own, so `//server/share` is its root, never
+            # where the path already was on it (fix round 6); `D:` alone
+            # stays relative on drive D.
+            drive, base, tail = own, value[len(own):] or (_PATH.sep if unc else ""), []
             continue
         anchor = _PATH.sep + "m" * (len(value) + 1)
         rest = _PATH.splitdrive(_PATH.join(own + anchor, value))[1]
@@ -1226,6 +1275,8 @@ def _push_targets(rest):
         spec = rest[at]
         if deleting:
             targets.append((at, spec.lstrip("+").rpartition(":")[2]))
+        elif spec in (":", "+:"):
+            continue  # the matching refspec pushes, it deletes nothing (fix round 6)
         elif spec.startswith((":", "+:")):
             targets.append((at, spec.partition(":")[2]))
     return targets, deleting, pruning
@@ -1252,13 +1303,14 @@ def _update_ref_target(rest):
     return deleting, ref
 
 
-def _branch_verdict(name, ctx, offset, own_inside):
-    """C8: one branch target (`refs/heads/` stripped already)."""
+def _branch_verdict(name, owned, offset, own_inside):
+    """C8: one branch target (`refs/heads/` stripped already); `owned` the
+    context's index (`_Owned`)."""
     if any(mark in name for mark in _TARGET_UNSEEN):
         return (COULD_NOT_TELL, "branch-target-unseen", offset)
-    if ctx.own_branches is None:
+    if owned.branches is None:
         return (COULD_NOT_TELL, "branch-owner-unseen", offset)
-    if name not in ctx.own_branches:
+    if name not in owned.branches:
         return (HIT, "branch-delete-other", offset)
     if own_inside:
         return _CLEAR
@@ -1288,14 +1340,15 @@ def _branch_delete(targets, where, eff, ctx, repo_unseen, refs=True):
     if not named:
         return _CLEAR
     readings = []
-    own_inside = _inside(eff, ctx.own_worktrees)
+    owned = _owned(ctx)
+    own_inside = owned.inside(eff)
     for offset, name in named:
         if not name or _quoted_in(ctx.quoted, offset, offset + 1):
             # a target the raw pass may have misread is never a hit: bash
             # passes `o"wn"` as `own` (fix round 5).
             reading = (COULD_NOT_TELL, "branch-target-unseen", offset)
         else:
-            reading = _branch_verdict(name, ctx, offset, own_inside)
+            reading = _branch_verdict(name, owned, offset, own_inside)
         if reading[0] == HIT or ctx.own_branches is None:
             return reading  # with no own list no target can be a hit
         readings.append(reading)
@@ -1323,9 +1376,40 @@ def _worktree_remove(rest, where, eff, ctx, repo_unseen):
     if eff is None or ctx.own_worktrees is None:
         return (COULD_NOT_TELL, "worktree-owner-unseen", at)
     removed = _norm(_PATH.join(eff, path))
-    if any(removed == _norm(entry) for entry in ctx.own_worktrees):
+    if removed in _owned(ctx).paths:
         return _CLEAR
     return (HIT, "worktree-remove-other", at)
+
+
+def _misread_could_delete(words, quoted, where, sub):
+    """Whether a word after the subcommand at `where` that the raw pass may
+    have misread could turn a command read as no delete into one (fix
+    round 6). For `worktree` that is the word read as its subcommand; for
+    the others a word that, in any of its `_readings`, starts with `-`
+    (an option: `--del"ete"`, `\\-D`, a `-r` that is half of a quoted
+    value), `:` or `+` (a `:ref` refspec pushed past a dropped `""`), or
+    holds `$` ` % * ? [ (it may expand to anything). Half of a quoted
+    value (`--format "a b"`) is none of these. For `push` any such word
+    also counts while a refspec-shaped word (`:`, `+`) stands after the
+    subcommand: a dropped `""` moves which word is the remote
+    (`push -o "" origin :x` reads `:x` as the remote)."""
+    if sub == "worktree":
+        return _quoted_in(quoted, where, where + 1)
+    low = bisect.bisect_left(quoted, where)
+    high = bisect.bisect_left(quoted, where + GIT_WINDOW + 1)
+    if low == high:
+        return False
+    if sub == "push" and any(reading.startswith((":", "+")) for word in
+                             words[where:where + GIT_WINDOW] for reading in _readings(word)):
+        return True
+    for at in quoted[low:high]:
+        if at >= len(words):
+            continue  # a dropped `""` at the end: no word for it to change
+        word = words[at]
+        if any(mark in word for mark in _TARGET_UNSEEN) or any(
+                reading.startswith(("-", ":", "+")) for reading in _readings(word)):
+            return True
+    return False
 
 
 def _git_delete(info, start, head):
@@ -1356,14 +1440,17 @@ def _git_delete(info, start, head):
     where = sub_at + 1
     rest = info.words[where:where + GIT_WINDOW]
     if sub == "worktree":
+        deleting = bool(rest) and rest[0] == "remove"
         reading = _worktree_remove(rest, where, eff, ctx, repo_unseen)
     elif sub == "branch":
-        reading = _branch_delete(_branch_targets(rest), where, eff, ctx, repo_unseen,
-                                 refs=False)
+        targets = _branch_targets(rest)
+        deleting = targets is not None
+        reading = _branch_delete(targets, where, eff, ctx, repo_unseen, refs=False)
     elif sub == "push":
         targets, deleting, pruning = _push_targets(rest)
         reading = _branch_delete(targets if deleting or targets else None, where, eff, ctx,
                                  repo_unseen)
+        deleting = bool(deleting or targets or pruning)
         if pruning and repo_unseen:
             reading = (COULD_NOT_TELL, ("git-repo-unseen", BRANCH), where)
         elif pruning:
@@ -1385,8 +1472,11 @@ def _git_delete(info, start, head):
     # A word after the subcommand that the raw pass may have misread (`_lift`:
     # `--del"ete"`, `re"move"`, a dropped `""`, half of a quoted space)
     # cannot clear: its meaning cannot be read from its spelling. The
-    # repository crew cannot see is named first (C5).
-    if reading[0] != HIT and _quoted_in(ctx.quoted, where, where + GIT_WINDOW + 1):
+    # repository crew cannot see is named first (C5). In a command read as
+    # no delete only a word that could make it one counts (fix round 6).
+    misread = (_quoted_in(ctx.quoted, where, where + GIT_WINDOW + 1) if deleting
+               else _misread_could_delete(info.words, ctx.quoted, where, sub))
+    if reading[0] != HIT and misread:
         if repo_unseen:
             return (COULD_NOT_TELL, ("git-repo-unseen", DELETE_SUBS[sub]), where)
         rule = "worktree-target-unseen" if sub == "worktree" else "branch-target-unseen"
@@ -1511,10 +1601,29 @@ def _raw_pass(text, shell, ctx=NO_CONTEXT):
     return out
 
 
+# A line continuation: bash drops a backslash-newline (`GIT_\<nl>DIR=x` is
+# `GIT_DIR=x`), PowerShell reads a backtick-newline as a space.
+_CONTINUATION = {"bash": (re.compile(r"\\\r?\n"), ""), "powershell": (re.compile(r"`\r?\n"), " ")}
+
+
+def _raw_findings(command, shell, ctx):
+    """The raw pass; with a line continuation in `command`, it is read both
+    as written and joined, and the worse reading kept, the written one on a
+    tie (fix round 6). The raw pass is quote-blind, so it cannot tell a
+    continuation from a backslash-newline inside single quotes, which the
+    shell keeps: neither reading is trusted alone."""
+    found = _raw_pass(command, shell, ctx)
+    pattern, joiner = _CONTINUATION[shell]
+    if pattern.search(command) is None:
+        return found
+    joined = _raw_pass(pattern.sub(joiner, command), shell, ctx)
+    return joined if _RANK[_overall(joined)] > _RANK[_overall(found)] else found
+
+
 def _findings(command, shell, ctx=NO_CONTEXT):
     commands = crew_gitallow.plain_commands(command, shell)
     if commands is None:
-        return _raw_pass(command, shell, ctx)
+        return _raw_findings(command, shell, ctx)
     return _plain_pass(commands, ctx)
 
 

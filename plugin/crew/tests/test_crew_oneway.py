@@ -556,6 +556,12 @@ LONG = 4000
 # removed); GROWTH_LIMIT sits between. Each size keeps the best of
 # GROWTH_REPEATS interleaved runs, so a load spike in one run does not count
 # and a steady load slows both sizes alike.
+# Fix round 6: a steady load does not slow both sizes alike under
+# `-n 16 --dist worksteal` (CI run 44763389963, Linux 3.12: 11.1x, 10.5x and
+# 9.6x on three linear rows, all green serially here), so every test that
+# times a growth carries `@pytest.mark.wallclock` and runs in CI's serial
+# wallclock step, the bound unchanged (`TIMED_CASES`,
+# `test_every_growth_check_is_wallclock`).
 GROWTH_SMALL, GROWTH_BIG = LONG // 16, LONG // 4
 GROWTH_LIMIT = 8.0
 GROWTH_REPEATS = 3
@@ -600,6 +606,7 @@ LONG_COMMANDS = (
 )
 
 
+@pytest.mark.wallclock
 @pytest.mark.parametrize("make,verdict", LONG_COMMANDS,
                          ids=[str(n) for n in range(len(LONG_COMMANDS))])
 def test_a_long_command_is_judged_in_linear_time(make, verdict):
@@ -630,6 +637,7 @@ GIT_LONG_COMMANDS = (
 )
 
 
+@pytest.mark.wallclock
 @pytest.mark.parametrize("make,verdict", GIT_LONG_COMMANDS,
                          ids=[str(n) for n in range(len(GIT_LONG_COMMANDS))])
 @pytest.mark.parametrize("ctx", ["OWN", "NONE"])
@@ -739,6 +747,9 @@ GIT_BLOCK = (
     ("bash", "git update-ref -m why -d refs/heads/feature-x", BR, DEL, "OWN"),
     ("bash", "git update-ref -mwhy -d refs/heads/feature-x", BR, DEL, "OWN"),
     ("bash", "git fetch && git branch -D feature-x", BR, DEL, "OWN"),
+    # a line continuation joins the delete option to its command (fix round 6).
+    ("bash", "git branch \\\n-D feature-x", BR, DEL, "OWN"),
+    ("powershell", "git branch `\n-D feature-x", BR, DEL, "OWN"),
     ("bash", "for b in a b; do git branch -D feature-x; done", BR, DEL, "OWN"),
     ("bash", "if true; then git branch -D feature-x; fi", BR, DEL, "OWN"),
     ("bash", "! git branch -D feature-x", BR, DEL, "OWN"),
@@ -807,6 +818,11 @@ GIT_CNT = (
     ("bash", "env GIT_WORK_TREE=/o git worktree remove .", WT, "git-repo-unseen", "OWN"),
     ("bash", "GIT_WORK_TREE=/o git branch -D worktree-R-34", BR, "git-repo-unseen", "OWN"),
     ("bash", "GIT_NAMESPACE=n git branch -D worktree-R-34", BR, "git-repo-unseen", "OWN"),
+    # the ref store a linked worktree shares, and an assignment split by a
+    # line continuation (fix round 6).
+    ("bash", "GIT_COMMON_DIR=/o/.git git branch -D worktree-R-34", BR, "git-repo-unseen", "OWN"),
+    ("bash", "GIT_\\\nDIR=/o/.git git branch -D worktree-R-34", BR, "git-repo-unseen", "OWN"),
+    ("bash", "git branch --list $'-D' worktree-R-34", BR, "branch-target-unseen", "OWN"),
     # a global the raw pass may have misread (fix round 2).
     ("bash", 'git --git-"dir"=/o/.git branch -D worktree-R-34 > out.txt', BR, "git-repo-unseen",
      "OWN"),
@@ -892,6 +908,17 @@ GIT_ALLOW = (
     ("bash", "git push origin --delete refs/tags/v1", "OWN"),
     ("bash", "git update-ref -d refs/tags/v1", "OWN"),
     ("bash", "git update-ref -d feature-x", "OWN"),
+    # an own branch deleted by its ref, inside its own worktree (fix round 6).
+    ("bash", "git update-ref -d refs/heads/worktree-R-34", "OWN"),
+    ("bash", "git update-ref refs/heads/worktree-R-34 -d", "OWN"),
+    # the matching refspec pushes and deletes nothing (fix round 6).
+    ("bash", "git push origin :", "OWN"),
+    ("bash", "git push origin +:", "OWN"),
+    # half of a quoted value in a command that is no delete (fix round 6).
+    ("bash", 'git branch --list --format "a b" > out.txt', "OWN"),
+    ("bash", 'git --namespace=n branch --list --format "a b" > out.txt', "OWN"),
+    ("bash", 'git push origin "a b" > out.txt', "OWN"),
+    ("bash", "git branch \\\n--list", "OWN"),
     ("bash", "git push -ostuffd origin feature-x", "OWN"),
     ("bash", "git push --receiv git-receive-pack origin --delete feat/r-34-x", "OWN"),
     ("bash", "git push --push-opt ci.skip origin --delete feat/r-34-x", "OWN"),
@@ -1041,8 +1068,12 @@ def test_every_terraform_could_not_tell_row_stays_with_context(command, rule):
     ({"cwd": "/w", "own_branches": [], "own_worktrees": ["/w"]}, ("/w", (), ("/w",))),
 ])
 def test_the_context_is_read_once_and_junk_is_absent(given, expected):
-    # the fourth field, `quoted`, is the raw pass's, never the caller's.
-    assert tuple(crew_oneway._read_context(given)) == expected + ((),)
+    # the fourth field, `quoted`, is the raw pass's, never the caller's; the
+    # fifth, `owned`, is the own lists indexed once (fix round 6).
+    ctx = crew_oneway._read_context(given)
+    assert tuple(ctx)[:4] == expected + ((),)
+    if expected[1] is not None:
+        assert ctx.owned.branches == frozenset(expected[1])
 
 
 @ON_BOTH
@@ -1924,6 +1955,91 @@ def case_long_stacked_colon_dash_c_is_linear(mod):
         mod._PATH = kept
 
 
+def _own_deletes(n):
+    """Fix round 6: `n` own-worktree removes and `n` own-branch deletes run
+    inside them, against own lists of `n` entries each. The paths are
+    written with `/`, which both path modules read and no shell escapes."""
+    worktrees = [f"/w/o{i}" for i in range(n)]
+    ctx = {"cwd": worktrees[0], "own_branches": [f"b{i}" for i in range(n)],
+           "own_worktrees": worktrees}
+    command = "; ".join(f"git worktree remove {path}; git -C {path} branch -D b{i}"
+                        for i, path in enumerate(worktrees))
+    return command, ctx
+
+
+def case_long_own_lists_are_linear(mod):
+    """Fix round 6: the own lists are indexed once per judgement, so deletes
+    and lists growing together stay linear (rescanning both lists at every
+    delete took 0.13/0.35/1.25 s at 500/1000/2000, review round 6)."""
+    built = {n: _own_deletes(n) for n in (50, 500, 2000)}
+    assert_clear(mod, built[50][0], ctx=built[50][1])
+    assert_grows_linearly(lambda n: run(mod, built[n][0], ctx=built[n][1]), 500, 2000)
+
+
+TIMED_CASES = frozenset(("case_long_swallowed_exec_chain_is_linear",
+                         "case_long_git_delete_chain_is_linear",
+                         "case_long_git_shared_head_is_linear",
+                         "case_long_stacked_dash_c_is_linear",
+                         "case_long_stacked_colon_dash_c_is_linear",
+                         "case_long_own_lists_are_linear"))
+
+
+# R-34c fix round 6.
+def case_cnt_continued_assignment(mod):
+    assert_cnt(mod, "GIT_\\\nDIR=/o/.git git branch -D worktree-R-34", "git-repo-unseen",
+               op=BR, ctx=own())
+
+
+def case_block_continued_delete(mod):
+    assert_hit(mod, "git branch \\\n-D feature-x", DEL, op=BR, ctx=own())
+
+
+def case_cnt_assign_git_common_dir(mod):
+    assert_cnt(mod, "GIT_COMMON_DIR=/o/.git git branch -D worktree-R-34", "git-repo-unseen",
+               op=BR, ctx=own())
+
+
+def case_block_unc_share_root(mod):
+    kept = mod._PATH
+    try:
+        mod._PATH = ntpath
+        share = "\\\\server\\share"
+        ctx = {"cwd": "C:\\w", "own_branches": [], "own_worktrees": [share + "\\own"]}
+        assert_hit(mod, "git -C //server/share/own -C //server/share worktree remove .", WDEL,
+                   op=WT, ctx=ctx)
+        assert_clear(mod, "git -C //server/share/own worktree remove .", ctx=ctx)
+    finally:
+        mod._PATH = kept
+
+
+def case_allow_quoted_list_format(mod):
+    assert_clear(mod, 'git branch --list --format "a b" > out', ctx=own())
+    assert_clear(mod, 'git --namespace=n branch --list --format "a b" > out', ctx=own())
+
+
+def case_allow_push_matching_refspec(mod):
+    assert_clear(mod, "git push origin :", ctx=own())
+    assert_clear(mod, "git push origin +:", ctx=own())
+
+
+def case_block_update_ref_delete(mod):
+    assert_hit(mod, "git update-ref -d refs/heads/feature-x", DEL, op=BR, ctx=own())
+
+
+def case_allow_update_ref_own(mod):
+    assert_clear(mod, "git update-ref -d refs/heads/worktree-R-34", ctx=own())
+
+
+def case_cnt_push_mirror(mod):
+    assert_cnt(mod, "git push --mirror origin", "push-prune", op=BR, ctx=own())
+
+
+def case_cnt_quoted_option_in_a_list(mod):
+    """A misread word that could be an option keeps a non-delete unseen."""
+    assert_cnt(mod, "git branch --list $'-D' worktree-R-34", "branch-target-unseen", op=BR,
+               ctx=own())
+
+
 def case_cnt_quoted_env_assignment(mod):
     assert_cnt(mod, 'env GIT_"DIR"=/o/.git git branch -D worktree-R-34 > out.txt',
                "git-repo-unseen", op=BR, ctx=own())
@@ -2482,7 +2598,7 @@ MUTATIONS = (
      '        where = {"pass": "raw", "command": number, "targets": segment["targets"]}\n',
      ("case_no_target_in_output",)),
     ("19 raw pass skipped",
-     "    if commands is None:\n        return _raw_pass(command, shell, ctx)",
+     "    if commands is None:\n        return _raw_findings(command, shell, ctx)",
      "    if commands is None:\n        return []", ("case_block_raw_chain",)),
     ("29 only assignments, env and sudo stripped",
      'HEAD_PREFIXES = frozenset(("env", "sudo", "command", "time", "then", "do", "else", "!",\n'
@@ -2736,11 +2852,11 @@ MUTATIONS = (
      ("case_block_declined_hash_holding_a_quote", "case_block_hash_in_quotes")),
     # R-34c. The numbers are the parent spec's sabotage rows.
     ("10 the own list ignored (every target hits)",
-     "    if name not in ctx.own_branches:\n", "    if True:\n", ("case_allow_own_branch",)),
+     "    if name not in owned.branches:\n", "    if True:\n", ("case_allow_own_branch",)),
     ("11b an absent own list read as empty",
-     "    if ctx.own_branches is None:\n"
+     "    if owned.branches is None:\n"
      '        return (COULD_NOT_TELL, "branch-owner-unseen", offset)\n',
-     "    if ctx.own_branches is None:\n        ctx = ctx._replace(own_branches=())\n",
+     "    if owned.branches is None:\n        owned = _Owned((), None)\n",
      ("case_cnt_no_own_list",)),
     ("13 only the first target judged",
      "    for offset, name in named:\n", "    for offset, name in named[:1]:\n",
@@ -2780,17 +2896,24 @@ MUTATIONS = (
     ("32a/32b an own name clear wherever the command runs",
      "    if own_inside:\n", "    if True:\n",
      ("case_cnt_own_branch_other_cwd", "case_cnt_own_branch_no_cwd")),
+    # Re-anchored by fix round 6: the own worktrees are indexed once (`_Owned`).
     ("33 inside by string prefix",
-     "        if here == entry or here.startswith(entry.rstrip(_PATH.sep) + _PATH.sep):\n",
-     "        if here.startswith(entry):\n", ("case_cnt_own_branch_prefix_sibling",)),
+     "            found, at = here in self.paths, here.find(_PATH.sep)\n",
+     "            found, at = any(here.startswith(path) for path in self.paths), -1\n",
+     ("case_cnt_own_branch_prefix_sibling",)),
     ("34 inside by equality",
-     "        if here == entry or here.startswith(entry.rstrip(_PATH.sep) + _PATH.sep):\n",
-     "        if here == entry:\n", ("case_allow_own_branch_below_worktree",)),
+     "                found = at in self.roots and here[:at] in self.roots[at]\n",
+     "                break\n", ("case_allow_own_branch_below_worktree",)),
     ("C-tags refs/tags/ read as a branch",
      '        if target.startswith("refs/tags/"):\n            continue\n', "",
      ("case_allow_push_delete_tag",)),
     ("C-prune the --prune/--mirror row dropped",
-     "        elif pruning:\n", "        elif False:\n", ("case_cnt_push_prune",)),
+     "        elif pruning:\n", "        elif False:\n", ("case_cnt_push_prune",
+                                                         "case_cnt_push_mirror")),
+    # fix round 6: --mirror alone, which the row above cannot tell from --prune.
+    ("C-mirror --mirror not read as pruning",
+     '            pruning = pruning or hit(word, "--prune") or hit(word, "--mirror")\n',
+     '            pruning = pruning or hit(word, "--prune")\n', ("case_cnt_push_mirror",)),
     ("C-ns the --namespace repo check dropped",
      '    if any(word.split("=", 1)[0] == "--namespace" for word in globals_):\n'
      "        return True\n", "", ("case_cnt_namespace",)),
@@ -2831,10 +2954,47 @@ MUTATIONS = (
     # (C-raw-path), so the split quoted path now has two guards and is no
     # longer red against this one alone; C-faithful still turns it red.
     ("C-quote a word after the subcommand the raw pass may have misread trusted",
-     "    if reading[0] != HIT and _quoted_in(ctx.quoted, where, where + GIT_WINDOW + 1):\n",
+     "    if reading[0] != HIT and misread:\n",
      "    if False:\n",
      ("case_cnt_worktree_quoted_sub", "case_cnt_branch_quoted_option",
       "case_cnt_push_dropped_empty_value")),
+    # fix round 6: a command read as no delete keeps only the misread words
+    # that could make it one.
+    ("C-quote-narrow a no-delete command's misread words all trusted",
+     "               else _misread_could_delete(info.words, ctx.quoted, where, sub))\n",
+     "               else False)\n",
+     ("case_cnt_worktree_quoted_sub", "case_cnt_branch_quoted_option",
+      "case_cnt_push_dropped_empty_value", "case_cnt_quoted_option_in_a_list")),
+    ("C-quote-broad every misread word doubted in a no-delete command",
+     "               else _misread_could_delete(info.words, ctx.quoted, where, sub))\n",
+     "               else _quoted_in(ctx.quoted, where, where + GIT_WINDOW + 1))\n",
+     ("case_allow_quoted_list_format",)),
+    ("C-quote-shift a dropped empty word before a push refspec trusted",
+     '    if sub == "push" and any(reading.startswith((":", "+")) for word in\n',
+     '    if False and any(reading.startswith((":", "+")) for word in\n',
+     ("case_cnt_push_dropped_empty_value",)),
+    ("C-continuation a line continuation read only as written",
+     "    pattern, joiner = _CONTINUATION[shell]\n", "    return found\n",
+     ("case_cnt_continued_assignment", "case_block_continued_delete")),
+    ("C-matching the matching refspec read as a delete",
+     '        elif spec in (":", "+:"):\n', '        elif False:\n',
+     ("case_allow_push_matching_refspec",)),
+    ("C-unc a UNC share root kept where the path was",
+     '        unc = len(own) > 1 and own[0] in "/\\\\" and own[1] in "/\\\\"\n',
+     "        unc = False\n", ("case_block_unc_share_root",)),
+    ("C-update-ref -d not read as a delete",
+     '            deleting = deleting or crew_gitallow._option_hit(cut, "-d")\n',
+     "            pass\n", ("case_block_update_ref_delete",)),
+    ("C-update-ref-heads a refs/heads/ ref not read as a branch",
+     '        elif ref[1].startswith("refs/heads/"):\n', "        elif False:\n",
+     ("case_block_update_ref_delete",)),
+    ("C-update-ref-own refs/heads/ kept on an update-ref target",
+     '        name = target[len("refs/heads/"):] if target.startswith("refs/heads/") else target\n',
+     "        name = target\n", ("case_allow_update_ref_own",)),
+    ("C-owned the own lists rescanned at every delete (quadratic)",
+     "    return ctx.owned if ctx.owned is not None else _Owned(ctx.own_branches, ctx.own_worktrees)\n",
+     "    return _Owned(ctx.own_branches, ctx.own_worktrees)\n",
+     ("case_long_own_lists_are_linear",)),
     # R-34c fix round 2.
     ("C-raw-global a global the raw pass may have misread trusted",
      "    repo_unseen = _repo_unseen(globals_, dirs, info.repo_assign[start] < head\n"
@@ -2849,14 +3009,21 @@ MUTATIONS = (
      "            elif not _bare(token):\n                quoted.append(len(out))\n", "",
      ("case_cnt_push_dropped_empty_value",)),
     ("C5-dir GIT_DIR dropped from the repository variables",
-     '_REPO_VARS = frozenset(("GIT_DIR", "GIT_WORK_TREE", "GIT_NAMESPACE"))',
-     '_REPO_VARS = frozenset(("GIT_WORK_TREE", "GIT_NAMESPACE"))', ("case_cnt_assign_git_dir",)),
+     '_REPO_VARS = frozenset(("GIT_DIR", "GIT_WORK_TREE", "GIT_NAMESPACE", "GIT_COMMON_DIR"))',
+     '_REPO_VARS = frozenset(("GIT_WORK_TREE", "GIT_NAMESPACE", "GIT_COMMON_DIR"))',
+     ("case_cnt_assign_git_dir",)),
     ("C5-wt GIT_WORK_TREE dropped from the repository variables",
-     '_REPO_VARS = frozenset(("GIT_DIR", "GIT_WORK_TREE", "GIT_NAMESPACE"))',
-     '_REPO_VARS = frozenset(("GIT_DIR", "GIT_NAMESPACE"))', ("case_cnt_assign_git_work_tree",)),
+     '_REPO_VARS = frozenset(("GIT_DIR", "GIT_WORK_TREE", "GIT_NAMESPACE", "GIT_COMMON_DIR"))',
+     '_REPO_VARS = frozenset(("GIT_DIR", "GIT_NAMESPACE", "GIT_COMMON_DIR"))',
+     ("case_cnt_assign_git_work_tree",)),
     ("C5-ns GIT_NAMESPACE dropped from the repository variables",
+     '_REPO_VARS = frozenset(("GIT_DIR", "GIT_WORK_TREE", "GIT_NAMESPACE", "GIT_COMMON_DIR"))',
+     '_REPO_VARS = frozenset(("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR"))',
+     ("case_cnt_assign_git_namespace",)),
+    ("C5-common GIT_COMMON_DIR dropped from the repository variables (fix round 6)",
+     '_REPO_VARS = frozenset(("GIT_DIR", "GIT_WORK_TREE", "GIT_NAMESPACE", "GIT_COMMON_DIR"))',
      '_REPO_VARS = frozenset(("GIT_DIR", "GIT_WORK_TREE", "GIT_NAMESPACE"))',
-     '_REPO_VARS = frozenset(("GIT_DIR", "GIT_WORK_TREE"))', ("case_cnt_assign_git_namespace",)),
+     ("case_cnt_assign_git_common_dir",)),
     ("C14b a shared git head read again at every start (quadratic)",
      "    if key not in info.git_memo:\n", "    if True:\n",
      ("case_long_git_shared_head_is_linear",)),
@@ -2924,12 +3091,59 @@ def _variant(old, new):
     return module
 
 
-@pytest.mark.parametrize("name", sorted(n for n in globals() if n.startswith("case_")))
+def _timed(names):
+    """The wallclock mark when any of `names` times a growth (`TIMED_CASES`)."""
+    return [pytest.mark.wallclock] if TIMED_CASES.intersection(names) else []
+
+
+@pytest.mark.parametrize("name", [pytest.param(n, marks=_timed([n])) for n in
+                                  sorted(n for n in globals() if n.startswith("case_"))])
 def test_every_case_is_green_on_the_real_module(name):
     globals()[name](crew_oneway)
 
 
-@pytest.mark.parametrize("label,old,new,cases", MUTATIONS, ids=[m[0] for m in MUTATIONS])
+def _growth_callers():
+    """Every test or case in this file whose body times a growth."""
+    with open(ME, encoding="utf-8") as handle:
+        tree = ast.parse(handle.read())
+    timing = {"assert_linear", "assert_grows_linearly", "_growth"}
+    found = {}
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name not in timing and any(
+                isinstance(sub, ast.Name) and sub.id in timing for sub in ast.walk(node)):
+            found[node.name] = node
+    return found
+
+
+def test_every_growth_check_is_wallclock():
+    """Fix round 6: a growth ratio is a wall-clock measurement, and 16 xdist
+    workers beside it pushed linear rows past GROWTH_LIMIT on CI. Every test
+    that times one is marked wallclock (a case through `TIMED_CASES`), and
+    CI's serial step runs that set, so none is dropped."""
+    callers = _growth_callers()
+    cases = {name for name in callers if name.startswith("case_")}
+    assert cases == TIMED_CASES
+    for name, node in callers.items():
+        if name.startswith("test_"):
+            marks = [ast.unparse(dec) for dec in node.decorator_list]
+            assert "pytest.mark.wallclock" in marks, name
+    workflow = os.path.join(os.path.dirname(os.path.dirname(PLUGIN)), ".github", "workflows",
+                            "pytest-crew.yml")
+    with open(workflow, encoding="utf-8") as handle:
+        text = handle.read()
+    assert "run: pytest plugin/crew/tests/ -m wallclock -v" in text
+    assert "python -m pytest plugin/crew/tests -m wallclock -v" in text
+
+
+def test_a_timed_mutation_runs_in_the_wallclock_set():
+    marked = {m[0] for m in MUTATIONS if _timed(m[3])}
+    assert "C14 the git word window removed (quadratic)" in marked
+    assert "C-owned the own lists rescanned at every delete (quadratic)" in marked
+
+
+@pytest.mark.parametrize("label,old,new,cases",
+                         [pytest.param(*m, marks=_timed(m[3])) for m in MUTATIONS],
+                         ids=[m[0] for m in MUTATIONS])
 def test_a_weakened_tripwire_is_caught(label, old, new, cases):
     mutant = _variant(old, new)
     for name in cases:
