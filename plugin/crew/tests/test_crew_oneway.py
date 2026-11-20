@@ -124,6 +124,13 @@ MUST_BLOCK = (
     ("powershell", "terraform *>> out.txt state rm x", "tf-state-write"),
     ("powershell", "terraform state rm x *>&1", "tf-state-write"),
     ("bash", "terraform >&1 state rm x", "tf-state-write"),
+    # round 4: an fd copy's operand is a whole word, so `>&2list` writes the
+    # file `2list` and the command is `terraform state rm x.y`.
+    ("bash", "terraform state >&2list rm x.y", "tf-state-write"),
+    ("bash", "terraform state >&2foo rm x.y", "tf-state-write"),
+    ("bash", "terraform state >&-list rm x.y", "tf-state-write"),
+    ("bash", 'terraform state >&2"list" rm x.y', "tf-state-write"),
+    ("bash", "terraform state 2>&1list rm x.y", "tf-state-write"),
 )
 
 # (shell, command)
@@ -148,6 +155,12 @@ MUST_ALLOW = (
     ("powershell", "terraform state list 2>&1"),
     ("powershell", "terraform state list *>&1"),
     ("powershell", "terraform state list *> out.txt"),
+    # round 4: an fd copy that ends its word is still dropped.
+    ("bash", "terraform state >&2 list rm x"),
+    ("bash", "(terraform state list >&2)"),
+    ("bash", "terraform state list >&2; ls"),
+    ("bash", 'bash -c "terraform state list >&2" | tee log'),
+    ("bash", "terraform state list >&out.txt"),
     # A12 and A13.
     ("bash", "terragrunt --unknown-flag state list"),
     ("bash", "terragrunt --working-dir state plan"),
@@ -187,6 +200,10 @@ COULD_NOT_TELL = (
     ("terragrunt exec --unknown-flag ls", "tg-exec-unseen"),
     # A5: `>& file` is not protected, so it leaves a dangling `>`.
     ("terraform state list >& out.txt", "redirect-target-unseen"),
+    # round 4: an unknown option may have swallowed a subcommand crew cannot read.
+    ("terraform --unknown $SUB x", "tf-sub-unseen"),
+    ("terragrunt --unknown-flag $SUB x", "tf-sub-unseen"),
+    ("terragrunt run --unknown-flag $SUB x", "tf-sub-unseen"),
 )
 
 # Known over-reports pinned as hits (Risks).
@@ -352,6 +369,8 @@ SKIP_ROWS = (
     (["--working-dir", "exec", "--", "terraform", "state", "rm", "x"], (3, [])),
     (["--unknown-flag", "run-all", "state", "rm"], (1, [])),
     (["--a", "exec", "--b", "state", "rm"], (4, [1, 3])),
+    (["--unknown-flag", "$SUB", "x"], (2, [1])),
+    (["--working-dir", "$DIR", "plan"], (2, [])),
 )
 
 
@@ -427,6 +446,16 @@ READER_ROWS = (
     ("a 2>f", [seg(["a"], [("2>", "f")])]),
     # bash: a `*` before an operator is a glob word, not a stream.
     ("a *>&1", [seg(["a", "*"])]),
+    # an fd copy ends where its word ends; glued to more, `>&` takes the word.
+    ("a >&2list b", [seg(["a", "b"], [(">&", "2list")])]),
+    ("a 2>&1x b", [seg(["a", "b"], [("2>&", "1x")])]),
+    ("a >&-x b", [seg(["a", "b"], [(">&", "-x")])]),
+    ("a >&f", [seg(["a"], [(">&", "f")])]),
+    ("a >&2 list", [seg(["a", "list"])]),
+    ("(a >&2)", [seg(["a"])]),
+    ("a >&2>f", [seg(["a"], [(">", "f")])]),
+    ('x "a >&2" b', [seg(["x", "a", "b"])]),
+    ("a >&2`b`", [seg(["a", "`b`"])]),
 )
 
 PS_READER_ROWS = (
@@ -656,6 +685,12 @@ def test_the_cli(tmp_path):
     for _, rule, _ in crew_oneway.SHAPES:
         assert rule in done.stdout
     assert cli("payload", stdin="not json").returncode == 2
+    # JSON nested deeper than this Python reads (RecursionError on 3.11) is
+    # still a judgement: exit 0 and a verdict that is not `clear` or `hit`.
+    for deep in ("[" * 1500 + "]" * 1500, "[" * 200000 + "]" * 200000):
+        done = cli("payload", stdin=deep)
+        assert done.returncode == 0, done.stderr[-300:]
+        assert json.loads(done.stdout)["verdict"] in ("could-not-tell", "not-a-command")
     assert cli("frobnicate").returncode == 2
     assert cli("judge", "--shell", "zsh", "--", "x").returncode == 2
 
@@ -814,6 +849,14 @@ def case_long_swallowed_exec_chain_is_linear(mod):
     assert took < LONG_BUDGET_SECONDS, took
 
 
+def case_block_fd_copy_glued_to_a_word(mod):
+    assert_hit(mod, "terraform state >&2list rm x.y", "tf-state-write")
+
+
+def case_cnt_swallowed_unseen_sub(mod):
+    assert_cnt(mod, "terraform --unknown $SUB x", "tf-sub-unseen")
+
+
 MUTATIONS = (
     ("1 rm added to the state read set",
      'STATE_READ = frozenset(("list", "show", "pull", "identities"))',
@@ -898,6 +941,14 @@ MUTATIONS = (
      "        end = scan.end[at + 1]\n",
      "        end = crew_guards.tf_skip_options(scan.words, at + 1)\n",
      ("case_long_swallowed_exec_chain_is_linear",)),
+    ("R14 an fd copy takes the digit prefix of a longer word",
+     'r"[<>]&(?:[0-9]+|-)" + _WORD_END + "|"', 'r"[<>]&(?:[0-9]+|-)|"',
+     ("case_block_fd_copy_glued_to_a_word",)),
+    ("R15 a `>&` glued to its word takes no target",
+     '"|" + fd + _GLUED + r"|&>>?|"', 'r"|&>>?|"', ("case_block_fd_copy_glued_to_a_word",)),
+    ("R16 an unreadable word after an unknown option is not an alternate",
+     "    return args[j + 1] in AMBIGUOUS_SUBS or _unseen(args[j + 1])\n",
+     "    return args[j + 1] in AMBIGUOUS_SUBS\n", ("case_cnt_swallowed_unseen_sub",)),
 )
 
 

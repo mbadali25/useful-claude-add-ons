@@ -38,7 +38,9 @@ Reading a command:
    `||` `;` `|` `&` and newline, split on whitespace and stripped of quotes
    and brackets. Each redirection is lifted out of its segment before the head
    is read: an fd copy is dropped, any other operator takes the next word as
-   its target. An operator with no target makes the segment
+   its target. An fd copy ends where its word ends: in `>&2list` the shell's
+   target is the file `2list`, so that is read as `>&` with the target
+   `2list`, never as `>&2` and a word `list`. An operator with no target makes the segment
    `could-not-tell` (`redirect-target-unseen`) unless its words are a hit,
    which wins: the shell writes somewhere the reader cannot see. A segment
    gives at most one finding. Leading digits are an fd number only at the
@@ -125,12 +127,17 @@ _ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=", re.S)
 # in `list2>&1` the shell's word is `list2` and the operator is `>&1`.
 # PowerShell also names every stream `*` (`*>&1`, `*>`, `*>>`); in bash a
 # `*` there is a glob word, so only the powershell reader takes it.
+# An fd copy's operand is a whole word: `>&2list` writes the file `2list`, so
+# `>&2` matches only where the word ends (closing quotes may stand between).
+# Anywhere else a `>&` glued to its word takes that word as its target.
 _FD = r"(?:(?<![^\s;&|(){}])[0-9]+)?"
+_GLUED = r"[<>]&(?=[^\s;&|()<>])"
+_WORD_END = r"(?=[\"']*(?:$|[\s;&|()<>`]))"
 _PS_FD = r"(?:(?<![^\s;&|(){}])(?:[0-9]+|\*))?"
 
 
 def _redirect_re(fd):
-    return re.compile(fd + r"[<>]&(?:[0-9]+|-)|&>>?|" + fd + r">\||" + fd
+    return re.compile(fd + r"[<>]&(?:[0-9]+|-)" + _WORD_END + "|" + fd + _GLUED + r"|&>>?|" + fd + r">\||" + fd
                       + r"<<[<-]?|" + fd + r">>?|" + fd + r"<")
 
 
@@ -228,7 +235,7 @@ def _takes_value(args, index):
 
 def _may_swallow(args, j):
     """Whether the word at `j` is an unknown option whose next word would
-    change the verdict (`AMBIGUOUS_SUBS`)."""
+    change the verdict (`AMBIGUOUS_SUBS`, or a word crew cannot read)."""
     # pylint: disable=protected-access
     word = args[j]
     if not word.startswith("-") or word == "--" or "=" in word:
@@ -236,7 +243,7 @@ def _may_swallow(args, j):
     name = word.lstrip("-")
     if name in crew_guards._TF_GLOBAL_VALUE_OPTS or name in crew_guards._TF_GLOBAL_FLAG_OPTS:
         return False
-    return args[j + 1] in AMBIGUOUS_SUBS
+    return args[j + 1] in AMBIGUOUS_SUBS or _unseen(args[j + 1])
 
 
 class _Scan:  # pylint: disable=too-few-public-methods
@@ -269,7 +276,8 @@ def skip_options(args, index, scan=None):
     """(end, alternates): `end` is the first word from `index` that is not a
     global option or its value, as crew_guards reads it; `alternates` is each
     index an unknown option took as its value although it is a word that would
-    change the verdict (`AMBIGUOUS_SUBS`). Crew cannot know whether that option
+    change the verdict (`AMBIGUOUS_SUBS`, or one holding `$`, a backtick or
+    `%`). Crew cannot know whether that option
     takes a value, so both readings are judged. `scan` is `args` already read
     (`_Scan`), so a long command costs one read, not one per call."""
     scan = scan if scan is not None else _Scan(args)
@@ -474,6 +482,10 @@ def _main(argv):
         except ValueError:
             print("crew_oneway.py payload: stdin is not JSON", file=sys.stderr)
             return 2
+        except RecursionError:
+            # JSON nested too deep for this Python to read: no verdict is
+            # known, and report-only still exits 0.
+            payload = {"tool_name": "Bash"}
         print(json.dumps(judge_payload(payload), indent=2))
     else:
         for shape, rule, verdict in SHAPES:
