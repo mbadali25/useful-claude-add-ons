@@ -150,6 +150,12 @@ read entries under any `## [` heading.
 - crew 1.3.159: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); the accepted-value test changed plugin/crew after the number was set, so the branch moved to 1.3.160; the change is recorded under crew 1.3.160
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Changed — crew 1.3.193: the run-approval store tripwire stops refusing everyday commands (R-20)
+
+- **Summary.** `crew` 1.3.193 stops the run-approval store tripwire in `crew_runapproval.py` refusing ordinary dev work near the store when a class is on in `approvals.run.classes`: a test, lint, `git add|diff|log` or `sed -i` alone on a hook file, a commit, tag or PR message, `rm -rf run-*` under a repo or `/tmp`, a fresh `claude -p`, and `cp $SRC ~/.claude/crew/<file>` now pass. Must-blocks still refuse.
+- **What.** The triggers are unchanged; each closed, plain shape is excused by its own clause (G plain scan, T closed command table, D2-D7 message, hook-name, `claude`, `run-*` and crew-dir rules). Past those shapes a variable, redirect, `cd`, `~/` path, wrapper, `sed` beside another command, `@file` operand or unlisted flag still refuses. Default OFF and inert with no class on: no new key, hook or block.
+- **Tests.** `test_allow_run.py` adds the recorded over-refusals as must-allow rows and the spec's must-blocks; `sabotage_runapproval.py` and `sabotage_platform.py` add sabotage rows S2-S69, one per id. Harness-only PR (T-0087).
+
 ### Added — crew 1.3.192: `crew_oneway.py` reports direct terraform state-file writes and file-tool edits (R-34b)
 
 - **Summary.** `crew` 1.3.192 extends the report-only `crew_oneway.py` tripwire so writing, removing, moving or editing a terraform state file directly (a redirection, `rm`/`mv`/`cp`/`sed -i`, `git rm`, an object-store copy, or a Write/Edit/MultiEdit/NotebookEdit tool call) is reported as `hand-edit-terraform-state`. It still refuses nothing.
