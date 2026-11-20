@@ -239,7 +239,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.196**: `crew_oneway.py` reports deletes of branches and worktrees crew does not own (R-34c). `crew` 1.3.196 extends the report-only `crew_oneway.py` tripwire with `delete-others-branch` and `delete-others-worktree`: deleting a branch (`git branch -d/-D`, `git push --delete` or `:ref`, `git update-ref -d refs/heads/...`) or removing a worktree that is not in the caller's own list is reported. It still refuses nothing.
+- **crew 1.3.197**: `crew_oneway.py` reports deletes of branches and worktrees crew does not own (R-34c). `crew` 1.3.197 extends the report-only `crew_oneway.py` tripwire with `delete-others-branch` and `delete-others-worktree`: deleting a branch (`git branch -d/-D`, `git push --delete` or `:ref`, `git update-ref -d refs/heads/...`) or removing a worktree that is not in the caller's own list is reported. It still refuses nothing.
 - **crew 1.3.195**: `crew_policy.classify`, the closed serious list, report-only (R-P6). `crew` 1.3.195 adds `crew_policy.classify`, which places one action's effects into the closed list of eight serious classes, or reports them as unplaced, and treats an operation it cannot place as serious. Nothing acts on the answer yet.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
