@@ -52,10 +52,14 @@ is a hit wherever the command runs; an own name is clear only when the
 command's directory (`cwd`, then each `-C`) is inside an own worktree, else
 could-not-tell. A worktree path is resolved against that directory and is
 clear only when it equals an own worktree. No own list, no `cwd` where one
-is needed, an expanded or globbed target, or a repository crew cannot see
-(`--git-dir`, `--work-tree`, `--namespace`, a `-C` holding `$` ` % or a
-leading `~`, a leading `GIT_DIR=`/`GIT_WORK_TREE=`/`GIT_NAMESPACE=`) is
-could-not-tell, never clear. A `git` whose subcommand crew cannot read is
+is needed, an expanded or globbed target, an option (or the worktree
+subcommand) the raw pass left holding a quote, or a repository crew cannot
+see (`--git-dir`, `--work-tree`, `--namespace`, a `-C` holding `$` ` % * ?
+[ or a leading `~`, a leading `GIT_DIR=`/`GIT_WORK_TREE=`/`GIT_NAMESPACE=`)
+is could-not-tell, never clear. A `git branch` operand is a branch name as
+spelled (`refs/heads/x` is not `x` there); push and update-ref read refs. A
+value-taking `git branch` option takes the next word (`--sort -r` is no
+`--remotes`). A `git` whose subcommand crew cannot read is
 could-not-tell with no operation (`git-sub-unseen`); a delete subcommand
 running past `GIT_WINDOW` words with no hit is could-not-tell
 (`git-window-exceeded`). Paths are compared lexically (`normpath`,
@@ -224,15 +228,15 @@ SHAPES = tuple(row + (TF_STATE,) for row in _TF_SHAPES) + (
     ("the same, an own branch outside every own worktree", "branch-own-outside",
      COULD_NOT_TELL, BRANCH),
     ("the same, no own_branches in the context", "branch-owner-unseen", COULD_NOT_TELL, BRANCH),
-    ("the same, a target holding $ ` % * ? [ or none", "branch-target-unseen", COULD_NOT_TELL,
-     BRANCH),
+    ("the same, a target holding $ ` % * ? [ or none, or an option left holding a quote",
+     "branch-target-unseen", COULD_NOT_TELL, BRANCH),
     ("git push --prune or --mirror", "push-prune", COULD_NOT_TELL, BRANCH),
     ("git worktree remove, a path that is not an own worktree", "worktree-remove-other", HIT,
      WORKTREE),
     ("the same, no cwd or no own_worktrees in the context", "worktree-owner-unseen",
      COULD_NOT_TELL, WORKTREE),
-    ("the same, a path holding $ ` % * ? [, a leading ~, or none", "worktree-target-unseen",
-     COULD_NOT_TELL, WORKTREE),
+    ("the same, a path holding $ ` % * ? [, a leading ~, or none, or a subcommand or option "
+     "left holding a quote", "worktree-target-unseen", COULD_NOT_TELL, WORKTREE),
     ("a branch delete in a repository crew cannot see", "git-repo-unseen", COULD_NOT_TELL,
      BRANCH),
     ("a worktree remove in a repository crew cannot see", "git-repo-unseen", COULD_NOT_TELL,
@@ -914,6 +918,18 @@ _PUSH_LONG_FLAGS = ("--all", "--branches", "--mirror", "--delete", "--tags", "--
                     "--thin", "--set-upstream", "--progress", "--prune", "--verify",
                     "--follow-tags", "--signed", "--atomic", "--ipv4", "--ipv6", "--quiet",
                     "--verbose", "--no-")
+# git branch options that take the next word when written without `=`
+# (`--sort -r` sorts by `-r`, it is not `--remotes`), read the same way.
+_BRANCH_VALUE_OPTS = frozenset(("-u", "--set-upstream-to", "--sort", "--format", "--points-at",
+                                "--contains", "--no-contains", "--merged", "--no-merged"))
+_BRANCH_LONG_FLAGS = ("--delete", "--create-reflog", "--force", "--move", "--copy", "--color",
+                      "--verbose", "--quiet", "--abbrev", "--track", "--unset-upstream",
+                      "--edit-description", "--list", "--show-current", "--remotes", "--all",
+                      "--ignore-case", "--omit-empty", "--column", "--recurse-submodules",
+                      "--no-")
+# Quotes the raw pass leaves inside a word (`re"move"`, `--del"ete"`): the
+# shell reads such a word differently from its spelling.
+_QUOTE_MARKS = ('"', "'")
 
 
 def _own_list(value):
@@ -967,7 +983,8 @@ def _repo_unseen(globals_, dirs, assigned):
         return True
     if any(word.split("=", 1)[0] == "--namespace" for word in globals_):
         return True
-    return any(_unseen(value) or value.startswith("~") for value in dirs)
+    return any(value.startswith("~") or any(mark in value for mark in _TARGET_UNSEEN)
+               for value in dirs)
 
 
 def _effective(cwd, dirs):
@@ -1006,31 +1023,58 @@ def _options(rest):
     return out
 
 
-def _push_takes_value(word, cut):
-    """Whether push option `word` (`cut`: its bundle read up to `o`) takes
-    the next word: `-o` last in its bundle (`-fo x`; `-ofoo` holds its own
-    value), or a long value option or an unambiguous prefix of one."""
+def _git_takes_value(word, cut, letter, value_opts, long_flags):
+    """Whether option `word` (`cut`: its bundle read up to the value-taking
+    short `letter`) takes the next word: `-<letter>` last in its bundle
+    (`-fo x`; `-ofoo` holds its own value), or a long value option or an
+    unambiguous prefix of one."""
     if cut != word:
-        return cut + "o" == word
-    if word in _PUSH_VALUE_OPTS:
+        return cut + letter == word
+    if word in value_opts:
         return True
     if not word.startswith("--") or "=" in word or len(word) < 3:
         return False
-    if any(flag.startswith(word) for flag in _PUSH_LONG_FLAGS):
+    if any(flag.startswith(word) for flag in long_flags):
         return False
-    return any(opt.startswith(word) for opt in _PUSH_VALUE_OPTS)
+    return any(opt.startswith(word) for opt in value_opts)
+
+
+def _push_takes_value(word, cut):
+    """git push (C10): `-o` and `_PUSH_VALUE_OPTS` take the next word."""
+    return _git_takes_value(word, cut, "o", _PUSH_VALUE_OPTS, _PUSH_LONG_FLAGS)
+
+
+def _branch_remotes(rest):
+    """git branch: whether `-r`/`--remotes` stands before `--` as an option,
+    not as the value of the option before it (`--sort -r`)."""
+    # pylint: disable=protected-access
+    hit = crew_gitallow._option_hit
+    taken = False
+    for word in rest:
+        if word == "--":
+            break
+        if taken or not word.startswith("-"):
+            taken = False
+            continue
+        cut = _short(word, "u")
+        if hit(cut, "-r") or hit(cut, "--remotes"):
+            return True
+        taken = _git_takes_value(word, cut, "u", _BRANCH_VALUE_OPTS, _BRANCH_LONG_FLAGS)
+    return False
 
 
 def _branch_targets(rest):
     """git branch: the delete targets as (index, name), or None when this is
-    not a branch delete (no delete option, or `-r`/`--remotes`)."""
+    not a branch delete (no delete option, or `-r`/`--remotes`). A delete
+    option is read in every option-shaped word, an option's value too, and a
+    value is still read as a target: both can only over-report."""
     # pylint: disable=protected-access
     hit = crew_gitallow._option_hit
     options = _options(rest)
     cut = [_short(word, "u") for word in options]
     if not any(hit(word, "-d") or hit(word, "-D") or hit(word, "--delete") for word in cut):
         return None
-    if any(hit(word, "-r") or hit(word, "--remotes") for word in cut):
+    if _branch_remotes(rest):
         return None
     return [(index, rest[index]) for index in _positionals(rest)]
 
@@ -1098,15 +1142,20 @@ def _branch_verdict(name, ctx, offset, own_inside):
     return (COULD_NOT_TELL, "branch-own-outside", offset)
 
 
-def _branch_delete(targets, where, eff, ctx, repo_unseen):
+def _branch_delete(targets, where, eff, ctx, repo_unseen, refs=True):
     """C8 over every target of a branch delete; `targets` None is no delete,
-    [] a delete with no readable target. Any hit wins."""
+    [] a delete with no readable target. Any hit wins. `refs` is whether a
+    target is a ref (push, update-ref: `refs/tags/` skipped, `refs/heads/`
+    stripped); a `git branch` operand is a branch name, spelled as it stands."""
     if targets is None:
         return _CLEAR
     if repo_unseen:
         return (COULD_NOT_TELL, ("git-repo-unseen", BRANCH), where)
     named = []
     for index, target in targets:
+        if not refs:
+            named.append((where + index, target))
+            continue
         if target.startswith("refs/tags/"):
             continue
         name = target[len("refs/heads/"):] if target.startswith("refs/heads/") else target
@@ -1176,7 +1225,8 @@ def _git_delete(info, start, head):
     if sub == "worktree":
         reading = _worktree_remove(rest, where, eff, ctx, repo_unseen)
     elif sub == "branch":
-        reading = _branch_delete(_branch_targets(rest), where, eff, ctx, repo_unseen)
+        reading = _branch_delete(_branch_targets(rest), where, eff, ctx, repo_unseen,
+                                 refs=False)
     elif sub == "push":
         targets, deleting, pruning = _push_targets(rest)
         reading = _branch_delete(targets if deleting or targets else None, where, eff, ctx,
@@ -1199,7 +1249,18 @@ def _git_delete(info, start, head):
             reading = _CLEAR
     if reading[0] != HIT and len(info.words) > where + GIT_WINDOW:
         return (COULD_NOT_TELL, ("git-window-exceeded", DELETE_SUBS[sub]), sub_at)
+    if reading[0] != HIT and _quoted_option(rest, sub == "worktree"):
+        rule = "worktree-target-unseen" if sub == "worktree" else "branch-target-unseen"
+        return (COULD_NOT_TELL, rule, where)
     return reading
+
+
+def _quoted_option(rest, worktree):
+    """Whether an option word of `rest`, or the worktree subcommand, still
+    holds a quote (the raw pass keeps one inside a word: `--del"ete"`,
+    `re"move"`), so its meaning cannot be read from its spelling."""
+    words = [word for word in rest if word.startswith("-")] + rest[:1 if worktree else 0]
+    return any(mark in word for word in words for mark in _QUOTE_MARKS)
 
 
 def _git(info, start, head):

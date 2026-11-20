@@ -546,33 +546,60 @@ def test_a_tie_keeps_the_earlier_reading():
 
 
 LONG = 4000
-LONG_BUDGET_SECONDS = 2.0
-# Quadratic reading took 3.9 s at 2000 repeats in review round 3, so 4000
-# repeats would take about 16 s; the linear reading takes well under 0.5 s.
+# Linear time is checked by growth, not by an absolute budget: a 2.0 s budget
+# at 4000 repeats failed on CI's Linux 3.12 job with 16 xdist workers (4.75 to
+# 7.05 s for a linear reading that takes under 1 s here), because a loaded
+# runner slows every run. Four times the input takes about four times as long
+# when the reading is linear and about sixteen times when it is quadratic
+# (measured, R-34c fix round 1: 3.9-4.2x linear, 12.6-15.4x with C14's window
+# removed); GROWTH_LIMIT sits between. Each size keeps the best of
+# GROWTH_REPEATS interleaved runs, so a load spike in one run does not count
+# and a steady load slows both sizes alike.
+GROWTH_SMALL, GROWTH_BIG = LONG // 16, LONG // 4
+GROWTH_LIMIT = 8.0
+GROWTH_REPEATS = 3
+
+
+def _growth(judge_at):
+    """How many times longer `judge_at(GROWTH_BIG)` takes than
+    `judge_at(GROWTH_SMALL)`, best run against best run."""
+    best = {GROWTH_SMALL: float("inf"), GROWTH_BIG: float("inf")}
+    for _ in range(GROWTH_REPEATS):
+        for size in best:
+            started = time.perf_counter()
+            judge_at(size)
+            best[size] = min(best[size], time.perf_counter() - started)
+    return best[GROWTH_BIG] / max(best[GROWTH_SMALL], 1e-6)
+
+
+def assert_linear(mod, make, ctx=None):
+    growth = _growth(lambda size: run(mod, make(size), ctx=ctx))
+    assert growth < GROWTH_LIMIT, f"{GROWTH_BIG / GROWTH_SMALL:.0f}x the input took {growth:.1f}x"
+
+
+# Quadratic reading took 3.9 s at 2000 repeats in review round 3; each row is
+# built at any repeat count, its verdict read at LONG.
 LONG_COMMANDS = (
-    ("echo " + "--unknown exec " * LONG + "terraform state rm x", "clear"),
-    ("terragrunt " + "--unknown exec " * LONG + "terraform state rm x", "hit"),
-    ("terragrunt " + "--unknown state " * LONG + "rm x", "hit"),
-    ("terragrunt " + "exec --unknown " * LONG + "terraform plan", "could-not-tell"),
-    ("terraform " + "-x " * LONG + "state list", "clear"),
+    (lambda n: "echo " + "--unknown exec " * n + "terraform state rm x", "clear"),
+    (lambda n: "terragrunt " + "--unknown exec " * n + "terraform state rm x", "hit"),
+    (lambda n: "terragrunt " + "--unknown state " * n + "rm x", "hit"),
+    (lambda n: "terragrunt " + "exec --unknown " * n + "terraform plan", "could-not-tell"),
+    (lambda n: "terraform " + "-x " * n + "state list", "clear"),
     # R-34b: a head-keyed row at every exec start is judged in constant time.
-    ("terragrunt " + "exec -- cp " * LONG + "terraform.tfstate", "hit"),
+    (lambda n: "terragrunt " + "exec -- cp " * n + "terraform.tfstate", "hit"),
     # the first git's subcommand is `exec` (unlisted): could-not-tell.
-    ("terragrunt " + "exec -- git " * LONG + "rm terraform.tfstate " + "-x " * LONG,
+    (lambda n: "terragrunt " + "exec -- git " * n + "rm terraform.tfstate " + "-x " * n,
      "could-not-tell"),
-    ("terragrunt " + "exec -- aws " * LONG + "terraform.tfstate " + "-x " * LONG,
+    (lambda n: "terragrunt " + "exec -- aws " * n + "terraform.tfstate " + "-x " * n,
      "could-not-tell"),
 )
 
 
-@pytest.mark.parametrize("command,verdict", LONG_COMMANDS,
+@pytest.mark.parametrize("make,verdict", LONG_COMMANDS,
                          ids=[str(n) for n in range(len(LONG_COMMANDS))])
-def test_a_long_command_is_judged_in_linear_time(command, verdict):
-    started = time.perf_counter()
-    got = run(crew_oneway, command)["verdict"]
-    took = time.perf_counter() - started
-    assert got == verdict
-    assert took < LONG_BUDGET_SECONDS, took
+def test_a_long_command_is_judged_in_linear_time(make, verdict):
+    assert run(crew_oneway, make(LONG))["verdict"] == verdict
+    assert_linear(crew_oneway, make)
 
 
 # R-34c: every git start reads at most GIT_WINDOW words after its subcommand
@@ -580,23 +607,21 @@ def test_a_long_command_is_judged_in_linear_time(command, verdict):
 # the shell builtin `exec` before each `git` (a head prefix), an `exec` start
 # at every `git`; the third strips a long run of prefixes at every start.
 GIT_LONG_COMMANDS = (
-    ("terragrunt exec -- " + "exec git branch -D a " * LONG, "hit"),
-    ("terragrunt " + "exec -- git branch -D a " * LONG, "hit"),
-    ("terragrunt exec -- " + "exec " * LONG + "git branch -D a", "hit"),
-    ("git branch -D " + "worktree-R-34 " * LONG, "could-not-tell"),
-    ("git worktree remove " + "-f " * LONG + "/w/r35", "could-not-tell"),
+    (lambda n: "terragrunt exec -- " + "exec git branch -D a " * n, "hit"),
+    (lambda n: "terragrunt " + "exec -- git branch -D a " * n, "hit"),
+    (lambda n: "terragrunt exec -- " + "exec " * n + "git branch -D a", "hit"),
+    (lambda n: "git branch -D " + "worktree-R-34 " * n, "could-not-tell"),
+    (lambda n: "git worktree remove " + "-f " * n + "/w/r35", "could-not-tell"),
 )
 
 
-@pytest.mark.parametrize("command,verdict", GIT_LONG_COMMANDS,
+@pytest.mark.parametrize("make,verdict", GIT_LONG_COMMANDS,
                          ids=[str(n) for n in range(len(GIT_LONG_COMMANDS))])
 @pytest.mark.parametrize("ctx", ["OWN", "NONE"])
-def test_a_long_git_command_is_judged_in_linear_time(command, verdict, ctx):
-    started = time.perf_counter()
-    got = run(crew_oneway, command, ctx=ctx_of(ctx))["verdict"]
-    took = time.perf_counter() - started
+def test_a_long_git_command_is_judged_in_linear_time(make, verdict, ctx):
+    got = run(crew_oneway, make(LONG), ctx=ctx_of(ctx))["verdict"]
     assert got == (verdict if ctx == "OWN" else "could-not-tell")
-    assert took < LONG_BUDGET_SECONDS, took
+    assert_linear(crew_oneway, make, ctx_of(ctx))
 
 
 @pytest.mark.parametrize("repeat", [1, 100, 300, 2000])
@@ -1727,11 +1752,17 @@ def case_bash_star_is_a_word(mod):
 
 
 def case_long_swallowed_exec_chain_is_linear(mod):
-    command = "terragrunt " + "--unknown exec " * LONG + "terraform state rm x"
-    started = time.perf_counter()
-    assert_hit(mod, command, "tf-state-write")
-    took = time.perf_counter() - started
-    assert took < LONG_BUDGET_SECONDS, took
+    def make(n):
+        return "terragrunt " + "--unknown exec " * n + "terraform state rm x"
+    assert_hit(mod, make(GROWTH_BIG), "tf-state-write")
+    assert_linear(mod, make)
+
+
+def case_long_git_delete_chain_is_linear(mod):
+    def make(n):
+        return "terragrunt " + "exec -- git branch -D a " * n
+    assert_hit(mod, make(GROWTH_BIG), DEL, op=BR, ctx=own())
+    assert_linear(mod, make, own())
 
 
 def case_block_fd_copy_glued_to_a_word(mod):
@@ -2122,6 +2153,36 @@ def case_block_exec_builtin(mod):
     assert_hit(mod, "exec git branch -D feature-x", DEL, op=BR, ctx=own())
 
 
+# R-34c fix round 1.
+def case_block_branch_sort_value(mod):
+    assert_hit(mod, "git branch -D --sort -r feature-x", DEL, op=BR, ctx=own())
+
+
+def case_block_branch_refs_tags_operand(mod):
+    assert_hit(mod, "git branch -D refs/tags/feature-x", DEL, op=BR, ctx=own())
+
+
+def case_block_branch_refs_heads_operand(mod):
+    assert_hit(mod, "git branch -D refs/heads/worktree-R-34", DEL, op=BR, ctx=own())
+
+
+def case_cnt_worktree_quoted_sub(mod):
+    assert_cnt(mod, 'git worktree re"move" ../r35 > out', "worktree-target-unseen", op=WT,
+               ctx=own())
+
+
+def case_cnt_branch_quoted_option(mod):
+    assert_cnt(mod, 'git branch --del"ete" feature-x > out', "branch-target-unseen", op=BR,
+               ctx=own())
+
+
+def case_cnt_glob_dash_c(mod):
+    ctx = own()
+    ctx["own_worktrees"].append(_p(os.path, "w", "[rs]34"))
+    assert_cnt(mod, "git -C ../[rs]34 branch -D worktree-R-34", "git-repo-unseen", op=BR,
+               ctx=ctx)
+
+
 MUTATIONS = (
     ("1 rm added to the state read set",
      'STATE_READ = frozenset(("list", "show", "pull", "identities"))',
@@ -2417,8 +2478,7 @@ MUTATIONS = (
      "    for offset, name in named:\n", "    for offset, name in named[:1]:\n",
      ("case_block_own_and_other",)),
     ("14 -r deletes read as branch deletes",
-     '    if any(hit(word, "-r") or hit(word, "--remotes") for word in cut):\n'
-     "        return None\n", "", ("case_allow_remote_delete",)),
+     "    if _branch_remotes(rest):\n        return None\n", "", ("case_allow_remote_delete",)),
     ("15 exact --delete match only",
      '    if not any(hit(word, "-d") or hit(word, "-D") or hit(word, "--delete") for word in cut):\n',
      '    if not any(hit(word, "-d") or hit(word, "-D") or word == "--delete" for word in cut):\n',
@@ -2465,11 +2525,12 @@ MUTATIONS = (
      '    if any(word.split("=", 1)[0] == "--namespace" for word in globals_):\n'
      "        return True\n", "", ("case_cnt_namespace",)),
     ("C-pct the % and ~ -C repo check dropped",
-     '    return any(_unseen(value) or value.startswith("~") for value in dirs)\n',
-     "    return False\n", ("case_cnt_percent_dash_c",)),
+     '    return any(value.startswith("~") or any(mark in value for mark in _TARGET_UNSEEN)\n'
+     "               for value in dirs)\n",
+     "    return False\n", ("case_cnt_percent_dash_c", "case_cnt_glob_dash_c")),
     # R-34c review round 1.
     ("C-o an attached -o value read as taking the next word",
-     '        return cut + "o" == word\n', '        return word.endswith("o")\n',
+     "        return cut + letter == word\n", "        return word.endswith(letter)\n",
      ("case_block_push_attached_o_value",)),
     ("C-tags-ns the unknown repository judged after the tag rule",
      "    if repo_unseen:\n"
@@ -2480,6 +2541,20 @@ MUTATIONS = (
     ("C-exec the shell builtin exec not a head prefix",
      '"if", "elif", "while", "until", "exec"))', '"if", "elif", "while", "until"))',
      ("case_block_exec_builtin",)),
+    # R-34c fix round 1.
+    ("C14 the git word window removed (quadratic)",
+     "    rest = info.words[where:where + GIT_WINDOW]\n", "    rest = info.words[where:]\n",
+     ("case_long_git_delete_chain_is_linear",)),
+    ("C-sort a branch option's value read as -r",
+     '        taken = _git_takes_value(word, cut, "u", _BRANCH_VALUE_OPTS, _BRANCH_LONG_FLAGS)\n',
+     "        taken = False\n", ("case_block_branch_sort_value",)),
+    ("C-refs a git branch operand read as a ref",
+     "        if not refs:\n            named.append((where + index, target))\n"
+     "            continue\n", "",
+     ("case_block_branch_refs_tags_operand", "case_block_branch_refs_heads_operand")),
+    ("C-quote an option left holding a quote read by its spelling",
+     "    if reading[0] != HIT and _quoted_option(rest, sub == \"worktree\"):\n",
+     "    if False:\n", ("case_cnt_worktree_quoted_sub", "case_cnt_branch_quoted_option")),
 )
 
 
