@@ -18,6 +18,9 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.198: re-bump only - interim number on the one-way branch/worktree delete branch (PR #810, commit 97d098661, pushed, never on main) before main moved to 1.3.197 (PR #811) and was merged in; the change is recorded under crew 1.3.199
+- crew 1.3.197: re-bump only - interim number on the one-way branch/worktree delete branch (PR #810, commit 324c25483, pushed, never on main) before open PR #811 was found holding 1.3.197 (PR #811 then landed its own 1.3.197 for R-C3); the R-34c change is recorded under crew 1.3.199
+- crew 1.3.196: re-bump only - interim number on the one-way branch/worktree delete branch (PR #810, commit 058768b82, pushed, never on main) before review fix rounds 1-4 changed plugin/crew again; the change is recorded under crew 1.3.199
 - crew 1.3.189: re-bump only - interim number on the tier-map branch (PR #805, commit db7f549bd, pushed, never on main) before CI found `test_crew_protected.py::test_coverage` red (R-32's comparator protects `tiers`, which R-05 makes a config leaf) and the `tiers` row changed plugin/crew again; the change is recorded under crew 1.3.190
 - crew 1.3.186: re-bump only - interim number on the crew-paths branch (PR #803, commit 394002c5f, pushed, never on main) before an ALLOWED row for crew_paths.py in test_worktree_config.py changed plugin/crew again; the change is recorded under crew 1.3.187
 - crew 1.3.185 (R-04): re-bump only - interim number on the crew-paths branch (PR #803, commits f694b76ab and 169ac8467, pushed, never on main) before PR #802 landed 1.3.185 for R-33; the R-04 change is recorded under crew 1.3.187
@@ -151,6 +154,12 @@ read entries under any `## [` heading.
 - crew 1.3.160: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); main reached 1.3.161 and open PR #774 holds 1.3.157, so the branch re-bumped to 1.3.162; the change is recorded under crew 1.3.167
 - crew 1.3.159: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); the accepted-value test changed plugin/crew after the number was set, so the branch moved to 1.3.160; the change is recorded under crew 1.3.160
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
+
+### Added — crew 1.3.199: `crew_oneway.py` reports deletes of branches and worktrees crew does not own (R-34c)
+
+- **Summary.** `crew` 1.3.199 extends the report-only `crew_oneway.py` tripwire with `delete-others-branch` and `delete-others-worktree`: deleting a branch (`git branch -d/-D`, `git push --delete` or `:ref`, `git update-ref -d refs/heads/...`) or removing a worktree that is not in the caller's own list is reported. It still refuses nothing.
+- **What.** The decision reads a caller-supplied context (`cwd`, `own_branches`, `own_worktrees`); `push --prune`/`--mirror`, a missing context, an expansion, a repository crew cannot see, an unreadable git subcommand or a command past the 256-word window is could-not-tell, never clear. The shell `exec` builtin is a head prefix, and the CLI gains `--cwd`, `--own-branch` and `--own-worktree`. Nothing in the plugin imports the module.
+- **Tests.** `test_crew_oneway.py` adds must-block, must-allow, could-not-tell and pinned rows under ntpath and posixpath, crew's own cleanup argv found by `ast`, policy binding for all three names, linear-time rows, and 22 new in-file sabotage mutations.
 
 ### Added — crew 1.3.197: the Configuration Guide and CI-checked worked examples (R-C3)
 

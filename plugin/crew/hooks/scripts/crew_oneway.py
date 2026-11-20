@@ -1,11 +1,12 @@
-"""The one-way lane's command-text tripwire, REPORT-ONLY (R-34a, R-34b).
+"""The one-way lane's command-text tripwire, REPORT-ONLY (R-34a, R-34b, R-34c).
 
-    python3 crew_oneway.py judge [--shell bash|powershell] -- "<command>"
+    python3 crew_oneway.py judge [--shell bash|powershell] [--cwd DIR]
+        [--own-branch NAME]... [--own-worktree DIR]... -- "<command>"
     python3 crew_oneway.py payload          (a PreToolUse JSON payload on stdin)
     python3 crew_oneway.py shapes
 
 The revision-3 plan's one-way list (4.3) names operations only the owner may
-approve. This module recognises the first of them in the text of a command a
+approve. This module recognises three of them in the text of a command a
 model runs, or in a file tool's payload, and nothing else:
 
 - `hand-edit-terraform-state`: `terraform`, `tofu` or `terragrunt` running
@@ -39,9 +40,36 @@ A state file is written by:
   paths read as `scope_guard.targets` reads them; with no readable path the
   payload is `could-not-tell`.
 
-Later tickets add their own operations and head-keyed rows (branch and
-worktree deletes, wrappers, gh); the entry points and the result shape are
-already final.
+- `delete-others-branch` (R-34c): `git branch` with `-d`/`-D`/`--delete`
+  (not `-r`/`--remotes`), `git push` with `--delete`/`-d` anywhere after
+  `push` or a `:ref` / `+:ref` refspec, `git push --prune|--mirror`
+  (`push-prune`, could-not-tell), and `git update-ref -d refs/heads/<name>`;
+- `delete-others-worktree` (R-34c): `git worktree remove <path>`.
+
+"Others" is read from the caller's context, `{cwd, own_branches,
+own_worktrees}`; the module probes nothing. A target not in `own_branches`
+is a hit wherever the command runs; an own name is clear only when the
+command's directory (`cwd`, then each `-C`) is inside an own worktree, else
+could-not-tell. A worktree path is resolved against that directory and is
+clear only when it equals an own worktree. No own list, no `cwd` where one
+is needed, an expanded or globbed target, an option (or the worktree
+subcommand) the raw pass left holding a quote, a word after the subcommand
+the raw pass may have misread (an empty `""` it dropped, half of a quoted
+space, a word holding an escape), or a repository crew cannot
+see (`--git-dir`, `--work-tree`, `--namespace`, a `-C` holding `$` ` % * ?
+[ or a leading `~`, a leading `GIT_DIR=`/`GIT_WORK_TREE=`/`GIT_NAMESPACE=`,
+a global the raw pass may have misread such as `--git-"dir"=x`)
+is could-not-tell, never clear. A `git branch` operand is a branch name as
+spelled (`refs/heads/x` is not `x` there); push and update-ref read refs. A
+value-taking `git branch` option takes the next word whatever it is
+(`--sort -r` is no `--remotes`, `--sort -- -D x` deletes `x`, and in
+`-D --sort refname x` only `x` is an operand). A `git` whose subcommand crew
+cannot read, or the raw pass may have misread, is
+could-not-tell with no operation (`git-sub-unseen`); a delete subcommand
+running past `GIT_WINDOW` words with no hit is could-not-tell
+(`git-window-exceeded`). Paths are compared lexically (`normpath`,
+`normcase`), never on the filesystem. Later tickets add wrappers and gh
+(R-34d, R-34e); the entry points and the result shape are already final.
 
 REPORT-ONLY: nothing in the plugin imports this module, and a test fails if
 anything does. It emits the operation name as a string and never imports the
@@ -89,7 +117,8 @@ Reading a command:
    start of a word (`list2>&1` keeps the word `list2`).
 
 Each segment then has its leading `NAME=VALUE` words and `HEAD_PREFIXES`
-stripped, and its head (basename, lower-cased, `.exe` dropped) is read. A
+stripped (with the `--` after `exec`, `command`, `env` or `sudo`), and its
+head (basename, lower-cased, `.exe` dropped) is read. A
 terraform head is judged by the terraform table; text after any other head
 never matches it (head precedence), and is read only for state words.
 Global options are skipped with `skip_options`, which also
@@ -98,20 +127,26 @@ or terragrunt's `exec`; every such reading is judged and the worst kept, the
 earliest on a tie. terragrunt's `run`, `run-all` and `exec` are unwrapped; what
 `exec` runs is judged as a new command. A command's words are read once, so
 judging it takes time linear in its length; a git head reads only a window
-of the words after it, grown while its global options fill it.
+of the words after it, grown while its global options fill it, and is read
+once however many starts strip their prefixes down to it.
 
 It is a tripwire, not a boundary (plan 4.0, layer 1). It does not see
 terraform behind `bash -c`, `make`, a script, `xargs`, `sudo -u <user>` or a
 substitution, terragrunt's `stack run` and `graph`, a state file written by
 a script or a substitution or under an unexpanded name (`rm $F`), a copy into a directory
 (`cp terraform.tfstate backup/`), or a state word only in git's globals.
+Nor does it see a branch or worktree delete behind `xargs`, `sudo -u`,
+`env -C`, an earlier `cd` or `export GIT_DIR=` (R-34d), `gh` (R-34e),
+`git update-ref --stdin`, or `rm -rf` of a worktree directory.
 
 Exit codes: 0 for every judgement (report-only) and for `shapes`, 2 for a
 usage error.
 """
 import argparse
 import bisect
+import collections
 import json
+import os
 import re
 import sys
 
@@ -126,7 +161,19 @@ COULD_NOT_TELL = "could-not-tell"
 NOT_A_COMMAND = "not-a-command"
 
 TF_STATE = "hand-edit-terraform-state"
-OPERATIONS_EMITTED = (TF_STATE,)
+BRANCH = "delete-others-branch"
+WORKTREE = "delete-others-worktree"
+OPERATIONS_EMITTED = (TF_STATE, BRANCH, WORKTREE)
+
+# The operation each R-34c rule names (C2); every other rule names TF_STATE.
+# A rule shared by both deletes is carried as a (rule, operation) pair.
+RULE_OPERATION = {
+    "branch-delete-other": BRANCH, "branch-own-outside": BRANCH,
+    "branch-owner-unseen": BRANCH, "branch-target-unseen": BRANCH, "push-prune": BRANCH,
+    "worktree-remove-other": WORKTREE, "worktree-owner-unseen": WORKTREE,
+    "worktree-target-unseen": WORKTREE,
+    "git-sub-unseen": None,
+}
 
 # --- the terraform table ---------------------------------------------------------------------
 
@@ -146,8 +193,8 @@ AMBIGUOUS_SUBS = TABLE_SUBS | SWALLOWABLE_UNWRAPS
 HELP_WORDS = frozenset(("-help", "--help", "-h"))
 _UNSEEN = ("$", "`", "%")
 
-# (shape, rule, verdict) for `shapes`.
-SHAPES = (
+# (shape, rule, verdict) of the terraform rows; `SHAPES` adds each row's operation.
+_TF_SHAPES = (
     ("-help/--help/-h after the subcommand", "-", CLEAR),
     ("state <sub>, sub not in " + ", ".join(sorted(STATE_READ)), "tf-state-write", HIT),
     ("state with no sub, or a sub holding $ ` %", "tf-state-unseen", COULD_NOT_TELL),
@@ -181,12 +228,43 @@ SHAPES = (
      COULD_NOT_TELL),
 )
 
+# (shape, rule, verdict, operation) for `shapes`.
+SHAPES = tuple(row + (TF_STATE,) for row in _TF_SHAPES) + (
+    ("git branch -d/-D/--delete, push --delete/-d or :ref, update-ref -d refs/heads/x: "
+     "a target not in own_branches", "branch-delete-other", HIT, BRANCH),
+    ("the same, an own branch outside every own worktree", "branch-own-outside",
+     COULD_NOT_TELL, BRANCH),
+    ("the same, no own_branches in the context", "branch-owner-unseen", COULD_NOT_TELL, BRANCH),
+    ("the same, a target holding $ ` % * ? [ or none, an option left holding a quote, or a "
+     "word the raw pass may have misread", "branch-target-unseen", COULD_NOT_TELL, BRANCH),
+    ("git push --prune or --mirror", "push-prune", COULD_NOT_TELL, BRANCH),
+    ("git worktree remove, a path that is not an own worktree", "worktree-remove-other", HIT,
+     WORKTREE),
+    ("the same, no cwd or no own_worktrees in the context", "worktree-owner-unseen",
+     COULD_NOT_TELL, WORKTREE),
+    ("the same, a path holding $ ` % * ? [, a leading ~, or none, a subcommand or option "
+     "left holding a quote, or a word the raw pass may have misread", "worktree-target-unseen",
+     COULD_NOT_TELL, WORKTREE),
+    ("a branch delete in a repository crew cannot see", "git-repo-unseen", COULD_NOT_TELL,
+     BRANCH),
+    ("a worktree remove in a repository crew cannot see", "git-repo-unseen", COULD_NOT_TELL,
+     WORKTREE),
+    ("git branch|push|update-ref past the word window, no hit", "git-window-exceeded",
+     COULD_NOT_TELL, BRANCH),
+    ("git worktree past the word window, no hit", "git-window-exceeded", COULD_NOT_TELL,
+     WORKTREE),
+    ("git with a subcommand crew cannot read", "git-sub-unseen", COULD_NOT_TELL, None),
+)
+
 # --- the head --------------------------------------------------------------------------------
 
 # A superset of the R-33 tripwire's list (pinned by the test), plus the
-# compound-command words a raw segment can start with.
+# compound-command words a raw segment can start with, and the shell builtin
+# `exec`, which runs the command after it in place of the shell (R-34c).
 HEAD_PREFIXES = frozenset(("env", "sudo", "command", "time", "then", "do", "else", "!",
-                           "if", "elif", "while", "until"))
+                           "if", "elif", "while", "until", "exec"))
+# The prefixes whose own options a `--` ends; that `--` is stripped too.
+_DASHDASH_PREFIXES = frozenset(("exec", "command", "env", "sudo"))
 _ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=", re.S)
 
 # --- state-file writes (R-34b) ---------------------------------------------------------------
@@ -338,14 +416,35 @@ def _target(tokens, gaps, index, escape="\\"):
     return "".join(parts).strip(_STRIP), index
 
 
+def _faithful(token, escape):
+    """Whether the raw pass reads the word `token` as the shell does: no
+    escape, and no quote or one pair of the same quote around a body that
+    holds none. `""` (an empty word, dropped), `/w/r34"` (half of a quoted
+    space) and `--git-"dir"=x` are not. Only a bracket outside the quotes
+    is syntax: `'(own)'` and `'C:/w/r34)'` keep theirs, so the raw pass,
+    which strips them, misreads such a word (fix round 3), and a brace the
+    shell keeps (`own}`) too."""
+    body = token.strip("()")
+    if escape in body:
+        return False
+    if not any(quote in body for quote in _QUOTES):
+        return body == token.strip(_STRIP)
+    return (len(body) > 2 and body[0] == body[-1] and body[0] in _QUOTES
+            and not any(quote in body[1:-1] for quote in _QUOTES)
+            and token.strip(_STRIP) == body[1:-1])
+
+
 def _lift(piece, escape="\\"):
-    """One raw segment: {words, targets, dangling}, or None when empty.
+    """One raw segment: {words, targets, dangling, quoted}, or None when
+    empty.
 
     A token that is only brackets is dropped. A token that is only quotes is
     an empty word: dropped as a word, kept as an operator's target. The
-    words stop at a comment (`# -help` is not an argument)."""
+    words stop at a comment (`# -help` is not an argument). `quoted` holds
+    the index of each word the raw pass may have misread (`_faithful`); a
+    dropped empty word is recorded at the index of the word after it."""
     tokens, gaps = _tokens(piece)
-    out, targets, dangling = [], [], []
+    out, targets, dangling, quoted = [], [], [], []
     index = 0
     while index < len(tokens):
         token = tokens[index]
@@ -354,6 +453,10 @@ def _lift(piece, escape="\\"):
                 break
             if token.strip(_STRIP):
                 out.append(token.strip(_STRIP))
+                if not _faithful(token, escape):
+                    quoted.append(len(out) - 1)
+            elif not _bare(token):
+                quoted.append(len(out))
             index += 1
             continue
         operator = token[2:].translate(_SHOW)
@@ -367,7 +470,7 @@ def _lift(piece, escape="\\"):
             targets.append((operator, target))
     if not (out or targets or dangling):
         return None
-    return {"words": out, "targets": targets, "dangling": dangling}
+    return {"words": out, "targets": targets, "dangling": dangling, "quoted": quoted}
 
 
 # F2: the characters a command may hold before a `#` for that `#` to end its
@@ -407,6 +510,12 @@ def _drop_comments(text):
 def raw_segments(text, shell="bash"):
     """The raw pass's segments of `text`, redirections lifted: a list of
     {words, targets: [(operator, target)], dangling: [operator]}."""
+    return [{key: segment[key] for key in ("words", "targets", "dangling")}
+            for segment in _raw_segments(text, shell)]
+
+
+def _raw_segments(text, shell):
+    """`raw_segments`, each segment also holding `quoted` (`_lift`)."""
     segments = []
     text = _drop_comments(text)
     for piece in _SEPARATORS_RE.split(_protect(text, shell)):
@@ -471,11 +580,13 @@ class _Scan:  # pylint: disable=too-few-public-methods
     `end[i]` is where the global options from `i` stop (`tf_skip_options`);
     `swallowed` is every index an unknown option may have taken as its value
     (sorted); `help_from[i]` and `dashdash[i]` say whether a help word, and
-    how many `--`, stand at `i` or later. `memo` holds each start judged."""
+    how many `--`, stand at `i` or later. `memo` holds each start judged;
+    `ctx` is the caller's context (`_Context`)."""
 
-    def __init__(self, words):
+    def __init__(self, words, ctx=None):
         count = len(words)
         self.words = words
+        self.ctx = ctx if ctx is not None else NO_CONTEXT
         self.end = list(range(count + 1))
         self.help_from = [False] * (count + 1)
         self.dashdash = [0] * (count + 1)
@@ -494,7 +605,7 @@ class _Scan:  # pylint: disable=too-few-public-methods
     def state_words(self):
         """The same words read for state words (`_StateWords`), once."""
         if self._state is None:
-            self._state = _StateWords(self.words)
+            self._state = _StateWords(self.words, self.ctx)
         return self._state
 
 
@@ -561,8 +672,9 @@ def _judge_tf(scan, head, index):
     return _first_worst([readings[at] for at in sorted(readings)])
 
 
-def _judge_words(words, start=0):
-    """(verdict, rule, word index) of the command that starts at `start`.
+def _judge_words(words, start=0, ctx=None):
+    """(verdict, rule, word index) of the command that starts at `start`,
+    `ctx` the caller's context (`_Context`, R-34c).
 
     Head precedence first: a command whose head is not terraform's is clear
     before anything after it is read. An `exec` unwrap judges the command
@@ -571,8 +683,8 @@ def _judge_words(words, start=0):
     repeated) then needs no deep recursion. The words are read once
     (`_Scan`), so a long command costs time linear in its length."""
     if _tf_head(words, start) is None:
-        return _state_head(_StateWords(words), start)
-    scan = _Scan(words)
+        return _state_head(_StateWords(words, ctx), start)
+    scan = _Scan(words, ctx)
     starts = {scan.end[at + 1] for at in range(start, len(words)) if words[at] == "exec"}
     for later in sorted(starts, reverse=True):
         if later > start:
@@ -580,25 +692,46 @@ def _judge_words(words, start=0):
     return _judge_from(scan, start)
 
 
-def _head(words, start):
-    """(index, head) of the command at `start`, prefixes stripped, or None."""
-    index = start
-    while index < len(words) and (words[index] in HEAD_PREFIXES or _ASSIGN_RE.match(words[index])):
+def _prefix_word(words, i):
+    """Whether `words[i]` is stripped before the head: a head prefix, a
+    `NAME=VALUE` word, or the `--` that ends the options of `exec`,
+    `command`, `env` or `sudo` (`exec -- git ...`, fix round 3)."""
+    word = words[i]
+    return (word in HEAD_PREFIXES or _ASSIGN_RE.match(word) is not None
+            or word == "--" and i > 0 and words[i - 1] in _DASHDASH_PREFIXES)
+
+
+def _prefix_ends(words):
+    """`ends[i]`: the first index at or after `i` that is not a head prefix
+    or a `NAME=VALUE` word, so every start strips its prefixes in constant
+    time (`exec exec ... git`, an `exec` start at each word, stays linear)."""
+    ends = list(range(len(words) + 1))
+    for i in range(len(words) - 1, -1, -1):
+        if _prefix_word(words, i):
+            ends[i] = ends[i + 1]
+    return ends
+
+
+def _head(words, start, ends=None):
+    """(index, head) of the command at `start`, prefixes stripped, or None.
+    `ends` is `_prefix_ends(words)` when the caller holds it."""
+    index = start if ends is None else ends[start]
+    while index < len(words) and _prefix_word(words, index):
         index += 1
     if index >= len(words):
         return None
     return index, _head_name(words[index])
 
 
-def _tf_head(words, start):
+def _tf_head(words, start, ends=None):
     """(index, head) of the terraform head of the command at `start`, or None."""
-    found = _head(words, start)
+    found = _head(words, start, ends)
     return found if found is not None and found[1] in TF_HEADS else None
 
 
 def _judge_from(scan, start):
     if start not in scan.memo:
-        found = _tf_head(scan.words, start)
+        found = _tf_head(scan.words, start, scan.state_words().prefix_end)
         scan.memo[start] = (_state_head(scan.state_words(), start) if found is None
                             else _judge_tf(scan, found[1], found[0] + 1))
     return scan.memo[start]
@@ -641,6 +774,20 @@ def _state_kind(word):
     return "option" if word.startswith("-") else "word"
 
 
+def _head_reading(word):
+    """`word`, which the raw pass may have misread (`_faithful`), as the
+    head is looked for: its first reading (`_readings`: as written, quotes
+    joined, escapes taken out) that is a head prefix, a `NAME=VALUE` word or
+    git, else as written. bash hands `env` the word `GIT_"DIR"=/o/.git` as
+    `GIT_DIR=/o/.git` and runs `su"do"` as `sudo`, so read as written the
+    git command behind it would never be judged (fix round 4)."""
+    for reading in _readings(word):
+        if (reading in HEAD_PREFIXES or _ASSIGN_RE.match(reading) is not None
+                or _head_name(reading) == "git"):
+            return reading
+    return word
+
+
 class _StateWords:  # pylint: disable=too-few-public-methods
     """One command's words read once for state words, so every start judged
     in it costs constant time past the head (`_Scan`'s linear rule).
@@ -660,10 +807,30 @@ class _StateWords:  # pylint: disable=too-few-public-methods
     value. That `--` depends on where the command starts, so the methods
     below take the head."""
 
-    def __init__(self, words):
+    def __init__(self, words, ctx=None):
         count = len(words)
         self.words = words
-        self.kind = [_state_kind(word) for word in words]
+        self.ctx = ctx if ctx is not None else NO_CONTEXT
+        # `heads` is `words` as the head is found in them: a word the raw
+        # pass may have misread is read with its quotes joined where that
+        # makes it a prefix, an assignment or git (`_head_reading`).
+        heads = words
+        if self.ctx.quoted:
+            heads = list(words)
+            for i in self.ctx.quoted:
+                if i < count:
+                    heads[i] = _head_reading(words[i])
+        self.heads = heads
+        self.prefix_end = _prefix_ends(heads)
+        self.git_memo = {}  # (git head, assigned) -> reading (`_git`)
+        # the first index at or after `i` assigning GIT_DIR, GIT_WORK_TREE
+        # or GIT_NAMESPACE (C5), so a start reads its assignments at once.
+        self.repo_assign = [count] * (count + 1)
+        for i in range(count - 1, -1, -1):
+            sets_repo = (_ASSIGN_RE.match(heads[i]) is not None
+                         and heads[i].split("=", 1)[0] in _REPO_VARS)
+            self.repo_assign[i] = i if sets_repo else self.repo_assign[i + 1]
+        self.kind =[_state_kind(word) for word in words]
         self.whole = [_state_path(word) for word in words]
         self.next_state = [count] * (count + 1)
         self.next_whole = [count] * (count + 1)
@@ -802,18 +969,450 @@ def _git_state(info, head):
     return (COULD_NOT_TELL, "tfstate-git-unseen", git_first)
 
 
+# --- branch and worktree deletes (R-34c) -----------------------------------------------------
+
+# C1: the caller's context, read once in `judge`. None is "not given" (an
+# unknown), never "empty"; an empty own list is a known empty list. `quoted`
+# is not the caller's: the raw pass sets it per segment to the sorted
+# indexes of the words it may have misread (`_lift`).
+_Context = collections.namedtuple("_Context", ("cwd", "own_branches", "own_worktrees", "quoted"),
+                                  defaults=((),))
+NO_CONTEXT = _Context(None, None, None)
+# C6: every path function is called through this one attribute, so the test
+# can run each path row under `ntpath` and under `posixpath`.
+_PATH = os.path
+
+GIT_WINDOW = 256
+DELETE_SUBS = {"branch": BRANCH, "push": BRANCH, "update-ref": BRANCH, "worktree": WORKTREE}
+_REPO_VARS = frozenset(("GIT_DIR", "GIT_WORK_TREE", "GIT_NAMESPACE"))
+_TARGET_UNSEEN = ("$", "`", "%", "*", "?", "[")
+# C10: push options that take the next word when written without `=`. git
+# also takes any unambiguous prefix of a long option (`--receiv`), so a
+# prefix is read against git push's other long options too.
+_PUSH_VALUE_OPTS = frozenset(("-o", "--push-option", "--receive-pack", "--exec", "--repo",
+                              "--recurse-submodules"))
+_PUSH_LONG_FLAGS = ("--all", "--branches", "--mirror", "--delete", "--tags", "--dry-run",
+                    "--porcelain", "--force", "--force-with-lease", "--force-if-includes",
+                    "--thin", "--set-upstream", "--progress", "--prune", "--verify",
+                    "--follow-tags", "--signed", "--atomic", "--ipv4", "--ipv6", "--quiet",
+                    "--verbose", "--no-")
+# git branch options that take the next word when written without `=`
+# (`--sort -r` sorts by `-r`, it is not `--remotes`), read the same way.
+_BRANCH_VALUE_OPTS = frozenset(("-u", "--set-upstream-to", "--sort", "--format", "--points-at",
+                                "--contains", "--no-contains", "--merged", "--no-merged"))
+_BRANCH_LONG_FLAGS = ("--delete", "--create-reflog", "--force", "--move", "--copy", "--color",
+                      "--verbose", "--quiet", "--abbrev", "--track", "--unset-upstream",
+                      "--edit-description", "--list", "--show-current", "--remotes", "--all",
+                      "--ignore-case", "--omit-empty", "--column", "--recurse-submodules",
+                      "--no-")
+
+
+def _own_list(value):
+    """A tuple of the own names or paths, or None when `value` is not a
+    list of strings (absent, C1)."""
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return tuple(value)
+    return None
+
+
+def _read_context(context):
+    """`context` as a `_Context` (C1): anything malformed counts as absent."""
+    if not isinstance(context, dict):
+        return NO_CONTEXT
+    cwd = context.get("cwd")
+    return _Context(cwd if isinstance(cwd, str) and cwd else None,
+                    _own_list(context.get("own_branches")),
+                    _own_list(context.get("own_worktrees")))
+
+
+def _norm(path):
+    return _PATH.normcase(_PATH.normpath(path))
+
+
+def _inside(eff, own_worktrees):
+    """C7: whether `eff` is an own worktree or below one, by whole path
+    components. An unknown `eff` or no own list is never inside."""
+    if eff is None or not own_worktrees:
+        return False
+    here = _norm(eff)
+    for entry in own_worktrees:
+        entry = _norm(entry)
+        if here == entry or here.startswith(entry.rstrip(_PATH.sep) + _PATH.sep):
+            return True
+    return False
+
+
+def _short(word, stop):
+    """A single-dash bundle read only up to its first value-taking letter
+    `stop` (C9): `-ostuffd` is `-` for push, `-uorigin/dev` is `-` for
+    branch. Any other word comes back whole."""
+    if not word.startswith("-") or word.startswith("--") or stop not in word[1:]:
+        return word
+    return word[:1 + word[1:].index(stop)]
+
+
+def _quoted_in(quoted, low, high):
+    """Whether a word the raw pass may have misread stands at an index in
+    [`low`, `high`) (`quoted` sorted, `_Context.quoted`)."""
+    at = bisect.bisect_left(quoted, low)
+    return at < len(quoted) and quoted[at] < high
+
+
+def _repo_unseen(globals_, dirs, assigned):
+    """C5: whether crew cannot tell which repository git acts on;
+    `assigned` is whether the segment's leading words set a `_REPO_VARS`,
+    or a global the raw pass may have misread stands (`--git-"dir"=x`)."""
+    if dirs is crew_gitallow.UNSEEN or assigned:
+        return True
+    if any(word.split("=", 1)[0] == "--namespace" for word in globals_):
+        return True
+    return any(value.startswith("~") or any(mark in value for mark in _TARGET_UNSEEN)
+               for value in dirs)
+
+
+def _effective(cwd, dirs):
+    """C6: the directory git runs in, `cwd` then each `-C`; None when no
+    `cwd` is known."""
+    if cwd is None:
+        return None
+    # Linear in the stack (fix rounds 3 and 4): normalising after each `-C`,
+    # or one `join` of them all, re-copies the growing path, quadratic in a
+    # stack of `-C x`. So the path is held as its drive, the path of the
+    # last value that reset it, and the relative values since, joined with
+    # the separator once at the end. A value that may reset the path or its
+    # drive (a leading slash, a colon) is joined onto a short stand-in for
+    # the path, `anchor`, which no value can hold: the join keeps it when
+    # the value is relative after all (`a:b` on POSIX, `C:x` on drive C),
+    # and the value's own part is then one more relative value.
+    drive, base = _PATH.splitdrive(cwd)
+    tail = []
+    for value in dirs:
+        if not value:  # an empty `-C ""` stays where it is
+            continue
+        if not (value.startswith(("/", "\\")) or ":" in value):
+            tail.append(value)
+            continue
+        own = _PATH.splitdrive(value)[0]
+        if own and (len(own) != len(drive) or own.lower() != drive.lower()):
+            drive, base, tail = own, value[len(own):], []  # another drive
+            continue
+        anchor = _PATH.sep + "m" * (len(value) + 1)
+        rest = _PATH.splitdrive(_PATH.join(own + anchor, value))[1]
+        drive = own or drive
+        if not rest.startswith(anchor):
+            base, tail = rest, []
+        elif rest[len(anchor) + 1:]:
+            tail.append(rest[len(anchor) + 1:])
+    return _PATH.normpath(_PATH.join(drive + base, _PATH.sep.join(tail)) if tail
+                          else drive + base)
+
+
+def _positionals(rest):
+    """The indexes in `rest` of words that are not options: every word after
+    the first `--`, and before it each word not starting with `-`."""
+    out, dashdash = [], False
+    for index, word in enumerate(rest):
+        if dashdash:
+            out.append(index)
+        elif word == "--":
+            dashdash = True
+        elif not word.startswith("-"):
+            out.append(index)
+    return out
+
+
+def _git_takes_value(word, cut, letter, value_opts, long_flags):
+    """Whether option `word` (`cut`: its bundle read up to the value-taking
+    short `letter`) takes the next word: `-<letter>` last in its bundle
+    (`-fo x`; `-ofoo` holds its own value), or a long value option or an
+    unambiguous prefix of one."""
+    if cut != word:
+        return cut + letter == word
+    if word in value_opts:
+        return True
+    if not word.startswith("--") or "=" in word or len(word) < 3:
+        return False
+    if any(flag.startswith(word) for flag in long_flags):
+        return False
+    return any(opt.startswith(word) for opt in value_opts)
+
+
+def _push_takes_value(word, cut):
+    """git push (C10): `-o` and `_PUSH_VALUE_OPTS` take the next word."""
+    return _git_takes_value(word, cut, "o", _PUSH_VALUE_OPTS, _PUSH_LONG_FLAGS)
+
+
+def _branch_words(rest):
+    """git branch, read in one pass: (cut, operands, remotes). A
+    value-taking option takes the next word whatever it is, so the value is
+    never an operand, a `--` separator or `-r` (`--sort -- -D x` deletes
+    `x`; `-D --sort refname x` deletes only `x`; `--sort -r` is no
+    `--remotes`). `cut` is every option word, bundles read up to `u`, an
+    option-shaped value too: a delete option read there can only
+    over-report. `values` holds the indexes in `cut` of those values, which
+    are never a `--no-delete`. `operands` are indexes in `rest`."""
+    # pylint: disable=protected-access
+    hit = crew_gitallow._option_hit
+    cut, values, operands, remotes, dashdash, index = [], set(), [], False, False, 0
+    while index < len(rest):
+        word = rest[index]
+        if dashdash or not word.startswith("-"):
+            operands.append(index)
+        elif word == "--":
+            dashdash = True
+        else:
+            short = _short(word, "u")
+            cut.append(short)
+            remotes = remotes or hit(short, "-r") or hit(short, "--remotes")
+            taken = _git_takes_value(word, short, "u", _BRANCH_VALUE_OPTS, _BRANCH_LONG_FLAGS)
+            if taken and index + 1 < len(rest):
+                index += 1  # the value
+                if rest[index].startswith("-"):
+                    cut.append(_short(rest[index], "u"))
+                    values.add(len(cut) - 1)
+        index += 1
+    return cut, values, operands, remotes
+
+
+def _no_delete(word):
+    """Whether `word` is `--no-delete` or a prefix git takes for it."""
+    name = word.split("=", 1)[0]
+    return len(name) > len("--no-") and "--no-delete".startswith(name)
+
+
+def _branch_targets(rest):
+    """git branch: the delete targets as (index, name), or None when this is
+    not a branch delete (no delete option, or `-r`/`--remotes`). git keeps
+    `-d`/`--delete` and `-D` as two bits of one flag, read in order:
+    `--no-delete` clears the first, so `-d --no-delete --list x` lists and
+    `-D --no-delete x` still deletes (fix round 3)."""
+    # pylint: disable=protected-access
+    hit = crew_gitallow._option_hit
+    cut, values, operands, remotes = _branch_words(rest)
+    deleting = 0
+    for at, word in enumerate(cut):
+        if at not in values and _no_delete(word):
+            deleting &= 2
+        else:
+            deleting |= (hit(word, "-d") or hit(word, "--delete")) | 2 * hit(word, "-D")
+    if not deleting:
+        return None
+    if remotes:
+        return None
+    return [(index, rest[index]) for index in operands]
+
+
+def _push_targets(rest):
+    """git push (C10): (targets as (index, refspec target), deleting, pruning).
+    `deleting` is whether `--delete`/`-d` stands anywhere after `push`."""
+    # pylint: disable=protected-access
+    hit = crew_gitallow._option_hit
+    positional, deleting, pruning, dashdash, index = [], False, False, False, 0
+    while index < len(rest):
+        word = rest[index]
+        if dashdash or not word.startswith("-"):
+            positional.append(index)
+        elif word == "--":
+            dashdash = True
+        else:
+            cut = _short(word, "o")
+            deleting = deleting or hit(cut, "-d") or hit(cut, "--delete")
+            pruning = pruning or hit(word, "--prune") or hit(word, "--mirror")
+            if _push_takes_value(word, cut):
+                index += 1  # its value is the next word
+        index += 1
+    targets = []
+    for at in positional[1:]:  # the first positional is the remote
+        spec = rest[at]
+        if deleting:
+            targets.append((at, spec.lstrip("+").rpartition(":")[2]))
+        elif spec.startswith((":", "+:")):
+            targets.append((at, spec.partition(":")[2]))
+    return targets, deleting, pruning
+
+
+def _update_ref_target(rest):
+    """git update-ref (C11): (deleting, (index, ref) or None). git reads its
+    options anywhere before `--`, so `update-ref refs/heads/x -d` deletes;
+    `-m` takes the next word as its reason."""
+    # pylint: disable=protected-access
+    deleting, ref, dashdash, index = False, None, False, 0
+    while index < len(rest):
+        word = rest[index]
+        if dashdash or not word.startswith("-"):
+            ref = ref if ref is not None else (index, word)
+        elif word == "--":
+            dashdash = True
+        else:
+            cut = _short(word, "m")
+            deleting = deleting or crew_gitallow._option_hit(cut, "-d")
+            if cut != word and cut + "m" == word:
+                index += 1  # `-m` last in its bundle: the reason is the next word
+        index += 1
+    return deleting, ref
+
+
+def _branch_verdict(name, ctx, offset, own_inside):
+    """C8: one branch target (`refs/heads/` stripped already)."""
+    if any(mark in name for mark in _TARGET_UNSEEN):
+        return (COULD_NOT_TELL, "branch-target-unseen", offset)
+    if ctx.own_branches is None:
+        return (COULD_NOT_TELL, "branch-owner-unseen", offset)
+    if name not in ctx.own_branches:
+        return (HIT, "branch-delete-other", offset)
+    if own_inside:
+        return _CLEAR
+    return (COULD_NOT_TELL, "branch-own-outside", offset)
+
+
+def _branch_delete(targets, where, eff, ctx, repo_unseen, refs=True):
+    """C8 over every target of a branch delete; `targets` None is no delete,
+    [] a delete with no readable target. Any hit wins. `refs` is whether a
+    target is a ref (push, update-ref: `refs/tags/` skipped, `refs/heads/`
+    stripped); a `git branch` operand is a branch name, spelled as it stands."""
+    if targets is None:
+        return _CLEAR
+    if repo_unseen:
+        return (COULD_NOT_TELL, ("git-repo-unseen", BRANCH), where)
+    named = []
+    for index, target in targets:
+        if not refs:
+            named.append((where + index, target))
+            continue
+        if target.startswith("refs/tags/"):
+            continue
+        name = target[len("refs/heads/"):] if target.startswith("refs/heads/") else target
+        named.append((where + index, name))
+    if not targets:
+        named = [(where, None)]
+    if not named:
+        return _CLEAR
+    readings = []
+    own_inside = _inside(eff, ctx.own_worktrees)
+    for offset, name in named:
+        if not name:
+            reading = (COULD_NOT_TELL, "branch-target-unseen", offset)
+        else:
+            reading = _branch_verdict(name, ctx, offset, own_inside)
+        if reading[0] == HIT or ctx.own_branches is None:
+            return reading  # with no own list no target can be a hit
+        readings.append(reading)
+    return _first_worst(readings)
+
+
+def _worktree_remove(rest, where, eff, ctx, repo_unseen):
+    """C12: `git worktree remove [-f|--force]... <path>`."""
+    if not rest:
+        return _CLEAR
+    if _unseen(rest[0]):
+        return (COULD_NOT_TELL, "worktree-target-unseen", where)
+    if rest[0] != "remove":
+        return _CLEAR
+    if repo_unseen:
+        return (COULD_NOT_TELL, ("git-repo-unseen", WORKTREE), where)
+    found = _positionals(rest[1:])
+    if not found:
+        return (COULD_NOT_TELL, "worktree-target-unseen", where)
+    at = where + 1 + found[0]
+    path = rest[1 + found[0]]
+    if not path or any(mark in path for mark in _TARGET_UNSEEN) or path.startswith("~"):
+        return (COULD_NOT_TELL, "worktree-target-unseen", at)
+    if eff is None or ctx.own_worktrees is None:
+        return (COULD_NOT_TELL, "worktree-owner-unseen", at)
+    removed = _norm(_PATH.join(eff, path))
+    if any(removed == _norm(entry) for entry in ctx.own_worktrees):
+        return _CLEAR
+    return (HIT, "worktree-remove-other", at)
+
+
+def _git_delete(info, start, head):
+    """(verdict, rule, word index) of the branch and worktree deletes of the
+    git command whose head is at `head` (C4-C14); `start` is where its
+    segment's leading assignments begin."""
+    args, split = _git_args(info, head)
+    if split >= len(args):
+        return _CLEAR  # nothing after git's globals (`git --version`)
+    sub = crew_gitallow.subcommand(args)
+    sub_at = head + 1 + split
+    ctx = info.ctx
+    if sub is crew_gitallow.UNSEEN:
+        return (COULD_NOT_TELL, "git-sub-unseen", sub_at)
+    if sub not in DELETE_SUBS:
+        return _CLEAR
+    globals_ = args[:split]
+    dirs = crew_gitallow.target_dirs(globals_)
+    repo_unseen = _repo_unseen(globals_, dirs, info.repo_assign[start] < head
+                               or _quoted_in(ctx.quoted, head + 1, sub_at))
+    eff = None if repo_unseen else _effective(ctx.cwd, dirs)
+    where = sub_at + 1
+    rest = info.words[where:where + GIT_WINDOW]
+    if sub == "worktree":
+        reading = _worktree_remove(rest, where, eff, ctx, repo_unseen)
+    elif sub == "branch":
+        reading = _branch_delete(_branch_targets(rest), where, eff, ctx, repo_unseen,
+                                 refs=False)
+    elif sub == "push":
+        targets, deleting, pruning = _push_targets(rest)
+        reading = _branch_delete(targets if deleting or targets else None, where, eff, ctx,
+                                 repo_unseen)
+        if pruning and repo_unseen:
+            reading = (COULD_NOT_TELL, ("git-repo-unseen", BRANCH), where)
+        elif pruning:
+            reading = _first_worst([reading, (COULD_NOT_TELL, "push-prune", sub_at)])
+    else:
+        deleting, ref = _update_ref_target(rest)
+        if not deleting:
+            reading = _CLEAR
+        elif repo_unseen:
+            reading = (COULD_NOT_TELL, ("git-repo-unseen", BRANCH), where)
+        elif ref is None or _unseen(ref[1]):
+            reading = (COULD_NOT_TELL, "branch-target-unseen", where)
+        elif ref[1].startswith("refs/heads/"):
+            reading = _branch_delete([ref], where, eff, ctx, repo_unseen)
+        else:
+            reading = _CLEAR
+    if reading[0] != HIT and len(info.words) > where + GIT_WINDOW:
+        return (COULD_NOT_TELL, ("git-window-exceeded", DELETE_SUBS[sub]), sub_at)
+    # A word after the subcommand that the raw pass may have misread (`_lift`:
+    # `--del"ete"`, `re"move"`, a dropped `""`, half of a quoted space)
+    # cannot clear: its meaning cannot be read from its spelling. The
+    # repository crew cannot see is named first (C5).
+    if reading[0] != HIT and _quoted_in(ctx.quoted, where, where + GIT_WINDOW + 1):
+        if repo_unseen:
+            return (COULD_NOT_TELL, ("git-repo-unseen", DELETE_SUBS[sub]), where)
+        rule = "worktree-target-unseen" if sub == "worktree" else "branch-target-unseen"
+        return (COULD_NOT_TELL, rule, where)
+    return reading
+
+
+def _git(info, start, head):
+    """C3: the delete reading first, then the R-34b state reading, the first
+    worst kept. A subcommand crew cannot read is `git-sub-unseen` with no
+    operation (C13), even beside a state word.
+
+    Kept per git head (C14): many starts can strip their prefixes to the same
+    head (`exec exec ... git -c a=b ... branch`), and reading its globals at
+    each would be quadratic. A start changes the reading only through whether
+    its own assignments set a `_REPO_VARS`, so that is part of the key."""
+    key = (head, info.repo_assign[start] < head)
+    if key not in info.git_memo:
+        deleted, stated = _git_delete(info, start, head), _git_state(info, head)
+        info.git_memo[key] = _first_worst([deleted, stated])
+    return info.git_memo[key]
+
+
 def _state_head(info, start):
     """(verdict, rule, word index) of a command at `start` whose head is not
     terraform's: clear unless a state word stands after the head."""
-    found = _head(info.words, start)
+    found = _head(info.heads, start, info.prefix_end)
     if found is None:
         return _CLEAR
     index, head = found
+    if head == "git":
+        return _git(info, start, index)
     first = info.first_state(index + 1)
     if first >= len(info.words):
         return _CLEAR
-    if head == "git":
-        return _git_state(info, index)
     if head in REMOVE_HEADS:
         return (HIT, "tfstate-remove", first)
     if head in MOVE_HEADS:
@@ -857,28 +1456,38 @@ def _finding(verdict, rule, operation, **where):
     return out
 
 
-def _judged(words, out, where):
-    verdict, rule, word = _judge_words(words)
+def _named(rule):
+    """(rule, operation) of a reading's rule (C2): a pair as it stands, else
+    the operation `RULE_OPERATION` names, `TF_STATE` when it names none."""
+    if isinstance(rule, tuple):
+        return rule
+    return rule, RULE_OPERATION.get(rule, TF_STATE)
+
+
+def _judged(words, out, where, ctx):
+    verdict, rule, word = _judge_words(words, 0, ctx)
     if verdict != CLEAR:
-        out.append(_finding(verdict, rule, TF_STATE, word=word, **where))
+        rule, operation = _named(rule)
+        out.append(_finding(verdict, rule, operation, word=word, **where))
 
 
-def _plain_pass(commands):
+def _plain_pass(commands, ctx):
     out = []
     for number, words in enumerate(commands):
-        _judged(words, out, {"pass": "plain", "command": number})
+        _judged(words, out, {"pass": "plain", "command": number}, ctx)
     return out
 
 
-def _raw_pass(text, shell):
+def _raw_pass(text, shell, ctx=NO_CONTEXT):
     """One finding per segment (A14): the head's reading and each write
     target's (B3) are combined, the first worst kept. A dangling operator
     makes the segment could-not-tell unless that reading is a hit, which
     wins (A7)."""
     out = []
-    for number, segment in enumerate(raw_segments(text, shell)):
+    for number, segment in enumerate(_raw_segments(text, shell)):
         where = {"pass": "raw", "command": number}
-        readings = [_judge_words(segment["words"])]
+        quoted = ctx._replace(quoted=tuple(segment["quoted"]))
+        readings = [_judge_words(segment["words"], 0, quoted)]
         # A lifted target is part of the segment too (B3): in
         # `cat < terraform.tfstate > $OUT` the state word is the input's.
         held = any(_state_kind(word) for word in segment["words"]) or any(
@@ -888,15 +1497,16 @@ def _raw_pass(text, shell):
         if segment["dangling"] and verdict != HIT:
             verdict, rule, word = COULD_NOT_TELL, "redirect-target-unseen", None
         if verdict != CLEAR:
-            out.append(_finding(verdict, rule, TF_STATE, word=word, **where))
+            rule, operation = _named(rule)
+            out.append(_finding(verdict, rule, operation, word=word, **where))
     return out
 
 
-def _findings(command, shell):
+def _findings(command, shell, ctx=NO_CONTEXT):
     commands = crew_gitallow.plain_commands(command, shell)
     if commands is None:
-        return _raw_pass(command, shell)
-    return _plain_pass(commands)
+        return _raw_pass(command, shell, ctx)
+    return _plain_pass(commands, ctx)
 
 
 # --- the entry points ------------------------------------------------------------------------
@@ -918,15 +1528,16 @@ def _result(findings):
 
 
 def judge(command, shell="bash", context=None):
-    """Judge one command text as `shell` (`bash` or `powershell`). `context`
-    (ownership and the like) is accepted for the later rows that need it;
-    no terraform row depends on it. Returns {verdict, report_only,
-    operations, findings}."""
-    del context  # accepted and ignored by every terraform row (A4)
+    """Judge one command text as `shell` (`bash` or `powershell`).
+    `context` is `{cwd, own_branches, own_worktrees}` (R-34c), read once
+    (`_read_context`); a missing or malformed part is unknown, so a branch
+    or worktree delete it would decide is could-not-tell. No terraform row
+    depends on it. Returns {verdict, report_only, operations, findings}."""
+    ctx = _read_context(context)
     if not isinstance(command, str) or shell not in ("bash", "powershell"):
         return _result([_finding(COULD_NOT_TELL, "unreadable-input", None,
                                  **{"pass": None, "command": None, "word": None})])
-    return _result(_findings(command, shell))
+    return _result(_findings(command, shell, ctx))
 
 
 _SHELLS = {"Bash": "bash", "PowerShell": "powershell"}
@@ -982,12 +1593,17 @@ def _main(argv):
     sub = parser.add_subparsers(dest="action", required=True)
     one = sub.add_parser("judge")
     one.add_argument("--shell", choices=("bash", "powershell"), default="bash")
+    one.add_argument("--cwd")
+    one.add_argument("--own-branch", action="append", dest="own_branches")
+    one.add_argument("--own-worktree", action="append", dest="own_worktrees")
     one.add_argument("command", nargs="+")
     sub.add_parser("payload")
     sub.add_parser("shapes")
     args = parser.parse_args(argv)
     if args.action == "judge":
-        print(json.dumps(judge(" ".join(args.command), args.shell), indent=2))
+        context = {key: getattr(args, key) for key in ("cwd", "own_branches", "own_worktrees")
+                   if getattr(args, key) is not None}
+        print(json.dumps(judge(" ".join(args.command), args.shell, context or None), indent=2))
     elif args.action == "payload":
         try:
             # parse_int: an integer too long for this Python's int() is
@@ -1002,8 +1618,8 @@ def _main(argv):
             payload = {"tool_name": "Bash"}
         print(json.dumps(judge_payload(payload), indent=2))
     else:
-        for shape, rule, verdict in SHAPES:
-            print(f"{shape}\t{rule}\t{verdict}\t{TF_STATE}")
+        for shape, rule, verdict, operation in SHAPES:
+            print(f"{shape}\t{rule}\t{verdict}\t{operation or '-'}")
     return 0
 
 
