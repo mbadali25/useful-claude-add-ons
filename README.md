@@ -239,7 +239,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.198**: `crew_oneway.py` reports deletes of branches and worktrees crew does not own (R-34c). `crew` 1.3.198 extends the report-only `crew_oneway.py` tripwire with `delete-others-branch` and `delete-others-worktree`: deleting a branch (`git branch -d/-D`, `git push --delete` or `:ref`, `git update-ref -d refs/heads/...`) or removing a worktree that is not in the caller's own list is reported. It still refuses nothing.
+- **crew 1.3.199**: `crew_oneway.py` reports deletes of branches and worktrees crew does not own (R-34c). `crew` 1.3.199 extends the report-only `crew_oneway.py` tripwire with `delete-others-branch` and `delete-others-worktree`: deleting a branch (`git branch -d/-D`, `git push --delete` or `:ref`, `git update-ref -d refs/heads/...`) or removing a worktree that is not in the caller's own list is reported. It still refuses nothing.
 - **crew 1.3.197**: The Configuration Guide and CI-checked worked examples (R-C3). `crew` 1.3.197 adds `plugin/crew/docs/configuration/guide.md`, a hand-written guide to crew's two configuration layers, the owner's set-up, the procedure an AI model follows to change a key, and worked example files, every one of which CI checks.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
