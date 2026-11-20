@@ -624,6 +624,9 @@ GIT_LONG_COMMANDS = (
     # fix round 3: a stack of relative `-C x` is joined once, not re-normalised
     # at each `-C` (that was quadratic in the path's length).
     (lambda n: "git " + "-C x " * n + "branch -D feature-x", "hit"),
+    # fix round 4: so is a stack of values that may reset the path and do not
+    # (a colon in a relative component on POSIX, the same drive on Windows).
+    (lambda n: "git " + "-C a:b " * n + "branch -D feature-x", "hit"),
 )
 
 
@@ -756,6 +759,10 @@ GIT_BLOCK = (
     ("bash", "git branch -D --no-delete feature-x", BR, DEL, "OWN"),
     ("bash", "git branch --no-delete -d feature-x", BR, DEL, "OWN"),
     ("bash", "git branch -d --sort --no-delete feature-x", BR, DEL, "OWN"),
+    # a prefix or git head the raw pass may have misread is read with its
+    # quotes joined, as bash runs it (fix round 4).
+    ("bash", 'su"do" git branch -D feature-x > out.txt', BR, DEL, "OWN"),
+    ("bash", 'g"it" branch -D feature-x > out.txt', BR, DEL, "OWN"),
     ("bash", "git worktree remove ../r35", WT, WDEL, "OWN"),
     ("bash", "git worktree remove --force /w/r35", WT, WDEL, "OWN"),
     ("bash", "git -C ../r35 worktree remove .", WT, WDEL, "OWN"),
@@ -798,6 +805,19 @@ GIT_CNT = (
     ("bash", "GIT_NAMESPACE=n git branch -D worktree-R-34", BR, "git-repo-unseen", "OWN"),
     # a global the raw pass may have misread (fix round 2).
     ("bash", 'git --git-"dir"=/o/.git branch -D worktree-R-34 > out.txt', BR, "git-repo-unseen",
+     "OWN"),
+    # an assignment whose name the raw pass may have misread: bash hands env
+    # `GIT_DIR=/o/.git` (fix round 4).
+    ("bash", 'env GIT_"DIR"=/o/.git git branch -D worktree-R-34 > out.txt', BR,
+     "git-repo-unseen", "OWN"),
+    ("bash", "env GIT_\\DIR=/o/.git git branch -D worktree-R-34 > out.txt", BR,
+     "git-repo-unseen", "OWN"),
+    ("bash", "env 'GIT_WORK_'TREE=/o git worktree remove . > out.txt", WT, "git-repo-unseen",
+     "OWN"),
+    # C5 comes first when a misread word stands after the subcommand too.
+    ("bash", "git --git-dir=/o/.git branch -D '(worktree-R-34)' > out.txt", BR,
+     "git-repo-unseen", "OWN"),
+    ("bash", "git --git-dir=/o/.git worktree re\"move\" . > out.txt", WT, "git-repo-unseen",
      "OWN"),
     # a word after the subcommand the raw pass may have misread (fix round 2).
     ("bash", 'git push -o "" origin :feature-x > out.txt', BR, "branch-target-unseen", "OWN"),
@@ -1017,7 +1037,7 @@ def test_the_dash_c_stack_resolves_as_one_step_at_a_time(pathmod, monkeypatch):
     and normalising after each `-C` lands, resets and drives included."""
     monkeypatch.setattr(crew_oneway, "_PATH", pathmod)
     pool = ["x", "..", ".", "", "a/b", "../..", "/abs", "\\root", "D:", "D:rel", "C:\\c",
-            "y\\z", "x/"]
+            "y\\z", "x/", "a:b", "ab:c", "c:x", "d:\\e", "C:", "\\\\srv\\share\\p", "x:y/"]
     rng = random.Random(34)
     cwd = _p(pathmod, "w", "r34")
     for _ in range(400):
@@ -1860,6 +1880,38 @@ def case_long_stacked_dash_c_is_linear(mod):
     assert_hit(mod, "git " + "-C x " * GROWTH_BIG + "branch -D feature-x", DEL, op=BR,
                ctx=own())
     assert_grows_linearly(lambda n: mod._effective(own()["cwd"], ("x",) * n), 4000, 16000)
+
+
+def case_long_stacked_colon_dash_c_is_linear(mod):
+    """Fix round 4. A value holding a colon may reset the path and, on POSIX
+    (or on its own drive on Windows), does not: timed alone under both path
+    modules, at sizes where re-copying the growing path dominates."""
+    value = "a:" + "b" * 50
+    kept = mod._PATH
+    try:
+        for pathmod in (posixpath, ntpath):
+            mod._PATH = pathmod
+            cwd = own(pathmod)["cwd"]
+            assert mod._effective(cwd, (value,) * 3).count("b" * 50) == 3
+            assert_grows_linearly(lambda n, cwd=cwd: mod._effective(cwd, (value,) * n),
+                                  4000, 16000)
+    finally:
+        mod._PATH = kept
+
+
+def case_cnt_quoted_env_assignment(mod):
+    assert_cnt(mod, 'env GIT_"DIR"=/o/.git git branch -D worktree-R-34 > out.txt',
+               "git-repo-unseen", op=BR, ctx=own())
+
+
+def case_block_quoted_prefix(mod):
+    assert_hit(mod, 'su"do" git branch -D feature-x > out.txt', DEL, op=BR, ctx=own())
+
+
+def case_cnt_repo_unseen_before_misread_target(mod):
+    result = assert_cnt(mod, "git --git-dir=/o/.git branch -D '(worktree-R-34)' > out.txt",
+                        "git-repo-unseen", op=BR, ctx=own())
+    assert rules(result) == ["git-repo-unseen"]
 
 
 def case_block_fd_copy_glued_to_a_word(mod):
@@ -2779,9 +2831,23 @@ MUTATIONS = (
      "        if at not in values and _no_delete(word):\n", "        if _no_delete(word):\n",
      ("case_block_no_delete_as_a_value",)),
     ("C14c each -C re-normalises the growing path (quadratic)",
-     "    return _PATH.normpath(_PATH.join(base, _PATH.sep.join(tail)) if tail else base)\n",
+     "    return _PATH.normpath(_PATH.join(drive + base, _PATH.sep.join(tail)) if tail\n"
+     "                          else drive + base)\n",
+     "    base = drive + base\n"
      "    for value in tail:\n        base = _PATH.normpath(_PATH.join(base, value))\n"
      "    return base\n", ("case_long_stacked_dash_c_is_linear",)),
+    # R-34c fix round 4.
+    ("C14d a -C that may reset the path re-copies it (quadratic)",
+     "            tail.append(rest[len(anchor) + 1:])\n",
+     "            base, tail = _PATH.join(base, _PATH.sep.join(tail + [rest[len(anchor) + 1:]])), []\n",
+     ("case_long_stacked_colon_dash_c_is_linear",)),
+    ("C-raw-head a prefix or assignment the raw pass may have misread read as written",
+     "                    heads[i] = _head_reading(words[i])\n", "                    pass\n",
+     ("case_cnt_quoted_env_assignment", "case_block_quoted_prefix")),
+    ("C5-first a misread word after the subcommand named before the unseen repository",
+     "        if repo_unseen:\n"
+     '            return (COULD_NOT_TELL, ("git-repo-unseen", DELETE_SUBS[sub]), where)\n'
+     "        rule = ", "        rule = ", ("case_cnt_repo_unseen_before_misread_target",)),
 )
 
 

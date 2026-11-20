@@ -774,6 +774,20 @@ def _state_kind(word):
     return "option" if word.startswith("-") else "word"
 
 
+def _head_reading(word):
+    """`word`, which the raw pass may have misread (`_faithful`), as the
+    head is looked for: its first reading (`_readings`: as written, quotes
+    joined, escapes taken out) that is a head prefix, a `NAME=VALUE` word or
+    git, else as written. bash hands `env` the word `GIT_"DIR"=/o/.git` as
+    `GIT_DIR=/o/.git` and runs `su"do"` as `sudo`, so read as written the
+    git command behind it would never be judged (fix round 4)."""
+    for reading in _readings(word):
+        if (reading in HEAD_PREFIXES or _ASSIGN_RE.match(reading) is not None
+                or _head_name(reading) == "git"):
+            return reading
+    return word
+
+
 class _StateWords:  # pylint: disable=too-few-public-methods
     """One command's words read once for state words, so every start judged
     in it costs constant time past the head (`_Scan`'s linear rule).
@@ -797,14 +811,24 @@ class _StateWords:  # pylint: disable=too-few-public-methods
         count = len(words)
         self.words = words
         self.ctx = ctx if ctx is not None else NO_CONTEXT
-        self.prefix_end = _prefix_ends(words)
+        # `heads` is `words` as the head is found in them: a word the raw
+        # pass may have misread is read with its quotes joined where that
+        # makes it a prefix, an assignment or git (`_head_reading`).
+        heads = words
+        if self.ctx.quoted:
+            heads = list(words)
+            for i in self.ctx.quoted:
+                if i < count:
+                    heads[i] = _head_reading(words[i])
+        self.heads = heads
+        self.prefix_end = _prefix_ends(heads)
         self.git_memo = {}  # (git head, assigned) -> reading (`_git`)
         # the first index at or after `i` assigning GIT_DIR, GIT_WORK_TREE
         # or GIT_NAMESPACE (C5), so a start reads its assignments at once.
         self.repo_assign = [count] * (count + 1)
         for i in range(count - 1, -1, -1):
-            sets_repo = (_ASSIGN_RE.match(words[i]) is not None
-                         and words[i].split("=", 1)[0] in _REPO_VARS)
+            sets_repo = (_ASSIGN_RE.match(heads[i]) is not None
+                         and heads[i].split("=", 1)[0] in _REPO_VARS)
             self.repo_assign[i] = i if sets_repo else self.repo_assign[i + 1]
         self.kind =[_state_kind(word) for word in words]
         self.whole = [_state_path(word) for word in words]
@@ -1051,20 +1075,36 @@ def _effective(cwd, dirs):
     `cwd` is known."""
     if cwd is None:
         return None
-    # Linear in the stack (fix round 3): normalising after each `-C`, or
-    # one `join` of them all, re-copies the growing path, quadratic in a
-    # stack of relative `-C x`. A value that may reset the path or its
-    # drive is joined as git would; the relative ones after it are joined
-    # with the separator once. Taking a relative value as a reset changes
-    # nothing, so the test is loose on purpose.
-    base, tail = cwd, []
+    # Linear in the stack (fix rounds 3 and 4): normalising after each `-C`,
+    # or one `join` of them all, re-copies the growing path, quadratic in a
+    # stack of `-C x`. So the path is held as its drive, the path of the
+    # last value that reset it, and the relative values since, joined with
+    # the separator once at the end. A value that may reset the path or its
+    # drive (a leading slash, a colon) is joined onto a short stand-in for
+    # the path, `anchor`, which no value can hold: the join keeps it when
+    # the value is relative after all (`a:b` on POSIX, `C:x` on drive C),
+    # and the value's own part is then one more relative value.
+    drive, base = _PATH.splitdrive(cwd)
+    tail = []
     for value in dirs:
-        if value.startswith(("/", "\\")) or ":" in value:
-            base, tail = _PATH.join(_PATH.join(base, _PATH.sep.join(tail)) if tail else base,
-                                    value), []
-        elif value:  # an empty `-C ""` stays where it is
+        if not value:  # an empty `-C ""` stays where it is
+            continue
+        if not (value.startswith(("/", "\\")) or ":" in value):
             tail.append(value)
-    return _PATH.normpath(_PATH.join(base, _PATH.sep.join(tail)) if tail else base)
+            continue
+        own = _PATH.splitdrive(value)[0]
+        if own and (len(own) != len(drive) or own.lower() != drive.lower()):
+            drive, base, tail = own, value[len(own):], []  # another drive
+            continue
+        anchor = _PATH.sep + "m" * (len(value) + 1)
+        rest = _PATH.splitdrive(_PATH.join(own + anchor, value))[1]
+        drive = own or drive
+        if not rest.startswith(anchor):
+            base, tail = rest, []
+        elif rest[len(anchor) + 1:]:
+            tail.append(rest[len(anchor) + 1:])
+    return _PATH.normpath(_PATH.join(drive + base, _PATH.sep.join(tail)) if tail
+                          else drive + base)
 
 
 def _positionals(rest):
@@ -1335,8 +1375,11 @@ def _git_delete(info, start, head):
         return (COULD_NOT_TELL, ("git-window-exceeded", DELETE_SUBS[sub]), sub_at)
     # A word after the subcommand that the raw pass may have misread (`_lift`:
     # `--del"ete"`, `re"move"`, a dropped `""`, half of a quoted space)
-    # cannot clear: its meaning cannot be read from its spelling.
+    # cannot clear: its meaning cannot be read from its spelling. The
+    # repository crew cannot see is named first (C5).
     if reading[0] != HIT and _quoted_in(ctx.quoted, where, where + GIT_WINDOW + 1):
+        if repo_unseen:
+            return (COULD_NOT_TELL, ("git-repo-unseen", DELETE_SUBS[sub]), where)
         rule = "worktree-target-unseen" if sub == "worktree" else "branch-target-unseen"
         return (COULD_NOT_TELL, rule, where)
     return reading
@@ -1361,7 +1404,7 @@ def _git(info, start, head):
 def _state_head(info, start):
     """(verdict, rule, word index) of a command at `start` whose head is not
     terraform's: clear unless a state word stands after the head."""
-    found = _head(info.words, start, info.prefix_end)
+    found = _head(info.heads, start, info.prefix_end)
     if found is None:
         return _CLEAR
     index, head = found
