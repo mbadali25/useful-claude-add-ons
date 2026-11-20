@@ -23,7 +23,7 @@ same facts for every key, for tools. The reasons behind the rules are in
 
 ## Repo blank: `config.blank.json`
 
-Copy to `.crew/config.json`. 59 keys in the blank, 36 left out.
+Copy to `.crew/config.json`. 59 keys in the blank, 37 left out.
 
 ### `core`
 
@@ -166,6 +166,7 @@ Copy to `.crew/config.json`. 59 keys in the blank, 36 left out.
 | `guards.profile` | a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine | `crew_config.py --set guards.profile=JSON --apply --repo` |
 | `guards.overrides` | a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine | `crew_config.py --set guards.overrides=JSON --apply --repo` |
 | `environments.prodUnattended` | a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine | `crew_config.py --set environments.prodUnattended=JSON --apply --repo` |
+| `tiers` | a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine | `crew_config.py --set tiers=JSON --apply --repo` |
 | `change.requireForProduction` | a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine | `crew_config.py --set change.requireForProduction=JSON --apply --repo` |
 | `git.forbiddenTrailers` | a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine | `crew_config.py --set git.forbiddenTrailers=JSON --apply --repo` |
 | `autopilot.mode` | a personal key: at its default it holds your machine value down (stricter wins) | `crew_config.py --set autopilot.mode=JSON --apply --repo` |
@@ -177,7 +178,7 @@ Copy to `.crew/config.json`. 59 keys in the blank, 36 left out.
 
 ## Machine blank: `global.blank.json`
 
-Copy to `~/.claude/crew/config.json`. 58 keys in the blank, 5 left out.
+Copy to `~/.claude/crew/config.json`. 59 keys in the blank, 5 left out.
 
 ### `core`
 
@@ -238,6 +239,7 @@ Copy to `~/.claude/crew/config.json`. 58 keys in the blank, 5 left out.
 | Key | Blank value | Layer | Allowed values | Since | What it does |
 |---|---|---|---|---|---|
 | `environments.prodUnattended` | `false` | both, ratchet | `false` \| `true` (ratchet: narrower layer wins; listed narrowest first) | 1.0.37 | Whether production terraform may run unattended; `true` only when both layers say so. |
+| `tiers` | `{}` | both, ratchet | object of `<kind>:<name>` to {tier} (checked in `hooks/scripts/crew_tiers.py`) | 1.3.189 | Machine-owned tier per target (`<kind>:<name>` -> `{"tier": "dev"\|"qa"\|"prod"}`); dev < qa < prod < unknown, an unlisted target is `unknown`, and a repo entry may only narrow. Written whole (`--set tiers=<map>`). Read through `crew_tiers` only, never the merged value; report-only until R-01. |
 | `unattendedCloud.aws.readOnly.profile` | `null` | machine-only | profile name, or null (coerced in `hooks/scripts/crew_unattended.py`) | 1.1.10 | The AWS profile an unattended run exports credentials from (`aws configure export-credentials`); it must yield temporary credentials. Machine file only. |
 | `unattendedCloud.aws.readOnly.identity` | `null` | machine-only | ARN prefix ending in `/`, or null (coerced in `hooks/scripts/crew_unattended.py`) | 1.1.10 | The assumed-role ARN prefix STS must report for that profile, ending in `/`; null refuses every launch. Machine file only. |
 | `unattendedCloud.aws.readOnly.region` | `null` | machine-only | region, or null (coerced in `hooks/scripts/crew_unattended.py`) | 1.1.10 | The AWS region the unattended run gets; null is `us-east-1`. Machine file only. |

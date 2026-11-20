@@ -158,6 +158,7 @@ MACHINE_FIXTURES = {
     "unattendedCloud.aws.nonProd": {"dev": {"profile": "zz-dev",
                                             "identity": "arn:aws:sts::123456789012:"
                                                         "assumed-role/zz-dev/"}},
+    "tiers": {"host:zz-db": {"tier": "prod"}},
 }
 
 REPO_FIXTURES = {
@@ -255,6 +256,7 @@ REPO_FIXTURES = {
     "autopilot.reviewPolicy": "clean-only",
     "tickets.baseBranch": "develop",
     "route.enabled": True,
+    "tiers": {"host:zz-db": {"tier": "dev"}},
 }
 
 FIXTURES = {"machine": MACHINE_FIXTURES, "repo": REPO_FIXTURES}

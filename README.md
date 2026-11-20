@@ -239,8 +239,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.189**: `crew_tiers.py`, a machine-owned tier map, report-only. `crew` 1.3.189 adds the `tiers` config key and `crew_tiers.py`, one answer to which tier (dev, qa, prod or unknown) a target is in; nothing acts on the answer yet.
 - **crew 1.3.188**: Copy-safe config blanks, a per-key list and an annotated template (R-C2). `crew` 1.3.188 ships `plugin/crew/docs/configuration/`: a repo and a machine config blank you can copy into an empty layer without changing any effective setting, a per-key fact list and an annotated template, all generated and checked for staleness.
-- **crew 1.3.187**: `crew_paths.py`, machine-owned run folders and the one safe delete. `crew` 1.3.187 adds one resolver for every crew run folder, read from the machine config layer only, and the single recursive delete crew will use; nothing calls it yet.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

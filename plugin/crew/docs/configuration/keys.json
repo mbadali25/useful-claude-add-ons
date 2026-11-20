@@ -1654,6 +1654,26 @@
       }
     },
     {
+      "key": "tiers",
+      "family": "cloud",
+      "layer": "both, ratchet",
+      "kind": "open-table",
+      "default": {
+        "repo": {},
+        "machine": {}
+      },
+      "values": null,
+      "valuesByOs": null,
+      "type": "object of `<kind>:<name>` to {tier}",
+      "source": "hooks/scripts/crew_tiers.py",
+      "summary": "Machine-owned tier per target (`<kind>:<name>` -> `{\"tier\": \"dev\"|\"qa\"|\"prod\"}`); dev < qa < prod < unknown, an unlisted target is `unknown`, and a repo entry may only narrow. Written whole (`--set tiers=<map>`). Read through `crew_tiers` only, never the merged value; report-only until R-01.",
+      "since": "1.3.189",
+      "blank": {
+        "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",
+        "machine": "included"
+      }
+    },
+    {
       "key": "change.requireForProduction",
       "family": "core",
       "layer": "both, ratchet",

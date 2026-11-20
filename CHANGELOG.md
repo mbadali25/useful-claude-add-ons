@@ -149,6 +149,12 @@ read entries under any `## [` heading.
 - crew 1.3.159: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); the accepted-value test changed plugin/crew after the number was set, so the branch moved to 1.3.160; the change is recorded under crew 1.3.160
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Added — crew 1.3.189: `crew_tiers.py`, a machine-owned tier map, report-only (R-05)
+
+- **Summary.** `crew` 1.3.189 adds the `tiers` config key and `crew_tiers.py`, one answer to which tier (dev, qa, prod or unknown) a target is in; nothing acts on the answer yet.
+- **What.** The machine config layer owns the map, a repo entry may only narrow it, and a target the machine does not list is `unknown`. `crew_tiers.py` has its own never-raising reader and an `explain`/`list` CLI; `resolve_config` never loads the map, `tiers` is written whole (`--set tiers=<map>`) and a path under it is refused. No guard, hook, launcher, autopilot or promote path imports `crew_tiers`.
+- **Tests.** `test_crew_tiers.py` (resolver, reader, narrowing, unknown-never-collapses and the no-importer checks T-I1/T-I2, with sabotage rows) and additions to the config, keys, upgrade and platform-sync suites.
+
 ### Added — crew 1.3.188: copy-safe config blanks, a per-key list and an annotated template (R-C2)
 
 - **Summary.** `crew` 1.3.188 ships `plugin/crew/docs/configuration/`: a repo and a machine config blank you can copy into an empty layer without changing any effective setting, a per-key fact list and an annotated template, all generated and checked for staleness.
