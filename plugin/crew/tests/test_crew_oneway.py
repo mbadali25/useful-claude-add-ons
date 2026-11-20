@@ -131,6 +131,19 @@ MUST_BLOCK = (
     ("bash", "terraform state >&-list rm x.y", "tf-state-write"),
     ("bash", 'terraform state >&2"list" rm x.y', "tf-state-write"),
     ("bash", "terraform state 2>&1list rm x.y", "tf-state-write"),
+    # round 5: a quoted empty word is the here-string's operand, so `state`
+    # is not; a quoted operand with a space in it is one operand.
+    ("bash", 'terraform <<< "" state rm x', "tf-state-write"),
+    ("bash", "terraform <<< '' state rm x", "tf-state-write"),
+    ("bash", 'terraform > "" state rm x', "tf-state-write"),
+    ("bash", 'terraform <<< "a b" state rm x', "tf-state-write"),
+    ("bash", "terraform <<< 'a b c' state rm x", "tf-state-write"),
+    # round 5: a comment is not an argument, so its -help exempts nothing.
+    ("bash", "terraform state rm x # -help", "tf-state-write"),
+    ("bash", "terraform state rm x #--help", "tf-state-write"),
+    ("bash", "terraform state rm x > out.txt # -h", "tf-state-write"),
+    ("bash", "cd infra && terraform import a b # -help", "tf-import"),
+    ("powershell", "terraform state rm x # -help", "tf-state-write"),
 )
 
 # (shell, command)
@@ -171,6 +184,14 @@ MUST_ALLOW = (
     ("bash", "terragrunt exec -- terraform state list"),
     ("bash", "terragrunt exec ls"),
     ("bash", "terraform -unknown exec plan"),
+    # round 5: the comment is dropped, the command before it still reads.
+    ("bash", "terraform state list # rm x"),
+    ("bash", "terraform state rm -help # why"),
+    ("bash", "terraform plan > out.txt # state rm x"),
+    # a quoted `#` is an argument, so the accepted help exemption holds.
+    ("bash", 'terraform state rm x "#" -help'),
+    ("bash", 'terraform state list <<< ""'),
+    ("bash", 'terraform state list <<< "a b"'),
 )
 
 # Known false negatives (Risks): terragrunt's `stack run` and `graph` run
@@ -204,6 +225,13 @@ COULD_NOT_TELL = (
     ("terraform --unknown $SUB x", "tf-sub-unseen"),
     ("terragrunt --unknown-flag $SUB x", "tf-sub-unseen"),
     ("terragrunt run --unknown-flag $SUB x", "tf-sub-unseen"),
+    # round 5: a quoted target the segment never closes is unseen (the `;`
+    # inside the quotes cut the segment: quote-blind).
+    ('terraform <<< "a; b" state rm x', "redirect-target-unseen"),
+    ('terraform state list > "a b', "redirect-target-unseen"),
+    # round 5: everything after the head is a comment.
+    ("terraform # state rm x", "tf-sub-unseen"),
+    ("terraform state list > # out.txt", "redirect-target-unseen"),
 )
 
 # Known over-reports pinned as hits (Risks).
@@ -456,6 +484,26 @@ READER_ROWS = (
     ("a >&2>f", [seg(["a"], [(">", "f")])]),
     ('x "a >&2" b', [seg(["x", "a", "b"])]),
     ("a >&2`b`", [seg(["a", "`b`"])]),
+    # round 5: a quoted empty word is a target, never a word.
+    ('cat <<< "" x', [seg(["cat", "x"], [("<<<", "")])]),
+    ("cat <<< '' x", [seg(["cat", "x"], [("<<<", "")])]),
+    ('a > "" b', [seg(["a", "b"], [(">", "")])]),
+    ('a "" b', [seg(["a", "b"])]),
+    ("(a >)", [seg(["a"], dangling=[">"])]),
+    # a target that opens a quote runs to the token that closes it.
+    ('cat <<< "a b" x', [seg(["cat", "x"], [("<<<", "a b")])]),
+    ("cat <<< 'a  b c' x", [seg(["cat", "x"], [("<<<", "a b c")])]),
+    ('cat <<< "a" x', [seg(["cat", "x"], [("<<<", "a")])]),
+    ('cat <<< "a b', [seg(["cat"], dangling=["<<<"])]),
+    ('cat <<< "a # b" x', [seg(["cat", "x"], [("<<<", "a # b")])]),
+    # the words stop at a comment.
+    ("a b # c > d", [seg(["a", "b"])]),
+    ("a b #c", [seg(["a", "b"])]),
+    ("a b#c", [seg(["a", "b#c"])]),
+    ('a "#" b', [seg(["a", "#", "b"])]),
+    ("a > # f", [seg(["a"], dangling=[">"])]),
+    ("# a b", []),
+    ("a # b; c", [seg(["a"]), seg(["c"])]),
 )
 
 PS_READER_ROWS = (
@@ -465,6 +513,8 @@ PS_READER_ROWS = (
     ("a *>> f", [seg(["a"], [("*>>", "f")])]),
     ("a 3>&1", [seg(["a"])]),
     ("a x*>&1", [seg(["a", "x*"])]),
+    ("a b # c *> d", [seg(["a", "b"])]),
+    ('a *> "" b', [seg(["a", "b"], [("*>", "")])]),
 )
 
 
@@ -623,6 +673,15 @@ def test_direct_imports_are_the_standard_library_and_two_modules():
         assert name in sys.stdlib_module_names or name in allowed, name
 
 
+def test_the_module_never_calls_tf_skip_options():
+    """A12: the helper's one-step reading is restated in `_takes_value` and
+    pinned to it at every index above; the module itself never calls it."""
+    names = {node.attr if isinstance(node, ast.Attribute) else getattr(node, "id", None)
+             for node in ast.walk(ast.parse(source()))}
+    assert "tf_skip_options" not in names
+    assert {"_TF_GLOBAL_VALUE_OPTS", "_TF_GLOBAL_FLAG_OPTS", "_TF_OPS", "_HOLE"} <= names
+
+
 def test_the_module_declares_itself_report_only():
     assert crew_oneway.REPORT_ONLY is True
     assert "REPORT-ONLY" in source()
@@ -654,14 +713,29 @@ def test_importing_loads_no_policy_hook_never_or_coord_and_writes_nothing(tmp_pa
     assert (_tree(cwd), _tree(home)) == before == ([], [])
 
 
+# What a child Python needs to start; nothing else of this process's
+# environment reaches the probes (no tokens, no PYTHONPATH, no crew settings).
+_ENV_KEPT = ("PATH", "PATHEXT", "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC")
+
+
 def _isolated_env(home):
-    env = dict(os.environ)
+    env = {key: value for key, value in os.environ.items() if key.upper() in _ENV_KEPT}
     for key in ("HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME",
-                "XDG_CACHE_HOME", "XDG_STATE_HOME"):
+                "XDG_CACHE_HOME", "XDG_STATE_HOME", "TEMP", "TMP", "TMPDIR"):
         env[key] = str(home)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
     return env
+
+
+def test_the_probes_inherit_no_setting_from_this_process(monkeypatch, tmp_path):
+    monkeypatch.setenv("CREW_R34A_CANARY", "1")
+    monkeypatch.setenv("PYTHONPATH", "nowhere")
+    env = _isolated_env(tmp_path)
+    assert "CREW_R34A_CANARY" not in env and "PYTHONPATH" not in env
+    assert {key.upper() for key in env} <= set(_ENV_KEPT) | {
+        "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_CACHE_HOME",
+        "XDG_STATE_HOME", "TEMP", "TMP", "TMPDIR", "PYTHONDONTWRITEBYTECODE", "PYTHONIOENCODING"}
 
 
 def test_the_cli(tmp_path):
@@ -685,6 +759,12 @@ def test_the_cli(tmp_path):
     for _, rule, _ in crew_oneway.SHAPES:
         assert rule in done.stdout
     assert cli("payload", stdin="not json").returncode == 2
+    # an integer longer than int() converts is still JSON: the field is not
+    # read, so the verdict is the command's.
+    done = cli("payload", stdin=payload[:-1] + ', "n": ' + "9" * 5000 + "}")
+    assert done.returncode == 0 and json.loads(done.stdout)["verdict"] == "hit", done.stderr[-300:]
+    done = cli("payload", stdin='{"tool_name": "Bash", "tool_input": {"command": 12}}')
+    assert done.returncode == 0 and json.loads(done.stdout)["verdict"] == "could-not-tell"
     # JSON nested deeper than this Python reads (RecursionError on 3.11) is
     # still a judgement: exit 0 and a verdict that is not `clear` or `hit`.
     for deep in ("[" * 1500 + "]" * 1500, "[" * 200000 + "]" * 200000):
@@ -857,6 +937,33 @@ def case_cnt_swallowed_unseen_sub(mod):
     assert_cnt(mod, "terraform --unknown $SUB x", "tf-sub-unseen")
 
 
+def case_block_empty_here_string(mod):
+    assert_hit(mod, 'terraform <<< "" state rm x', "tf-state-write")
+    assert mod.raw_segments('cat <<< "" x') == [seg(["cat", "x"], [("<<<", "")])]
+
+
+def case_block_quoted_here_string_with_a_space(mod):
+    assert_hit(mod, 'terraform <<< "a b" state rm x', "tf-state-write")
+
+
+def case_cnt_unclosed_quoted_target(mod):
+    assert_cnt(mod, 'terraform <<< "a; b" state rm x', "redirect-target-unseen")
+
+
+def case_block_help_in_a_comment(mod):
+    assert_hit(mod, "terraform state rm x # -help", "tf-state-write")
+    assert_hit(mod, "terraform state rm x # -help", "tf-state-write", shell="powershell")
+
+
+def case_cnt_comment_as_target(mod):
+    assert_cnt(mod, "terraform state list > # out.txt", "redirect-target-unseen")
+
+
+def case_allow_quoted_hash_then_help(mod):
+    assert_clear(mod, 'terraform state rm x "#" -help')
+    assert mod.raw_segments('a "#" b') == [seg(["a", "#", "b"])]
+
+
 MUTATIONS = (
     ("1 rm added to the state read set",
      'STATE_READ = frozenset(("list", "show", "pull", "identities"))',
@@ -949,6 +1056,21 @@ MUTATIONS = (
     ("R16 an unreadable word after an unknown option is not an alternate",
      "    return args[j + 1] in AMBIGUOUS_SUBS or _unseen(args[j + 1])\n",
      "    return args[j + 1] in AMBIGUOUS_SUBS\n", ("case_cnt_swallowed_unseen_sub",)),
+    ("R17 a quoted empty word dropped before the redirections are lifted",
+     "              if token.strip(_STRIP) or any(quote in token for quote in _QUOTES)]\n",
+     "              if token.strip(_STRIP)]\n", ("case_block_empty_here_string",)),
+    ("R18 a quoted target ends at its first token",
+     "    if quote in _QUOTES and tokens[index].count(quote) % 2:\n", "    if False:\n",
+     ("case_block_quoted_here_string_with_a_space", "case_cnt_unclosed_quoted_target")),
+    ("R19 a comment's words are read as arguments",
+     "            if _comment(token):\n                break\n", "",
+     ("case_block_help_in_a_comment",)),
+    ("R20 a comment taken as a redirection's target",
+     "tokens[index].startswith(_MARK) or _comment(tokens[index]):",
+     "tokens[index].startswith(_MARK):", ("case_cnt_comment_as_target",)),
+    ("R21 a quoted `#` starts a comment",
+     '    return token.lstrip("()").startswith("#")\n',
+     '    return token.strip(_STRIP).startswith("#")\n', ("case_allow_quoted_hash_then_help",)),
 )
 
 

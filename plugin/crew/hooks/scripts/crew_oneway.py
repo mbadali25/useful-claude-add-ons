@@ -40,10 +40,14 @@ Reading a command:
    is read: an fd copy is dropped, any other operator takes the next word as
    its target. An fd copy ends where its word ends: in `>&2list` the shell's
    target is the file `2list`, so that is read as `>&` with the target
-   `2list`, never as `>&2` and a word `list`. An operator with no target makes the segment
-   `could-not-tell` (`redirect-target-unseen`) unless its words are a hit,
-   which wins: the shell writes somewhere the reader cannot see. A segment
-   gives at most one finding. Leading digits are an fd number only at the
+   `2list`, never as `>&2` and a word `list`. A quoted empty word is a
+   target (`<<< ""`), and a target that opens a quote runs to the token that
+   closes it (`<<< "a b"`). The words stop at a comment, a `#` that starts
+   an unquoted word: `terraform state rm x # -help` is a hit. An operator
+   with no target, or with a quoted one the segment never closes, makes the
+   segment `could-not-tell` (`redirect-target-unseen`) unless its words are
+   a hit, which wins: the shell writes somewhere the reader cannot see. A
+   segment gives at most one finding. Leading digits are an fd number only at the
    start of a word (`list2>&1` keeps the word `list2`).
 
 Each segment then has its leading `NAME=VALUE` words and `HEAD_PREFIXES`
@@ -145,6 +149,7 @@ _REDIRECT_RE = {"bash": _redirect_re(_FD), "powershell": _redirect_re(_PS_FD)}
 _FD_COPY_RE = re.compile(r"(?:[0-9]*|\*)[<>]&(?:[0-9]+|-)")
 _SEPARATORS_RE = re.compile(r"&&|\|\||[;|&\n\r]")
 _STRIP = "\"'(){}"
+_QUOTES = "\"'"
 _MARK = "\x01"
 _HIDE = str.maketrans({"&": "\x02", "|": "\x03"})
 _SHOW = str.maketrans({"\x02": "&", "\x03": "|"})
@@ -160,27 +165,61 @@ def _protect(text, shell="bash"):
     return _REDIRECT_RE[shell].sub(lambda m: f" {_MARK}{m.group(0).translate(_HIDE)} ", text)
 
 
+def _comment(token):
+    """Whether the unquoted `token` starts a comment: a `#` that starts a
+    word, in bash and in PowerShell."""
+    return token.lstrip("()").startswith("#")
+
+
+def _target(tokens, index):
+    """(target, next index) of the operator that stands before `index`;
+    the target is None when the reader cannot see one.
+
+    A quoted empty word is a target (`<<< ""`), so the word after it is not.
+    A target that opens a quote takes every token up to the one that closes
+    it (`<<< "a b"`); when nothing in the segment closes it, the rest of the
+    segment is the unseen target."""
+    if index >= len(tokens) or tokens[index].startswith(_MARK) or _comment(tokens[index]):
+        return None, index
+    quote = tokens[index][0]
+    end = index
+    if quote in _QUOTES and tokens[index].count(quote) % 2:
+        end += 1
+        while end < len(tokens) and not tokens[end].count(quote) % 2:
+            end += 1
+        if end == len(tokens):
+            return None, end
+    return " ".join(tokens[index:end + 1]).strip(_STRIP), end + 1
+
+
 def _lift(piece):
-    """One raw segment: {words, targets, dangling}, or None when empty."""
-    words = [word.strip(_STRIP) for word in piece.split()]
-    words = [word for word in words if word]
+    """One raw segment: {words, targets, dangling}, or None when empty.
+
+    A token that is only brackets is dropped. A token that is only quotes is
+    an empty word: dropped as a word, kept as an operator's target. The
+    words stop at a comment (`# -help` is not an argument)."""
+    tokens = [token for token in piece.split()
+              if token.strip(_STRIP) or any(quote in token for quote in _QUOTES)]
     out, targets, dangling = [], [], []
     index = 0
-    while index < len(words):
-        word = words[index]
-        if not word.startswith(_MARK):
-            out.append(word)
+    while index < len(tokens):
+        token = tokens[index]
+        if not token.startswith(_MARK):
+            if _comment(token):
+                break
+            if token.strip(_STRIP):
+                out.append(token.strip(_STRIP))
             index += 1
             continue
-        operator = word[1:].translate(_SHOW)
+        operator = token[1:].translate(_SHOW)
         index += 1
         if _FD_COPY_RE.fullmatch(operator):
             continue
-        if index < len(words) and not words[index].startswith(_MARK):
-            targets.append((operator, words[index]))
-            index += 1
-        else:
+        target, index = _target(tokens, index)
+        if target is None:
             dangling.append(operator)
+        else:
+            targets.append((operator, target))
     if not (out or targets or dangling):
         return None
     return {"words": out, "targets": targets, "dangling": dangling}
@@ -478,7 +517,9 @@ def _main(argv):
         print(json.dumps(judge(" ".join(args.command), args.shell), indent=2))
     elif args.action == "payload":
         try:
-            payload = json.loads(sys.stdin.read())
+            # parse_int: an integer too long for this Python's int() is
+            # still JSON, and no field the judgement reads is a number.
+            payload = json.loads(sys.stdin.read(), parse_int=float)
         except ValueError:
             print("crew_oneway.py payload: stdin is not JSON", file=sys.stderr)
             return 2
