@@ -1395,6 +1395,19 @@ runs but the visual rule never passes.
   Install Git for Windows", now appears only when no candidate `bin/bash.exe` exists. A third message,
   "found Git Bash but it failed its self-test", means the file ran and exited non-zero for a reason that
   is not load; repair or reinstall Git for Windows.
+- **The same message at the end of every turn (Stop), then `crew-hook: UNKNOWN (Git Bash could not be
+  told, not a pass)`.** At `Stop` a could-not-tell answer no longer loops. The completion audit still
+  runs, because it needs no Git Bash on Windows, and a real block from it still blocks. verify-gate's
+  checks and context-watch are reported as not run. A fresh Stop is blocked at most 2 times per session
+  and project, with "Stop block 1 of 2" and then "2 of 2" in the message. After that the Stop is let
+  through with the UNKNOWN notice. Past that point verify-gate's checks AND context-watch's handoff
+  request are skipped on each fresh Stop, until a Stop where Git Bash answers resets the count. A
+  continuation turn is let through at once, but only when the payload holds one of verify-gate's own two
+  spellings, `"stop_hook_active": true` or `"stop_hook_active":true`; on that turn only context-watch's
+  auto-clear is lost. Any other spelling counts as a fresh Stop. Each outcome writes a `gitbash-unknown`
+  row to `.crew/guard.log` (only when `.crew/` already exists). If the count file in the temp directory
+  cannot be read or written, the Stop is blocked and the message says so. None of this applies to a
+  missing or broken Git Bash, or to tool calls and prompts: those still block every time.
 - **`pwsh` is not on Git Bash's `PATH`.** Every script that shells out to PowerShell names it by an
   absolute path or resolves it explicitly; a bare `pwsh` in a hand-typed command fails as "command
   not found", which is easy to misread as PowerShell itself being broken.
