@@ -22,7 +22,9 @@ when it meets every one of (spec decision 5):
 (e) where `keys.json` declares `values`, the leaf is a list exactly when the
     key's default is one, and the leaf (or each list element) is one of them;
 (f) a `tiers` map has no layer problem and each target resolves to the tier
-    the file states.
+    the file states;
+(g) a repo `production` block reads as globs to the production guards'
+    own reader (`crew_config.production_declaration`), never `malformed`.
 
 The guide checks (decisions 6-9) are `guide_problems`. Both checkers take the
 registry and the lists as arguments, so the must-block rows below pass a
@@ -394,6 +396,25 @@ def provider_problems(data):
     return []
 
 
+def production_problems(data, layer, tmp):
+    """(g): `crew_config.production_declaration` on a repo example, once per
+    guard. `"hosts": "prod-*"` (a string where a list belongs) passes (b)-(f),
+    because `--check` never reads the block and `keys.json` declares no
+    `values` for it, while the guards read it as `malformed`: crew does not
+    know what production is. The machine layer is never read for this block
+    and (d) already refuses it there."""
+    if layer != "repo" or "production" not in data:
+        return []
+    root, _ = _layout(data, layer, tmp)
+    out = []
+    for guard, key in sorted(crew_config.PROD_DECL_KEYS.items()):
+        declared = crew_config.production_declaration(root, guard)
+        if declared.state in (crew_config.PROD_DECL_MALFORMED,
+                              crew_config.PROD_DECL_UNREADABLE):
+            out.append(f"(g) production.{key}: {declared.state}: {declared.detail}")
+    return out
+
+
 def example_problems(path, layer, tmp, keys, confirm_only=CONFIRM_ONLY):
     """Every problem with the example file at `path` read as `layer`."""
     if layer is None:
@@ -410,7 +431,8 @@ def example_problems(path, layer, tmp, keys, confirm_only=CONFIRM_ONLY):
     return (cli_problems(data, layer, os.path.join(tmp, "cli"))
             + registry_problems(data, layer, keys, confirm_only)
             + provider_problems(data)
-            + tiers_problems(data, layer, os.path.join(tmp, "tiers")))
+            + tiers_problems(data, layer, os.path.join(tmp, "tiers"))
+            + production_problems(data, layer, os.path.join(tmp, "production")))
 
 
 # --- the guide (decisions 6-9) -----------------------------------------------
@@ -442,44 +464,124 @@ def _names(token, line):
     return re.search(r"(?<![\w-])" + re.escape(token) + r"(?![\w-])", line) is not None
 
 
+def _inside(path, root):
+    path, root = (os.path.normcase(os.path.realpath(p)) for p in (path, root))
+    return path == root or path.startswith(root + os.sep)
+
+
 def _script_problem(name, line):
+    """A script path is judged by where it LANDS once `..` is resolved, never
+    by how it is spelt: `../../docs/x.py` and `${CLAUDE_PLUGIN_ROOT}/../../
+    docs/x.py` reach a repo file an installed copy does not have, exactly as
+    `docs/x.py` does. `normpath` first, so the answer is the same on POSIX
+    (which walks `..` through the disk) and Windows (which folds it)."""
     if name.startswith("${CLAUDE_PLUGIN_ROOT}/"):
-        rel = name[len("${CLAUDE_PLUGIN_ROOT}/"):]
-        return None if os.path.isfile(os.path.join(PLUGIN, rel)) else f"no such script {name}"
-    if "/" not in name:
-        return None if os.path.isfile(os.path.join(SCRIPTS, name)) else f"no such script {name}"
-    if os.path.isfile(os.path.join(PLUGIN, name)):
-        return None
-    if os.path.isfile(os.path.join(REPO, name)):
-        return None if "repo-only" in line else (
-            f"{name} is not in an installed copy; say `repo-only` on its line")
+        candidates = [os.path.join(PLUGIN, name[len("${CLAUDE_PLUGIN_ROOT}/"):])]
+    elif "/" not in name:
+        candidates = [os.path.join(SCRIPTS, name)]
+    else:
+        candidates = [os.path.join(PLUGIN, name), os.path.join(REPO, name)]
+    for full in map(os.path.normpath, candidates):
+        if not os.path.isfile(full):
+            continue
+        if _inside(full, PLUGIN):
+            return None
+        if _inside(full, REPO):
+            return None if "repo-only" in line else (
+                f"{name} is not in an installed copy; say `repo-only` on its line")
+        return f"{name} is outside the repository"
     return f"no such script {name}"
 
 
+def _removed_command(cmd):
+    """True when `commands/<cmd>.md` is the stub a removed command leaves: its
+    frontmatter `description` starts with `Removed`. The file still exists, so
+    the existence check alone lets the guide send an owner to a command that
+    does nothing."""
+    with open(os.path.join(COMMANDS, cmd + ".md"), encoding="utf-8", errors="strict") as fh:
+        for line in fh:
+            if line.startswith("description:"):
+                return line[len("description:"):].strip().lower().startswith("removed")
+    return False
+
+
 FLAG_SCRIPTS = re.compile(r"(?<![\w-])(crew_confirm_config\.py|crew_config\.py)(?![\w-])")
+NEXT_WORD = re.compile(r"""["']?[ \t]+([^\s"'`]+)""")
 
 
-def _flag_owners(line):
-    """`(flag, script)` per flag on a line naming a flag-checked script. A flag
-    belongs to the nearest script named before it (one named after it when
-    none is before), so each invocation is checked against its own help and a
-    line naming both scripts never pools their flags."""
-    marks = [(m.start(), m.group(1)) for m in FLAG_SCRIPTS.finditer(line)]
-    if not marks:
-        return []
+def _subcommands(script, help_flags):
+    """The subcommands `help_flags` holds for `script`: it maps an invocation
+    (`crew_config.py`, `crew_confirm_config.py propose`) to its flags."""
+    prefix = script + " "
+    return {name[len(prefix):] for name in help_flags if name.startswith(prefix)}
+
+
+def _invocations(line, help_flags):
+    """`[(position, script, subcommand or None, problem or None)]` per
+    flag-checked script named on the line. For a script with subcommands the
+    word after its name must be one of them. The text looked at ends at the
+    closing backtick when the name sits in a code span and at the end of the
+    line otherwise (a fenced command line), so a bare `` `script.py` `` in
+    prose is a mention, not a call, and a script named outside a code span is
+    read as a call."""
     out = []
+    for found in FLAG_SCRIPTS.finditer(line):
+        script = found.group(1)
+        subs = _subcommands(script, help_flags)
+        if not subs:
+            out.append((found.start(), script, None, None))
+            continue
+        rest = line[found.end():]
+        if line.count("`", 0, found.start()) % 2:
+            rest = rest.split("`", 1)[0]
+        word = NEXT_WORD.match(rest)
+        if word is None:
+            out.append((found.start(), script, None, None))
+        elif word.group(1) in subs:
+            out.append((found.start(), script, word.group(1), None))
+        elif word.group(1).startswith("-"):
+            out.append((found.start(), script, None, f"{script} is called with no subcommand"))
+        else:
+            out.append((found.start(), script, None,
+                        f"{word.group(1)} is not a subcommand of {script}"))
+    return out
+
+
+def _flag_problems(line, help_flags):
+    """Every subcommand and flag problem on the line. A flag belongs to the
+    nearest script named before it (one named after it when none is before),
+    so each invocation is checked against its own help and a line naming both
+    scripts never pools their flags. Where the subcommand is not known (a bare
+    mention, or one already reported) the flag must belong to some subcommand
+    of that script."""
+    marks = _invocations(line, help_flags)
+    out = [problem for _, _, _, problem in marks if problem]
+    if not marks:
+        return out
     for found in FLAG.finditer(line):
-        before = [s for at, s in marks if at < found.start()]
-        out.append((found.group(0), before[-1] if before else marks[0][1]))
+        before = [m for m in marks if m[0] < found.start()]
+        _, script, sub, _ = before[-1] if before else marks[0]
+        subs = _subcommands(script, help_flags)
+        if not subs:
+            name, allowed = script, help_flags[script]
+        elif sub is not None:
+            name = f"{script} {sub}"
+            allowed = help_flags[name]
+        else:
+            name = script
+            allowed = set().union(*(help_flags[f"{script} {s}"] for s in subs))
+        if found.group(0) not in allowed:
+            out.append(f"{found.group(0)} is not a flag of {name}")
     return out
 
 
 def guide_problems(text, keys, not_yet, confirm_only, *, help_flags,
                    planned=PLANNED_FAMILIES, families=crew_keys.FAMILIES,
                    example_names=None):
-    """Every problem with the guide `text`. `help_flags` maps a script name to
-    the flags its help prints; `example_names` is the set on disk (None skips
-    decision 8)."""
+    """Every problem with the guide `text`. `help_flags` maps an invocation (a
+    script name, or `<script> <subcommand>` for a script that has subcommands)
+    to the flags its help prints; `example_names` is the set on disk (None
+    skips decision 8)."""
     names = {k["key"] for k in keys}
     open_tables = {k["key"] for k in keys if k["kind"] == "open-table"}
     checked_roots = {n.split(".")[0] for n in names} | set(planned)
@@ -489,9 +591,10 @@ def guide_problems(text, keys, not_yet, confirm_only, *, help_flags,
         for cmd in COMMAND.findall(line):
             if not os.path.isfile(os.path.join(COMMANDS, cmd + ".md")):
                 out.append(f"line {number}: /crew:{cmd} is not a command")
-        for flag, script in _flag_owners(line):
-            if flag not in help_flags[script]:
-                out.append(f"line {number}: {flag} is not a flag of {script}")
+            elif _removed_command(cmd):
+                out.append(f"line {number}: /crew:{cmd} was removed and does nothing")
+        for problem in _flag_problems(line, help_flags):
+            out.append(f"line {number}: {problem}")
         for script in SCRIPT.findall(line):
             problem = _script_problem(script, line)
             if problem:
@@ -545,15 +648,23 @@ def guide_problems(text, keys, not_yet, confirm_only, *, help_flags,
 
 @pytest.fixture(scope="module")
 def help_flags(tmp_path_factory, _isolated):  # pylint: disable=unused-argument
+    """Invocation -> the flags its `--help` prints. The subcommands of
+    `crew_confirm_config.py` are read from its own usage line, never listed."""
     home = tmp_path_factory.mktemp("helphome")
-    flags = {}
-    for name, script, args in (("crew_config.py", CREW_CONFIG_PY, ["--help"]),
-                               ("crew_confirm_config.py", CONFIRM_PY, ["propose", "--help"])):
-        code, stdout, _ = _run(script, args, home)
-        assert code == 0, f"{name} {' '.join(args)} exit {code}"
-        flags[name] = set(FLAG.findall(stdout))
+
+    def help_of(script, args):
+        code, stdout, _ = _run(script, args + ["--help"], home)
+        assert code == 0, f"{os.path.basename(script)} {' '.join(args)} --help exit {code}"
+        return stdout
+
+    flags = {"crew_config.py": set(FLAG.findall(help_of(CREW_CONFIG_PY, [])))}
+    usage = re.search(r"\{([\w,-]+)\}", help_of(CONFIRM_PY, []))
+    assert usage, "crew_confirm_config.py --help names no subcommands"
+    for sub in usage.group(1).split(","):
+        flags[f"crew_confirm_config.py {sub}"] = set(FLAG.findall(help_of(CONFIRM_PY, [sub])))
     assert "--check-global" in flags["crew_config.py"]
-    assert "--layer" in flags["crew_confirm_config.py"]
+    assert "--layer" in flags["crew_confirm_config.py propose"]
+    assert len(_subcommands("crew_confirm_config.py", flags)) > 1
     return flags
 
 
@@ -739,6 +850,38 @@ def test_s6b_wrong_shape(tmp_path, keys, key, value, expected):
     assert expected in problems, problems
 
 
+@pytest.mark.parametrize("key,value,detail", [
+    ("hosts", "prod-*", "`production.hosts` is a str, not a list"),
+    ("databases", "*-prod", "`production.databases` is a str, not a list"),
+    ("hosts", ["prod-*", 1], "1 of the 2 entries in `production.hosts`"),
+    ("databases", 7, "`production.databases` is a int, not a list"),
+    ("hosts", [""], "1 of the 1 entries in `production.hosts`"),
+])
+def test_s30_malformed_production(tmp_path, keys, key, value, detail):
+    """A `production` value that is not a list of globs passes (b)-(f); the
+    guards' own reader calls it `malformed`, so the checker must fail it. The
+    last assert is the sabotage: only (g) reports it."""
+    data = _load_example("repo-production.json")
+    data["production"][key] = value
+    problems = _check(tmp_path, keys, "repo-x.json", data, "(g)")
+    _has(problems, f"(g) production.{key}: malformed:", detail)
+    assert _caught(problems, "(g)") == problems, problems
+
+
+def test_s30_committed_production_is_declared(tmp_path):
+    """The must-allow twin of S30: both guards read the shipped example as
+    `declared`, and an empty list (the empty set, on purpose) is not a problem."""
+    data = _load_example("repo-production.json")
+    root, _ = _layout(data, "repo", str(tmp_path / "declared"))
+    for guard in crew_config.PROD_DECL_KEYS:
+        declared = crew_config.production_declaration(root, guard)
+        assert declared.state == crew_config.PROD_DECL_DECLARED, (guard, declared)
+    assert production_problems(data, "repo", str(tmp_path / "ok")) == []
+    data["production"]["hosts"] = []
+    assert production_problems(data, "repo", str(tmp_path / "empty")) == []
+    assert production_problems(data, "machine", str(tmp_path / "machine")) == []
+
+
 @pytest.mark.parametrize("entries", [
     {"workspace:example-dev": {"tier": "staging"}},
     {"cluster:x": {"tier": "dev"}},
@@ -851,6 +994,11 @@ def test_s11_unknown_flag(keys, help_flags, line):
 @pytest.mark.parametrize("line,flag,script", [
     # Valid for crew_config.py only, placed after the confirm script.
     ("Run `crew_config.py --check`, then `crew_confirm_config.py propose --check-global`.",
+     "--check-global", "crew_confirm_config.py propose"),
+    # Valid for `propose` only, placed after another subcommand.
+    ("Run `crew_confirm_config.py list --key x`.", "--key", "crew_confirm_config.py list"),
+    # A bare mention: the flag must belong to some subcommand.
+    ("The script `crew_confirm_config.py` takes `--check-global`.",
      "--check-global", "crew_confirm_config.py"),
     # Valid for crew_confirm_config.py only, placed after crew_config.py.
     ("Run `crew_confirm_config.py propose --key x`, then `crew_config.py --key x`.",
@@ -868,6 +1016,53 @@ def test_s11c_mixed_line_valid_flags_pass(keys, help_flags):
 
 
 @pytest.mark.parametrize("line,expected", [
+    # The reviewer's probe: the CLI exits 2 on it (argparse, invalid choice).
+    ("Run `crew_confirm_config.py nonsuch --key foo`.",
+     "line 1: nonsuch is not a subcommand of crew_confirm_config.py"),
+    ('python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_confirm_config.py" nonsuch --key foo',
+     "line 1: nonsuch is not a subcommand of crew_confirm_config.py"),
+    ("Run `crew_confirm_config.py --layer machine --key foo`.",
+     "line 1: crew_confirm_config.py is called with no subcommand"),
+    ("Run `crew_confirm_config.py Propose --key foo`.",
+     "line 1: Propose is not a subcommand of crew_confirm_config.py"),
+])
+def test_s29_unknown_subcommand(keys, help_flags, line, expected, tmp_path):
+    assert expected in _guide(keys, help_flags, text=line)
+    # The premise, from the CLI itself: it refuses the word the guide gives it.
+    word = NEXT_WORD.match(line.split("crew_confirm_config.py", 1)[1]).group(1)
+    code, _, stderr = _run(CONFIRM_PY, [word, "--key", "foo", "--global-path",
+                                        str(tmp_path / "machine.json")], tmp_path)
+    assert code == 2, (code, stderr)
+    assert not (tmp_path / "machine.json").exists()
+
+
+@pytest.mark.parametrize("line", [
+    "Run `crew_confirm_config.py status CHANGE_ID`.",
+    "Run `crew_confirm_config.py cancel CHANGE_ID --global-path p`.",
+    "Run `crew_confirm_config.py list`.",
+    "Run `crew_confirm_config.py resolve --root . --json`.",
+    'python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_confirm_config.py" propose --layer repo',
+    "The script `crew_confirm_config.py` proposes; the owner confirms.",
+    "See `crew_confirm_config.py`.",
+])
+def test_s29_known_subcommand_passes(keys, help_flags, line):
+    """The must-allow twin of S29, one row per subcommand and two bare mentions."""
+    assert [p for p in _guide(keys, help_flags, text=line) if p.startswith("line")] == []
+
+
+def test_s29_subcommands_come_from_the_help(keys, help_flags):
+    """The sabotage row: the subcommand list is what catches S29. With
+    `nonsuch` in it the same line passes, and without `propose` the committed
+    guide fails."""
+    line = "Run `crew_confirm_config.py nonsuch --key foo`."
+    widened = dict(help_flags, **{"crew_confirm_config.py nonsuch": {"--key"}})
+    assert [p for p in _guide(keys, widened, text=line) if p.startswith("line")] == []
+    narrowed = {k: v for k, v in help_flags.items() if k != "crew_confirm_config.py propose"}
+    assert any("propose is not a subcommand of crew_confirm_config.py" in p
+               for p in _guide(keys, narrowed))
+
+
+@pytest.mark.parametrize("line,expected", [
     ("Run `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_nosuch.py`.",
      "line 1: no such script ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_nosuch.py"),
     ("Run `crew_nosuch.py`.", "line 1: no such script crew_nosuch.py"),
@@ -875,6 +1070,18 @@ def test_s11c_mixed_line_valid_flags_pass(keys, help_flags):
     ("Run `docs/guides/crew/src/config_reference.py`.",
      "line 1: docs/guides/crew/src/config_reference.py is not in an installed copy; "
      "say `repo-only` on its line"),
+    # The same repo file, spelt so the path escapes the plugin directory.
+    ("Run `../../docs/guides/crew/src/config_reference.py`.",
+     "line 1: ../../docs/guides/crew/src/config_reference.py is not in an installed copy; "
+     "say `repo-only` on its line"),
+    ("Run `${CLAUDE_PLUGIN_ROOT}/../../docs/guides/crew/src/config_reference.py`.",
+     "line 1: ${CLAUDE_PLUGIN_ROOT}/../../docs/guides/crew/src/config_reference.py is not "
+     "in an installed copy; say `repo-only` on its line"),
+    ("Run `hooks/scripts/../../../../docs/guides/crew/src/config_reference.py`.",
+     "line 1: hooks/scripts/../../../../docs/guides/crew/src/config_reference.py is not "
+     "in an installed copy; say `repo-only` on its line"),
+    ("Run `../../docs/guides/crew/src/nosuch.py`.",
+     "line 1: no such script ../../docs/guides/crew/src/nosuch.py"),
 ])
 def test_s11d_missing_script(keys, help_flags, line, expected):
     assert expected in _guide(keys, help_flags, text=line)
@@ -884,13 +1091,45 @@ def test_s11d_missing_script(keys, help_flags, line, expected):
     "Run `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py`.",
     "Run `crew_tiers.py`.",
     "Run `docs/guides/crew/src/config_reference.py` (repo-only).",
+    "Run `../../docs/guides/crew/src/config_reference.py` (repo-only).",
+    "Run `${CLAUDE_PLUGIN_ROOT}/../../docs/guides/crew/src/config_reference.py` (repo-only).",
+    # `..` that stays inside the plugin needs no label.
+    "Run `hooks/../hooks/scripts/crew_config.py`.",
+    "Run `${CLAUDE_PLUGIN_ROOT}/tests/../hooks/scripts/crew_config.py`.",
 ])
 def test_s11e_existing_script_passes(keys, help_flags, line):
     assert [p for p in _guide(keys, help_flags, text=line) if p.startswith("line")] == []
 
 
+def test_s11f_script_outside_the_repository(tmp_path):
+    """A path that lands outside the repository is never a pass, with or
+    without the `repo-only` label."""
+    outside = tmp_path / "elsewhere.py"
+    outside.write_text("", encoding="utf-8", newline="\n")
+    assert not _inside(str(outside), REPO)
+    name = outside.as_posix()
+    for line in ("x", "x (repo-only)"):
+        assert _script_problem(name, line) == f"{name} is outside the repository"
+
+
 def test_s12_unknown_command(keys, help_flags):
     assert any("/crew:nonesuch" in p for p in _guide(keys, help_flags, text="Run `/crew:nonesuch`."))
+
+
+@pytest.mark.parametrize("cmd", ["upgrade", "ticket", "work"])
+def test_s12b_removed_command(keys, help_flags, cmd):
+    """A removed command leaves a stub file, so it exists and does nothing."""
+    assert os.path.isfile(os.path.join(COMMANDS, cmd + ".md"))
+    problems = _guide(keys, help_flags, text=f"After an update, `/crew:{cmd}` reports it.")
+    assert f"line 1: /crew:{cmd} was removed and does nothing" in problems, problems
+
+
+@pytest.mark.parametrize("cmd", ["migrate", "config", "init", "help", "confirm-config"])
+def test_s12c_live_command_passes(keys, help_flags, cmd):
+    """The must-allow twin of S12b: the commands the guide sends an owner to."""
+    assert not _removed_command(cmd)
+    problems = _guide(keys, help_flags, text=f"Run `/crew:{cmd}`.")
+    assert [p for p in problems if p.startswith("line")] == []
 
 
 def test_s13a_planned_family_sub_key(keys, help_flags):

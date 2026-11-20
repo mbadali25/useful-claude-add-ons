@@ -61,8 +61,8 @@ are left out of the blank, each with its reason; `template.annotated.md` shows w
 
    `--check` warns about the repo file, `--check-global` about the machine file, and `--inert`
    lists settings crew does not act on: a misspelt key, or a key in the wrong file.
-5. An older repository set up by crew 0.20 needs `/crew:migrate` first. After a plugin update,
-   `/crew:upgrade` reports what changed in your machine file. `/crew:help` lists every command.
+5. An older repository set up by crew 0.20 needs `/crew:migrate` first. After a plugin update, run
+   step 4 again: `--check-global` lists keys the machine file does not set. `/crew:help` lists more.
 
 ## 3. How an AI model should configure crew
 
