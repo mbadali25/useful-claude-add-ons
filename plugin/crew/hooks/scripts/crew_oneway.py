@@ -16,7 +16,11 @@ model runs, or in a file tool's payload, and nothing else:
 A *state word* is a word whose basename (quotes, brackets and trailing
 slashes stripped) ends in `.tfstate` or `.tfstate.<anything>`, any case:
 `terraform.tfstate.backup` and the workspace directory `terraform.tfstate.d`
-count. In `-x=v` the value `v` is read, and the word is an *option value*.
+count. The word is also read with its quote characters taken out
+(`terra"form.tf"state`) and with its escapes taken out too
+(`terraform.tfstat\\e`); any reading counts. In `-x=v` the value `v` is
+read, and the word is an *option value*; after the command's first `--` the
+whole word is read (`-name.tfstate.bak=notes.txt` is a state word there).
 A state file is written by:
 
 - a redirection whose operator holds `>` into a state word, whatever the
@@ -71,9 +75,13 @@ Reading a command:
    joins the next token. An operator inside the quotes is put back as it
    stood (`>"a>b"` records `a>b`), and the whitespace between a target's
    tokens is kept as the command had it. The words stop at a comment, a `#`
-   that starts an unquoted word: `terraform state rm x # -help` is a hit. The
-   comment stops only its own segment, so `echo ok # x; terraform state rm x`
-   is a known over-report (a hit). An operator
+   that starts an unquoted word: `terraform state rm x # -help` is a hit.
+   Before any of this, while every character so far is on an allow-list
+   (ASCII letters, digits, space, tab, newline, `-_./:=,;&|`), a `#` at the
+   start or after a space, tab or newline comments out the rest of its line,
+   so `echo ok # x; terraform state rm x` is clear (F2). Past the first other
+   character a comment stops only its own segment, an over-report (a hit)
+   such as `echo "$(date)" # x; terraform state rm x`. An operator
    with no target, or with a quoted one the segment never closes, makes the
    segment `could-not-tell` (`redirect-target-unseen`) unless its words are
    a hit, which wins: the shell writes somewhere the reader cannot see. A
@@ -89,7 +97,8 @@ returns every place an unknown option may have swallowed a table subcommand
 or terragrunt's `exec`; every such reading is judged and the worst kept, the
 earliest on a tie. terragrunt's `run`, `run-all` and `exec` are unwrapped; what
 `exec` runs is judged as a new command. A command's words are read once, so
-judging it takes time linear in its length.
+judging it takes time linear in its length; a git head reads only a window
+of the words after it, grown while its global options fill it.
 
 It is a tripwire, not a boundary (plan 4.0, layer 1). It does not see
 terraform behind `bash -c`, `make`, a script, `xargs`, `sudo -u <user>` or a
@@ -361,10 +370,45 @@ def _lift(piece, escape="\\"):
     return {"words": out, "targets": targets, "dangling": dangling}
 
 
+# F2: the characters a command may hold before a `#` for that `#` to end its
+# line. An allow-list, not a deny-list: no quote, escape, `$`, bracket,
+# operator character or unusual whitespace, so the reader and either shell
+# cannot disagree about whether the `#` is quoted or starts a word.
+_COMMENT_SAFE = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+                          " \t\n-_./:=,;&|")
+_COMMENT_START = " \t\n"
+_LINE_END_RE = re.compile(r"[\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029]")
+
+
+def _drop_comments(text):
+    """`text` with each line comment taken out while every character before
+    it is in `_COMMENT_SAFE` (F2): a `#` at the start of the text or after a
+    space, tab or newline runs to the line's end, so in `echo ok # x; T` the
+    `T` is comment too. The first character outside the set stops this, and
+    the rest is read as before (a comment stops only its own segment). A
+    comment ends at the first character any reader may take as a line end,
+    so less is dropped, never more."""
+    out, start, index = [], 0, 0
+    while index < len(text):
+        char = text[index]
+        if char == "#" and (index == 0 or text[index - 1] in _COMMENT_START):
+            end = _LINE_END_RE.search(text, index)
+            end = end.start() if end else len(text)
+            out.append(text[start:index])
+            start = index = end
+            continue
+        if char not in _COMMENT_SAFE:
+            break
+        index += 1
+    out.append(text[start:])
+    return "".join(out)
+
+
 def raw_segments(text, shell="bash"):
     """The raw pass's segments of `text`, redirections lifted: a list of
     {words, targets: [(operator, target)], dangling: [operator]}."""
     segments = []
+    text = _drop_comments(text)
     for piece in _SEPARATORS_RE.split(_protect(text, shell)):
         segment = _lift(piece, _ESCAPE[shell])
         if segment is not None:
@@ -562,17 +606,34 @@ def _judge_from(scan, start):
 
 # --- state-file writes under any other head (R-34b) ------------------------------------------
 
-def _state_path(text):
-    """Whether `text` names a terraform state file: its basename, quotes,
-    brackets and trailing slashes stripped, ends in `.tfstate` or
-    `.tfstate.<anything>` (the backup, the workspace directory), any case."""
+def _readings(text):
+    """`text` as written, with its quote characters taken out (the shell
+    joins `terra"form.tf"state`), and with that and each escape (`\\` or a
+    backtick) taken out too (bash writes `terraform.tfstat\\e` as
+    `terraform.tfstate`). Any reading that names a state file counts: the
+    shell is not known here, so the reader errs toward the state file."""
+    joined = text.replace('"', "").replace("'", "")
+    return (text, joined, re.sub(r"[\\`](.)", r"\1", joined, flags=re.S))
+
+
+def _state_base(text):
     base = text.strip(_STRIP).rstrip("/\\")
     return bool(_STATE_RE.search(re.split(r"[\\/]", base)[-1]))
 
 
+def _state_path(text):
+    """Whether `text` names a terraform state file: in any of its
+    `_readings`, its basename, quotes, brackets and trailing slashes
+    stripped, ends in `.tfstate` or `.tfstate.<anything>` (the backup, the
+    workspace directory), any case."""
+    return any(_state_base(reading) for reading in _readings(text))
+
+
 def _state_kind(word):
     """"word" when `word` is a state word, "option" when it is one only as
-    an option (`-x=<state>`, or a word that starts with `-`), else None."""
+    an option (`-x=<state>`, or a word that starts with `-`), else None.
+    After the command's first `--` the whole word is read instead
+    (`_StateWords.whole`)."""
     if word.startswith("-") and "=" in word:
         return "option" if _state_path(word.partition("=")[2]) else None
     if not _state_path(word):
@@ -584,22 +645,28 @@ class _StateWords:  # pylint: disable=too-few-public-methods
     """One command's words read once for state words, so every start judged
     in it costs constant time past the head (`_Scan`'s linear rule).
 
-    `kind[i]` is `_state_kind`; `next_state[i]` / `next_word[i]` are the
-    first index at or after `i` holding a state word of any kind / a
-    positional one (`len(words)` when none); `next_plain[i]` the first word
-    there not starting with `-`; `next_dashdash[i]` the first `--`;
-    `next_inplace[i]` the first in-place option; `last_plain` the last word
-    not starting with `-` (-1 when none).
+    `kind[i]` is `_state_kind`; `whole[i]` whether the whole word, read as
+    a positional, names a state file; `next_state[i]` / `next_word[i]` /
+    `next_whole[i]` are the first index at or after `i` holding a state
+    word of any kind / a positional one / a whole-word one (`len(words)`
+    when none); `next_plain[i]` the first word there not starting with
+    `-`; `next_dashdash[i]` the first `--`; `next_inplace[i]` the first
+    in-place option; `last_plain` the last word not starting with `-` (-1
+    when none).
 
     These read each word alone. Every word after the command's first `--`
-    is a positional (B5), whatever it starts with; that `--` depends on
-    where the command starts, so the methods below take the head."""
+    is a positional (B5), whatever it starts with, so it is read whole:
+    `-name.tfstate.bak=notes.txt` there is a state word, not an option
+    value. That `--` depends on where the command starts, so the methods
+    below take the head."""
 
     def __init__(self, words):
         count = len(words)
         self.words = words
         self.kind = [_state_kind(word) for word in words]
+        self.whole = [_state_path(word) for word in words]
         self.next_state = [count] * (count + 1)
+        self.next_whole = [count] * (count + 1)
         self.next_word = [count] * (count + 1)
         self.next_plain = [count] * (count + 1)
         self.next_dashdash = [count] * (count + 1)
@@ -609,6 +676,7 @@ class _StateWords:  # pylint: disable=too-few-public-methods
             word, kind = words[i], self.kind[i]
             plain = not word.startswith("-")
             self.next_state[i] = i if kind else self.next_state[i + 1]
+            self.next_whole[i] = i if self.whole[i] else self.next_whole[i + 1]
             self.next_word[i] = i if kind == "word" else self.next_word[i + 1]
             self.next_plain[i] = i if plain else self.next_plain[i + 1]
             self.next_dashdash[i] = i if word == "--" else self.next_dashdash[i + 1]
@@ -620,9 +688,19 @@ class _StateWords:  # pylint: disable=too-few-public-methods
         """Whether a state word stands at `after` or later as a positional:
         a word not starting with `-`, or any state word after the first
         `--` at or after `after` (B5)."""
-        dashdash = self.next_dashdash[after]
         return (self.next_word[after] < len(self.words)
-                or self.next_state[min(dashdash + 1, len(self.words))] < len(self.words))
+                or self.first_after_dashdash(after) < len(self.words))
+
+    def first_after_dashdash(self, after):
+        """The first whole-word state word after the first `--` at or after
+        `after` (`len(words)` when none)."""
+        count = len(self.words)
+        return self.next_whole[min(self.next_dashdash[after] + 1, count)]
+
+    def first_state(self, after):
+        """The first state word at or after `after`, read as an option
+        before the first `--` and whole after it (`len(words)` when none)."""
+        return min(self.next_state[after], self.first_after_dashdash(after))
 
     def inplace(self, after):
         """Whether an in-place option stands at `after` or later, before
@@ -650,7 +728,8 @@ def _last_positional(info, head):
 def _destination(info, head, rule):
     """A copy writes its last positional: a hit when that is a state word."""
     last = _last_positional(info, head)
-    if last is not None and info.kind[last]:
+    if last is not None and (info.kind[last] or (
+            info.whole[last] and info.next_dashdash[head + 1] < last)):
         return (HIT, rule, last)
     return _CLEAR
 
@@ -675,27 +754,41 @@ def _remote(info, head, name):
     if name == "aws" and first == "s3":
         sub = _positional(info, head + 1, 1)
         if sub in ("rm", "mv"):
-            return (HIT, "tfstate-remote", info.next_state[head + 1])
+            return (HIT, "tfstate-remote", info.first_state(head + 1))
         if sub == "cp":
             return _destination(info, head, "tfstate-remote")
     if name == "gsutil" and first == "rm":
-        return (HIT, "tfstate-remote", info.next_state[head + 1])
+        return (HIT, "tfstate-remote", info.first_state(head + 1))
     if name == "gsutil" and first == "cp":
         return _destination(info, head, "tfstate-remote")
     if name == "az" and first == "storage" and _positional(info, head + 1, 1) == "blob" and (
             _positional(info, head + 1, 2) in ("upload", "delete")):
-        return (HIT, "tfstate-remote", info.next_state[head + 1])
+        return (HIT, "tfstate-remote", info.first_state(head + 1))
     return None
+
+
+def _git_args(info, head):
+    """(args, index of the subcommand) of the git command whose head is at
+    `head`. git's globals are a prefix, so a window of the words after the
+    head is read, grown only while the globals fill it: each start costs
+    the length of its globals, not of the rest of the command."""
+    # pylint: disable=protected-access
+    size = 8
+    while True:
+        args = info.words[head + 1:head + 1 + size]
+        split = crew_gitallow._global_split(args)[1]
+        if split < len(args) or head + 1 + size >= len(info.words):
+            return args, split
+        size *= 4
 
 
 def _git_state(info, head):
     """git: only state words after the subcommand are read (git's globals
     are not, B6)."""
-    # pylint: disable=protected-access
-    args = info.words[head + 1:]
+    args, split = _git_args(info, head)
     sub = crew_gitallow.subcommand(args)
-    after = min(head + 1 + crew_gitallow._global_split(args)[1] + 1, len(info.words))
-    git_first = info.next_state[after]
+    after = min(head + 1 + split + 1, len(info.words))
+    git_first = info.first_state(after)
     if git_first >= len(info.words):
         return _CLEAR
     if sub in GIT_READ_SUBS:
@@ -716,7 +809,7 @@ def _state_head(info, start):
     if found is None:
         return _CLEAR
     index, head = found
-    first = info.next_state[index + 1]
+    first = info.first_state(index + 1)
     if first >= len(info.words):
         return _CLEAR
     if head == "git":
@@ -742,19 +835,14 @@ def _state_head(info, start):
     return (COULD_NOT_TELL, "tfstate-head-unseen", first)
 
 
-def _unquoted(target):
-    """`target` with its quote characters taken out, as the shell joins a
-    word built from quoted and unquoted parts (`terra"form.tf"state`)."""
-    return target.replace('"', "").replace("'", "")
-
-
 def _write_reading(operator, target, held):
     """A lifted redirection: a write when its operator holds `>` (fd copies
     are already dropped). The state-word test runs before the expansion
-    test, so `> "$D/terraform.tfstate"` is a hit (B3)."""
+    test, so `> "$D/terraform.tfstate"` is a hit (B3). The target is read
+    in each of its `_readings` (quotes joined, escapes taken out)."""
     if ">" not in operator:
         return _CLEAR
-    if _state_path(_unquoted(target)):
+    if _state_path(target):
         return (HIT, "tfstate-redirect", None)
     if held and _unseen(target):
         return (COULD_NOT_TELL, "tfstate-redirect-unseen", None)
@@ -794,7 +882,7 @@ def _raw_pass(text, shell):
         # A lifted target is part of the segment too (B3): in
         # `cat < terraform.tfstate > $OUT` the state word is the input's.
         held = any(_state_kind(word) for word in segment["words"]) or any(
-            _state_path(_unquoted(target)) for _op, target in segment["targets"])
+            _state_path(target) for _op, target in segment["targets"])
         readings += [_write_reading(op, target, held) for op, target in segment["targets"]]
         verdict, rule, word = _first_worst(readings)
         if segment["dangling"] and verdict != HIT:

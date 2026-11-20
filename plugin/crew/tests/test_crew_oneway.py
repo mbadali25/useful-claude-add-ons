@@ -206,6 +206,53 @@ MUST_BLOCK = (
     ("bash", "git mv terraform.tfstate old.tfstate", "tfstate-git-move"),
     ("bash", "git checkout -- terraform.tfstate", "tfstate-git-overwrite"),
     ("bash", "git restore terraform.tfstate", "tfstate-git-overwrite"),
+    # review round 2 (B1, B5): after `--` the whole word is a positional.
+    ("bash", "cp src -- -name.tfstate.bak=notes.txt", "tfstate-overwrite"),
+    ("bash", "rm -- -name.tfstate.bak=notes.txt", "tfstate-remove"),
+    ("bash", "git rm -- -name.tfstate.bak=notes.txt", "tfstate-git-remove"),
+    # review round 2: the raw pass joins a word's quoted parts, and reads a
+    # write target with its escapes taken out.
+    ("bash", 'rm terra"form.tf"state > /dev/null', "tfstate-remove"),
+    ("bash", r"echo x > terraform.tfstat\e", "tfstate-redirect"),
+    ("powershell", "echo x > terraform.tfstat`e", "tfstate-redirect"),
+    # F2 (allow-list): a `#` ends its line only after safe text. Each of
+    # these runs the terraform command, and each is read as main reads it.
+    ("bash", "echo ok # x\nterraform state rm x", "tf-state-write"),
+    ("powershell", "echo ok # x\rterraform state rm x", "tf-state-write"),
+    ("bash", "echo a#b; terraform state rm x", "tf-state-write"),
+    ("powershell", "echo a#b; terraform state rm x", "tf-state-write"),
+    ("bash", 'git commit -m "a # b"; terraform state rm x', "tf-state-write"),
+    ("bash", r"echo a\ #b; terraform state rm x", "tf-state-write"),
+    ("powershell", "echo ok <# c #> ; terraform state rm x", "tf-state-write"),
+    ("powershell", "echo ok <#c#>; terraform state rm x", "tf-state-write"),
+    ("powershell", "echo ok <# a\n# b\n#> ; terraform state rm x", "tf-state-write"),
+    ("bash", 'echo "$(echo "a # b")"; terraform state rm x', "tf-state-write"),
+    ("powershell", 'echo "$(echo "a # b")"; terraform state rm x', "tf-state-write"),
+    ("bash", 'echo "`echo "a # b"`"; terraform state rm x', "tf-state-write"),
+    ("bash", r"echo $'a\'b # c'; terraform state rm x", "tf-state-write"),
+    ("bash", 'gh pr create --body "$(printf "fixes #12")"; terraform state rm x',
+     "tf-state-write"),
+    ("bash", 'echo "${X:-"a # b"}"; terraform state rm x', "tf-state-write"),
+    ("powershell", "echo ${a # b}; terraform state rm x", "tf-state-write"),
+    ("powershell", "echo @'\na # b\n'@; terraform state rm x", "tf-state-write"),
+    ("powershell", "echo \u201ca # b\u201d; terraform state rm x", "tf-state-write"),
+    ("bash", r"echo a\>#b; terraform state rm x", "tf-state-write"),
+    # the approver's three classes (comment 52770): an escaped separator
+    # glued to the `#`, whitespace Python splits on and the shell does not,
+    # and a declined `#` that holds a quote.
+    ("bash", r"echo a\;#b; terraform state rm x", "tf-state-write"),
+    ("bash", r"echo a\&#b; terraform state rm x", "tf-state-write"),
+    ("bash", r"echo a\|#b; terraform state rm x", "tf-state-write"),
+    ("powershell", "echo a`;#b; terraform state rm x", "tf-state-write"),
+    ("powershell", "echo a`|#b; terraform state rm x", "tf-state-write"),
+    ("powershell", "echo a\x1f#b; terraform state rm x", "tf-state-write"),
+    ("powershell", "echo a\x1c#b; terraform state rm x", "tf-state-write"),
+    ("bash", "echo a\u00a0#b; terraform state rm x", "tf-state-write"),
+    ("bash", "echo a\x0c#b; terraform state rm x", "tf-state-write"),
+    ("bash", "echo a\x0b#b; terraform state rm x", "tf-state-write"),
+    ("bash", "echo a\u3000#b; terraform state rm x", "tf-state-write"),
+    ("bash", "echo a\\  # it's\necho 'x # y'; terraform state rm x", "tf-state-write"),
+    ("powershell", "echo a`  # it's\necho 'x # y'; terraform state rm x", "tf-state-write"),
 )
 
 # (shell, command)
@@ -292,6 +339,14 @@ MUST_ALLOW = (
     ("bash", "cat -- -report.tfstate"),
     ("bash", "git diff -- -report.tfstate"),
     ("bash", "terragrunt exec -- cat -- -report.tfstate"),
+    ("bash", "cat -- -name.tfstate.bak=notes.txt"),
+    # F2 (R-34a review round 7 follow-up): after safe text, a `#` comments
+    # out the rest of its line, separators included.
+    ("bash", "echo ok # x; terraform state rm x"),
+    ("powershell", "echo ok # x; terraform state rm x"),
+    ("powershell", "echo ok # x <# y; terraform state rm x"),
+    ("bash", "echo ok # a\necho b # c; terraform state rm x"),
+    ("bash", "# terraform state rm x"),
 )
 
 # Known false negatives (Risks): terragrunt's `stack run` and `graph` run
@@ -365,10 +420,9 @@ KNOWN_OVER_REPORTS = (
     ('git add . && git commit -m "x; terraform state rm y"', "tf-state-write"),
     # R-34b: a backup copy next to the state file reads as an overwrite.
     ("cp terraform.tfstate terraform.tfstate.bak", "tfstate-overwrite"),
-    # R-34a review round 7 follow-up, left as main has it (R-34b approver
-    # condition, option A): a comment stops only its own segment, so the
-    # shell's comment-to-end-of-line is not followed. The fix is a later ticket.
-    ("echo ok # x; terraform state rm x", "tf-state-write"),
+    # F2: text outside the allow-list before the `#` keeps main's reading,
+    # where a comment stops only its own segment (bash runs no terraform).
+    ('echo "$(date)" # x; terraform state rm x', "tf-state-write"),
 )
 
 # Known over-reports pinned as could-not-tell (B11): the parent spec's
@@ -482,6 +536,18 @@ def test_a_long_exec_chain_gives_a_verdict(repeat):
     assert_clear(crew_oneway, "terragrunt exec -- " * repeat + "terraform state list")
     assert_cnt(crew_oneway, "terragrunt exec --unknown-flag " * repeat + "terraform plan",
                "tg-exec-unseen")
+
+
+def test_git_reads_a_window_of_its_globals():
+    """Review round 2: a git start reads its globals, not the rest of the
+    command, so chained `terragrunt exec -- git` starts stay linear."""
+    words = ["git", "-C", "d", "rm", "x"] + ["y"] * 10000
+    args, split = crew_oneway._git_args(crew_oneway._StateWords(words), 0)
+    assert split == 2 and len(args) < 64
+    words = ["git"] + ["-x"] * 100 + ["rm", "terraform.tfstate"]
+    args, split = crew_oneway._git_args(crew_oneway._StateWords(words), 0)
+    assert split == 100 and crew_gitallow.subcommand(args) == "rm"
+    assert_hit(crew_oneway, " ".join(words), "tfstate-git-remove")
 
 
 def test_one_finding_per_segment():
@@ -774,7 +840,11 @@ READER_ROWS = (
     ('a "#" b', [seg(["a", "#", "b"])]),
     ("a > # f", [seg(["a"], dangling=[">"])]),
     ("# a b", []),
-    ("a # b; c", [seg(["a"]), seg(["c"])]),
+    # F2: after safe text a comment runs to the line's end; after anything
+    # else it stops only its own segment, as on main.
+    ("a # b; c", [seg(["a"])]),
+    ("a # b; c\nd", [seg(["a"]), seg(["d"])]),
+    ("a > f # b; c", [seg(["a"], [(">", "f")]), seg(["c"])]),
 )
 
 PS_READER_ROWS = (
@@ -1282,8 +1352,13 @@ def case_reader_operator_inside_quoted_target(mod):
 
 
 def case_block_help_in_a_comment(mod):
-    assert_hit(mod, "terraform state rm x # -help", "tf-state-write")
-    assert_hit(mod, "terraform state rm x # -help", "tf-state-write", shell="powershell")
+    # The quote keeps F2's line reader off, so the segment's own comment
+    # rule is what drops `-help` here.
+    assert_hit(mod, 'terraform state rm "x" # -help', "tf-state-write")
+
+
+def case_block_help_in_a_comment_powershell(mod):
+    assert_hit(mod, 'terraform state rm "x" # -help', "tf-state-write", shell="powershell")
 
 
 def case_cnt_comment_as_target(mod):
@@ -1323,14 +1398,26 @@ def case_allow_git_diff(mod):
     assert_clear(mod, "git diff terraform.tfstate")
 
 
-def case_allow_terraform_head_precedence(mod):
+# Review round 2: one assertion per case, so a mutation that names several
+# cases proves each input it lists goes red, not only the first.
+
+def case_allow_terraform_head_precedence_show(mod):
     assert_clear(mod, "terraform show terraform.tfstate")
+
+
+def case_allow_terraform_head_precedence_plan(mod):
     assert_clear(mod, "terraform plan -state=terraform.tfstate")
 
 
-def case_block_glued_redirect(mod):
+def case_block_glued_redirect_attached(mod):
     assert_hit(mod, "echo {} >terraform.tfstate", "tfstate-redirect")
+
+
+def case_block_glued_redirect_braces(mod):
     assert_hit(mod, "echo {}>terraform.tfstate", "tfstate-redirect")
+
+
+def case_block_glued_redirect_fd(mod):
     assert_hit(mod, "echo {} 1>terraform.tfstate", "tfstate-redirect")
 
 
@@ -1338,13 +1425,19 @@ def case_allow_state_fd_copy(mod):
     assert_clear(mod, "cat terraform.tfstate 2>&1")
 
 
-def case_allow_input_redirects(mod):
+def case_allow_input_redirect(mod):
     assert_clear(mod, "cat < terraform.tfstate")
+
+
+def case_allow_input_here_string(mod):
     assert_clear(mod, "cat <<< terraform.tfstate")
 
 
-def case_allow_plain_pass_quoted_operator(mod):
+def case_allow_plain_pass_quoted_operator_commit(mod):
     assert_clear(mod, 'git commit -m "a > terraform.tfstate"')
+
+
+def case_allow_plain_pass_quoted_operator_echo(mod):
     assert_clear(mod, 'echo "a>terraform.tfstate"')
 
 
@@ -1352,10 +1445,17 @@ def case_allow_git_commit(mod):
     assert_clear(mod, 'git commit -m "stop tracking terraform.tfstate"')
 
 
-def case_block_notebook_and_multiedit(mod):
-    for tool, tool_input in FILE_TOOL_BLOCK[2:]:
-        got = mod.judge_payload({"tool_name": tool, "tool_input": tool_input})
-        assert got["verdict"] == "hit", (tool, got)
+def _file_tool_hit(mod, tool, tool_input):
+    got = mod.judge_payload({"tool_name": tool, "tool_input": tool_input})
+    assert got["verdict"] == "hit", (tool, got)
+
+
+def case_block_notebook_edit(mod):
+    _file_tool_hit(mod, *FILE_TOOL_BLOCK[2])
+
+
+def case_block_multiedit(mod):
+    _file_tool_hit(mod, *FILE_TOOL_BLOCK[3])
 
 
 def case_cnt_write_tool_without_path(mod):
@@ -1389,8 +1489,11 @@ def case_cnt_input_target_held(mod):
     assert_cnt(mod, "cat < terraform.tfstate > $OUT", "tfstate-redirect-unseen")
 
 
-def case_allow_after_dashdash(mod):
+def case_allow_after_dashdash_cat(mod):
     assert_clear(mod, "cat -- -report.tfstate")
+
+
+def case_allow_after_dashdash_git(mod):
     assert_clear(mod, "git diff -- -report.tfstate")
 
 
@@ -1406,6 +1509,87 @@ def case_reader_target_keeps_brackets(mod):
     assert mod.raw_segments('echo x >"a  (  b.tfstate"') == [
         seg(["echo", "x"], [(">", "a  (  b.tfstate")])]
     assert mod.raw_segments("( echo x ) > ( out") == [seg(["echo", "x"], [(">", "out")])]
+
+
+# Review round 2.
+
+def case_block_cp_option_shaped_operand(mod):
+    assert_hit(mod, "cp src -- -name.tfstate.bak=notes.txt", "tfstate-overwrite")
+
+
+def case_block_rm_option_shaped_operand(mod):
+    assert_hit(mod, "rm -- -name.tfstate.bak=notes.txt", "tfstate-remove")
+
+
+def case_block_git_rm_option_shaped_operand(mod):
+    assert_hit(mod, "git rm -- -name.tfstate.bak=notes.txt", "tfstate-git-remove")
+
+
+def case_block_quoted_parts_word(mod):
+    assert_hit(mod, 'rm terra"form.tf"state > /dev/null', "tfstate-remove")
+
+
+def case_block_escaped_target(mod):
+    assert_hit(mod, r"echo x > terraform.tfstat\e", "tfstate-redirect")
+
+
+def case_block_escaped_target_powershell(mod):
+    assert_hit(mod, "echo x > terraform.tfstat`e", "tfstate-redirect", shell="powershell")
+
+
+# F2: the allow-list comment reader.
+
+def case_allow_comment_ends_the_line(mod):
+    assert_clear(mod, "echo ok # x; terraform state rm x")
+
+
+def case_allow_comment_ends_the_line_powershell(mod):
+    assert_clear(mod, "echo ok # x; terraform state rm x", shell="powershell")
+
+
+def case_block_comment_stops_at_newline(mod):
+    assert_hit(mod, "echo ok # x\nterraform state rm x", "tf-state-write")
+
+
+def case_block_comment_stops_at_carriage_return(mod):
+    assert_hit(mod, "echo ok # x\rterraform state rm x", "tf-state-write", shell="powershell")
+
+
+def case_block_hash_inside_a_word(mod):
+    assert_hit(mod, "echo a#b; terraform state rm x", "tf-state-write")
+
+
+def case_block_hash_in_quotes(mod):
+    assert_hit(mod, 'git commit -m "a # b"; terraform state rm x', "tf-state-write")
+
+
+def case_block_hash_in_substitution(mod):
+    assert_hit(mod, 'echo "$(echo "a # b")"; terraform state rm x', "tf-state-write")
+
+
+def case_block_ps_block_comment(mod):
+    assert_hit(mod, "echo ok <# c #> ; terraform state rm x", "tf-state-write",
+               shell="powershell")
+
+
+def case_block_escaped_separator_bash(mod):
+    assert_hit(mod, r"echo a\;#b; terraform state rm x", "tf-state-write")
+
+
+def case_block_escaped_separator_powershell(mod):
+    assert_hit(mod, "echo a`;#b; terraform state rm x", "tf-state-write", shell="powershell")
+
+
+def case_block_unit_separator_whitespace(mod):
+    assert_hit(mod, "echo a\x1f#b; terraform state rm x", "tf-state-write", shell="powershell")
+
+
+def case_block_no_break_space(mod):
+    assert_hit(mod, "echo a\u00a0#b; terraform state rm x", "tf-state-write")
+
+
+def case_block_declined_hash_holding_a_quote(mod):
+    assert_hit(mod, "echo a\\  # it's\necho 'x # y'; terraform state rm x", "tf-state-write")
 
 
 MUTATIONS = (
@@ -1510,7 +1694,7 @@ MUTATIONS = (
      ("case_block_quoted_here_string_with_a_space", "case_cnt_unclosed_quoted_target")),
     ("R19 a comment's words are read as arguments",
      "            if _comment(token):\n                break\n", "",
-     ("case_block_help_in_a_comment",)),
+     ("case_block_help_in_a_comment", "case_block_help_in_a_comment_powershell")),
     ("R20 a comment taken as a redirection's target",
      "tokens[index].startswith(_MARK) or _comment(tokens[index]):",
      "tokens[index].startswith(_MARK):", ("case_cnt_comment_as_target",)),
@@ -1537,12 +1721,14 @@ MUTATIONS = (
      ("case_reader_operator_inside_quoted_target",)),
     # R-34b. The numbers are the parent spec's sabotage rows.
     ("6 every cp state word read as a write",
-     "    if last is not None and info.kind[last]:\n",
-     "    last = info.next_state[head + 1]\n    if True:\n",
+     "    if last is not None and (info.kind[last] or (\n"
+     "            info.whole[last] and info.next_dashdash[head + 1] < last)):\n",
+     "    last = info.first_state(head + 1)\n    if True:\n",
      ("case_allow_cp_source",)),
     ("7 the write-target (redirection) row dropped",
      '        readings += [_write_reading(op, target, held) for op, target in segment["targets"]]\n',
-     "", ("case_block_redirect", "case_block_glued_redirect")),
+     "", ("case_block_redirect", "case_block_glued_redirect_attached", "case_block_glued_redirect_braces",
+      "case_block_glued_redirect_fd")),
     ("8 any other head becomes clear",
      '    return (COULD_NOT_TELL, "tfstate-head-unseen", first)\n', "    return _CLEAR\n",
      ("case_cnt_other_head",)),
@@ -1560,21 +1746,23 @@ MUTATIONS = (
      "                            else _judge_tf(scan, found[1], found[0] + 1))\n",
      "                            else _first_worst([_judge_tf(scan, found[1], found[0] + 1),\n"
      "                                               _state_head(scan.state_words(), start)]))\n",
-     ("case_allow_terraform_head_precedence",)),
+     ("case_allow_terraform_head_precedence_show", "case_allow_terraform_head_precedence_plan")),
     ("27 an operator lifted only with whitespace on both sides",
      '        return f" {_MARK}{glue}{match.group(0).translate(_HIDE)} "\n',
      "        return match.group(0) if glue else "
      'f" {_MARK}{glue}{match.group(0).translate(_HIDE)} "\n',
-     ("case_block_glued_redirect",)),
+     ("case_block_glued_redirect_attached", "case_block_glued_redirect_braces",
+      "case_block_glued_redirect_fd")),
     ("28a an fd copy kept as an operator",
      "        if _FD_COPY_RE.fullmatch(operator):\n            continue\n", "",
      ("case_allow_state_fd_copy",)),
     ("28b every lifted target read as a write, input operators included",
      '    if ">" not in operator:\n        return _CLEAR\n', "",
-     ("case_allow_input_redirects",)),
+     ("case_allow_input_redirect", "case_allow_input_here_string")),
     ("35 the plain pass replaced by the raw pass",
      "    return _plain_pass(commands)\n", "    return _raw_pass(command, shell)\n",
-     ("case_allow_plain_pass_quoted_operator",)),
+     ("case_allow_plain_pass_quoted_operator_commit",
+      "case_allow_plain_pass_quoted_operator_echo")),
     ("36 commit dropped from the git clear list",
      '    if sub == "commit":\n        return _CLEAR\n', "", ("case_allow_git_commit",)),
     ("39 only file_path read in a file-tool payload",
@@ -1582,7 +1770,7 @@ MUTATIONS = (
      '        [edit.get("file_path") for edit in edits if isinstance(edit, dict)]\n'
      "        if isinstance(edits, list) else [])\n",
      '    found = [tool_input.get("file_path")]\n',
-     ("case_block_notebook_and_multiedit",)),
+     ("case_block_notebook_edit", "case_block_multiedit")),
     ("40 a file tool with no readable path is clear",
      "    if not paths:\n", "    if not paths:\n        return _result([])\n",
      ("case_cnt_write_tool_without_path",)),
@@ -1591,9 +1779,9 @@ MUTATIONS = (
      '        piece = text if not parts else " " + text\n',
      ("case_reader_target_whitespace",)),
     ("B3 the expansion test run before the state-word test",
-     "    if _state_path(_unquoted(target)):\n        return (HIT, \"tfstate-redirect\", None)\n",
+     "    if _state_path(target):\n        return (HIT, \"tfstate-redirect\", None)\n",
      '    if _unseen(target):\n        return (COULD_NOT_TELL, "tfstate-redirect-unseen", None)\n'
-     "    if _state_path(_unquoted(target)):\n        return (HIT, \"tfstate-redirect\", None)\n",
+     "    if _state_path(target):\n        return (HIT, \"tfstate-redirect\", None)\n",
      ("case_block_redirect_state_before_expansion",)),
     ("B5 the in-place bundle read as -i only",
      '_INPLACE_RE = re.compile(r"^(?:-[A-Za-z]*i.*|--in-place(?:=.*)?)$", re.S)',
@@ -1608,26 +1796,80 @@ MUTATIONS = (
      "        if True:\n", ("case_cnt_option_value",)),
     ("B3 a lifted input target not counted as held",
      "        held = any(_state_kind(word) for word in segment[\"words\"]) or any(\n"
-     "            _state_path(_unquoted(target)) for _op, target in segment[\"targets\"])\n",
+     "            _state_path(target) for _op, target in segment[\"targets\"])\n",
      "        held = any(_state_kind(word) for word in segment[\"words\"])\n",
      ("case_cnt_input_target_held",)),
     ("B5 a word after -- read by its own spelling",
-     "                or self.next_state[min(dashdash + 1, len(self.words))] < len(self.words))\n",
+     "                or self.first_after_dashdash(after) < len(self.words))\n",
      "                or False)\n",
-     ("case_allow_after_dashdash",)),
+     ("case_allow_after_dashdash_cat", "case_allow_after_dashdash_git")),
     ("B5 an in-place option read after --",
      "        return self.next_inplace[after] < self.next_dashdash[after]\n",
      "        return self.next_inplace[after] < len(self.words)\n",
      ("case_cnt_sed_operand_after_dashdash",)),
-    ("B3 a target's quotes kept for the state-word test",
-     '    return target.replace(\'"\', "").replace("\'", "")\n',
-     "    return target\n",
-     ("case_block_quoted_parts_target",)),
+    ("B3 a word's or target's quotes kept for the state-word test",
+     '    joined = text.replace(\'"\', "").replace("\'", "")\n',
+     "    joined = text\n",
+     ("case_block_quoted_parts_target", "case_block_quoted_parts_word")),
     ("F1 a bracket-only token dropped from a target",
      "        gaps.append(gap[after_mark:len(gap) - mark])\n        tokens.append(token)\n",
      "        if not _bare(token):\n"
      "            gaps.append(gap[after_mark:len(gap) - mark])\n            tokens.append(token)\n",
      ("case_reader_target_keeps_brackets",)),
+    # review round 2.
+    ("B5 an option-shaped word after -- read as an option value",
+     "        self.whole = [_state_path(word) for word in words]\n",
+     '        self.whole = [_state_kind(word) == "word" for word in words]\n',
+     ("case_block_cp_option_shaped_operand", "case_block_rm_option_shaped_operand",
+      "case_block_git_rm_option_shaped_operand")),
+    ("B3 escapes kept for the state-word test",
+     '    return (text, joined, re.sub(r"[\\\\`](.)", r"\\1", joined, flags=re.S))\n',
+     "    return (text, joined)\n",
+     ("case_block_escaped_target", "case_block_escaped_target_powershell")),
+    # F2, the allow-list comment reader.
+    ("F2a the comment reader dropped", "    text = _drop_comments(text)\n", "",
+     ("case_allow_comment_ends_the_line", "case_allow_comment_ends_the_line_powershell")),
+    ("F2b the allow-list check removed",
+     "        if char not in _COMMENT_SAFE:\n            break\n", "",
+     ("case_block_hash_in_quotes", "case_block_hash_in_substitution",
+      "case_block_ps_block_comment")),
+    ("F2c a `#` inside a word starts a comment",
+     '        if char == "#" and (index == 0 or text[index - 1] in _COMMENT_START):\n',
+     '        if char == "#":\n',
+     ("case_block_hash_inside_a_word",)),
+    ("F2d a comment runs to the end of the command",
+     "            end = end.start() if end else len(text)\n",
+     "            end = len(text)\n",
+     ("case_block_comment_stops_at_newline",)),
+    ("F2e only a newline ends a comment",
+     '_LINE_END_RE = re.compile(r"[\\n\\r\\x0b\\x0c\\x1c\\x1d\\x1e\\x85\\u2028\\u2029]")',
+     '_LINE_END_RE = re.compile(r"\\n")',
+     ("case_block_comment_stops_at_carriage_return",)),
+    ("F2f class 1: escapes safe and a separator starts a comment",
+     '                          " \\t\\n-_./:=,;&|")\n_COMMENT_START = " \\t\\n"\n',
+     '                          " \\t\\n-_./:=,;&|\\\\`")\n_COMMENT_START = " \\t\\n;&|"\n',
+     ("case_block_escaped_separator_bash", "case_block_escaped_separator_powershell")),
+    ("F2g class 2: any whitespace Python knows is safe and starts a comment",
+     '        if char == "#" and (index == 0 or text[index - 1] in _COMMENT_START):\n'
+     "            end = _LINE_END_RE.search(text, index)\n"
+     "            end = end.start() if end else len(text)\n"
+     "            out.append(text[start:index])\n"
+     "            start = index = end\n"
+     "            continue\n"
+     "        if char not in _COMMENT_SAFE:\n",
+     '        if char == "#" and (index == 0 or text[index - 1] in _COMMENT_START\n'
+     "                            or text[index - 1].isspace()):\n"
+     "            end = _LINE_END_RE.search(text, index)\n"
+     "            end = end.start() if end else len(text)\n"
+     "            out.append(text[start:index])\n"
+     "            start = index = end\n"
+     "            continue\n"
+     "        if char not in _COMMENT_SAFE and not char.isspace():\n",
+     ("case_block_unit_separator_whitespace", "case_block_no_break_space")),
+    ("F2h class 3: escapes and quotes safe",
+     '                          " \\t\\n-_./:=,;&|")\n',
+     '                          " \\t\\n-_./:=,;&|\\\\`\\"\'")\n',
+     ("case_block_declined_hash_holding_a_quote", "case_block_hash_in_quotes")),
 )
 
 
