@@ -1419,9 +1419,9 @@ by tier (R-01, R-35, R-A1, R-36) calls <code>crew_tiers.resolve</code>.</p>
 <td><code>guards.profile</code></td>
 <td>both, ratchet</td>
 <td><code>"off"</code></td>
-<td><code>off</code> | <code>standard</code> | <code>strict</code></td>
+<td><code>off</code> | <code>standard</code> | <code>strict</code> | <code>balanced</code></td>
 <td>1.2.62</td>
-<td>One word for the twelve guards: <code>off</code> (today's defaults), <code>standard</code> or <code>strict</code>. Expands per layer; each guard's ratchet then runs on the expanded values.</td>
+<td>One word for the twelve guards: <code>off</code> (today's defaults), <code>standard</code>, <code>strict</code> or <code>balanced</code> (<code>standard</code> with <code>terraformApply</code> and <code>deployWorkflow</code> at <code>tiered</code>: the machine tier map decides). Expands per layer; each guard's ratchet then runs on the expanded values.</td>
 </tr>
 <tr>
 <td><code>guards.overrides</code></td>

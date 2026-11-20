@@ -306,14 +306,43 @@ anything itself: a write after review would stale the receipt.</p>
 </ul>
 <p>You choose a posture with one setting, <code>guards.profile</code>: <code>off</code> (the default),
 <code>standard</code> (cloud guard <code>block</code>, role-write guard <code>report</code>, <code>adminMerge</code>
-<code>ask</code>) or <code>strict</code> (the cloud, environment and role-write guards all <code>block</code>).
-To move one guard away from the profile, set <code>guards.overrides.&lt;guard&gt;</code>, for
-example <code>guards.overrides.roleWrites: report</code>. The twelve per-guard keys
-(<code>guards.cloudGuard</code> and the rest) are no longer written; an old one still
-counts until <code>/crew:migrate</code> rewrites the layer. Each layer expands its own
-profile and overrides, and the narrower layer wins per guard.
+<code>ask</code>), <code>strict</code> (the cloud, environment and role-write guards all <code>block</code>)
+or <code>balanced</code> (<code>standard</code>, with <code>terraformApply</code> and <code>deployWorkflow</code> at
+<code>tiered</code>). To move one guard away from the profile, set
+<code>guards.overrides.&lt;guard&gt;</code>, for example <code>guards.overrides.roleWrites: report</code>.
+The twelve per-guard keys (<code>guards.cloudGuard</code> and the rest) are no longer
+written; an old one still counts until <code>/crew:migrate</code> rewrites the layer.
+Each layer expands its own profile and overrides, and the narrower layer wins
+per guard.
 - <strong>On by default:</strong> the Stop verify gate (<code>verifyGate: true</code>) blocks when a
   verify rule fails.</p>
+<p><code>balanced</code> is for dev and QA deploys. Under <code>tiered</code> the MACHINE file's tier
+map (<code>tiers</code>) decides, never the repo's <code>environments</code> block: a workflow
+dispatch runs with nobody asked, and a <code>.crew/guard.log</code> row records
+<code>tier:&lt;dev|qa&gt;:&lt;target&gt;;account:unchecked</code> (accounts are not verified yet),
+only when the machine lists its target as <code>dev</code> or <code>qa</code> and the repo's own
+<code>tiers</code> does not narrow it. Production, a target the machine does not list,
+and anything crew cannot read are asked about, and refused when nobody is
+attending. A terraform apply under <code>tiered</code> is never run unattended: crew has
+no cost estimate, so it asks and logs the tier it read.</p>
+<ul>
+<li><strong>Which target.</strong> A dispatch's target is <code>workflow:&lt;file&gt;</code> as the line names
+  it (<code>deploy.yml</code> and <code>.github/workflows/deploy.yml</code> are different targets).
+  When <code>environments.workflows</code> maps the workflow to <code>input:&lt;name&gt;</code> and the
+  line gives that input one literal value, the target is
+  <code>workflow:&lt;file&gt;@&lt;value&gt;</code> and only that; a bare <code>workflow:&lt;file&gt;</code> is not
+  consulted. A fixed repo mapping never selects an <code>@</code> entry. List a bare
+  <code>workflow:&lt;file&gt;</code> only for a workflow that cannot reach production from any
+  repository this machine dispatches to: an entry is keyed by workflow name,
+  not by repository, so it also covers <code>gh workflow run &lt;file&gt; -R other/repo</code>.</li>
+<li><strong>Both layers, and the owner.</strong> <code>balanced</code> is in force only when the
+  machine file AND the repo file both say it; either alone leaves the two
+  guards at <code>block</code>. Moving to it, from <code>off</code> or from <code>standard</code>, widens
+  <code>terraformApply</code> and <code>deployWorkflow</code> (and <code>adminMerge</code> from <code>off</code>), so the
+  write needs your confirmation in each layer and an agent's write of it is
+  refused. A config that already said <code>balanced</code> before this version read as
+  malformed (every guard <code>block</code>) and now reads as <code>balanced</code>.</li>
+</ul>
 <p><strong>The scope guard</strong> (<code>scope.mode</code>) runs before each Write, Edit, MultiEdit and
 NotebookEdit. It refuses an edit when the active ticket has no current
 approval, or when the target is outside Touch. It also refuses a shell command

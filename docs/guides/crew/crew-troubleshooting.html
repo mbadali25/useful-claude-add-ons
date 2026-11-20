@@ -1547,8 +1547,8 @@ but returns immediately without judging anything; "off" for <code>verifyGate</co
 <tr>
 <td><code>guards.profile</code></td>
 <td>both layers (expands per layer)</td>
-<td><code>off</code>/<code>standard</code>/<code>strict</code></td>
-<td><code>off</code> (the default): the cloud, environment and role-write guards are off and the others sit at their narrowest tier. Set one guard away from the profile with <code>guards.overrides.&lt;guard&gt;</code>; the narrower layer wins per guard</td>
+<td><code>off</code>/<code>standard</code>/<code>strict</code>/<code>balanced</code></td>
+<td><code>off</code> (the default): the cloud, environment and role-write guards are off and the others sit at their narrowest tier. Set one guard away from the profile with <code>guards.overrides.&lt;guard&gt;</code>; the narrower layer wins per guard. <code>balanced</code> in only one layer leaves <code>terraformApply</code> and <code>deployWorkflow</code> at <code>block</code>: a dev/QA dispatch is allowed only when both layers say <code>balanced</code> and the machine <code>tiers</code> lists its target as dev or qa</td>
 </tr>
 <tr>
 <td><code>guards.overrides.cloudGuard</code></td>

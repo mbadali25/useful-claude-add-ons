@@ -3303,7 +3303,7 @@ def evaluate(root, tool_name, command, data=None, mode="block"):
     """
     shell = "powershell" if tool_name == "PowerShell" else "bash"
     envs = crew_preprod.arm(dict(environments_config(root), command=command))
-    envs["tiered"], envs["root"] = _deploy_tiered(root), root  # R-35: the flag, and the root's one road to deploy_verdict
+    envs["tiered"], envs["root"] = _deploy_tiered(root), root  # R-35: the root's one road to deploy_verdict
     ctx = {"cd": False, "switch": False, "engaged": envs["engaged"], "dispatch": dict(envs)}
     findings = scan(shell, command, ctx=ctx)
     cwd = (data or {}).get("cwd")
