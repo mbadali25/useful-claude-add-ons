@@ -406,7 +406,9 @@ shell,standards,stop_budget,ticket_state,tooling,tracker,train,wave,webtest}.py`
 - `test_ghdeploy_mutations_are_wired` (`plugin/crew/tests/test_sabotage_harness.py:424`) keeps `GHDEPLOY_MUTATIONS` and
   `PROMOTE_TREE_MUTATIONS` in `MUTATIONS` by identity; the same file holds the restore, unique-anchor and signal-handler
   behaviour (`:85-286`). `sabotage_platform.PLATFORM_ONLY` (`plugin/crew/tests/sabotage_platform.py:57`) declares entries
-  whose target test runs only on POSIX.
+  whose target test runs only on POSIX. DERIVED (R-20): `CAPABILITY_ONLY` in the same file holds entries that need
+  something the host may refuse, each with a probe (`can_link_dirs`: a directory link); `not_exercised_here` asks it, so
+  a host that cannot make the link reads the entry as not exercised instead of erroring.
 - `CLOUD_GUARD_MUTATIONS` carries the entries C-0047 part 1 retired (`docs/tickets/C-0047/retired-entries.md` exists) and
   the dispatch reader's entries aimed at `crew_dispatch.py` (`DISPATCH`, `plugin/crew/tests/sabotage_cloud.py:284`).
 - `test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule` (`plugin/crew/tests/test_refresh_check.py:1131`) counts

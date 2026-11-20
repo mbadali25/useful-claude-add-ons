@@ -126,13 +126,52 @@ def host_platform():
     return sys.platform
 
 
+def link_dir(target, link):
+    """Make `link` a directory link to `target`: a junction on Windows (no
+    privilege needed), a symlink elsewhere. False when this host cannot."""
+    try:
+        if os.name == "nt":
+            import _winapi  # pylint: disable=import-outside-toplevel,import-error
+            _winapi.CreateJunction(target, link)
+        else:
+            os.symlink(target, link, target_is_directory=True)
+    except (OSError, NotImplementedError, ImportError, AttributeError):
+        return False
+    return os.path.isdir(link)
+
+
+def can_link_dirs():
+    """Whether this host can make a directory link, tried in a scratch dir."""
+    with tempfile.TemporaryDirectory(prefix="sabotage-link-") as scratch:
+        target, link = os.path.join(scratch, "real"), os.path.join(scratch, "link")
+        os.mkdir(target)
+        made = link_dir(target, link)
+        if made and os.name == "nt":
+            os.rmdir(link)  # a junction: unlinked, so the cleanup never walks through it
+        return made
+
+
+# label -> (probe, what the host must be able to do). Like PLATFORM_ONLY, but
+# asked of the host rather than read from its name: an entry whose probe says
+# no is never applied and is counted "not exercised here". R-20 review round 4.
+CAPABILITY_ONLY = {
+    "run approval R-20 S44 D6 compares against the home as written only, never its real path"
+    " [test_with_a_class_on_a_home_reached_through_a_link_is_read_in_both_forms]":
+        (can_link_dirs, "a host that can link a directory"),
+}
+
+
 def not_exercised_here(label, host=None):
-    """The platforms `label` is declared for, when `host` is not one of them;
-    None when the entry runs here."""
+    """The platforms `label` is declared for, when `host` is not one of them
+    (or the capability it needs, when this host's probe says no); None when
+    the entry runs here."""
     declared = PLATFORM_ONLY.get(label)
-    if declared is None or (host or host_platform()) in declared[0]:
-        return None
-    return declared[0]
+    if declared is not None and (host or host_platform()) not in declared[0]:
+        return declared[0]
+    needs = CAPABILITY_ONLY.get(label)
+    if needs is not None and not needs[0]():
+        return frozenset({needs[1]})
+    return None
 
 
 def pytest_collection_finish(session):

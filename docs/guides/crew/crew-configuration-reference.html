@@ -477,13 +477,13 @@ it at the store. That is four or more of the name's own characters (<code>run-*<
 <code>run-appro[v]als</code>, <code>run-approva?s</code>, <code>${d}-approvals</code>), a store child after it
 (<code>$X/receipts/a.json</code>), <code>.claude/crew</code> before it (<code>~/.claude/crew/*</code>, or a
 relative glob run from that directory), or <code>.claude/crew</code> named anywhere else
-in the command. Unknown is read as the store, so with a class on this
-over-refuses near it: <code>rm -rf run-*</code> in any directory, and a command that
-names <code>~/.claude/crew</code> and also holds a variable. Run those yourself. A glob
-or a variable nowhere near the store (<code>rm -f *.pyc</code>, <code>git add
-plugin/crew/*</code>, <code>cp $SRC $DST</code>) is not touched. If the store check itself
-fails while a class is on, the call is refused in every <code>scope.mode</code>; only a
-plain read still passes.</p>
+in the command. Unknown is read as the store; only closed, plain shapes are
+excused (a test, lint or <code>git</code> command on a hook, a commit message, <code>rm -rf run-*</code>
+under a repo or <code>/tmp</code>, <code>cp $SRC ~/.claude/crew/x.bak</code>, <code>claude -p x &gt; $OUT</code>).
+Past those, a variable, redirect, <code>cd</code>, <code>~/</code> or <code>sed</code> beside another command
+refuses. A glob or variable nowhere near the store (<code>cp $SRC $DST</code>) is
+untouched. If the store check fails while a class is on, the call is refused
+in every <code>scope.mode</code>; only a plain read still passes.</p>
 <p>These are tripwires against drift, not a sandbox: the store and the hook
 payload are a file and a process of the same OS user, so a session that sets
 out to forge a receipt by a route the guard cannot read (a whole path held in
