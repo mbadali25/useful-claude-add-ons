@@ -37,9 +37,11 @@ Reading a command:
    `||` `;` `|` `&` and newline, split on whitespace and stripped of quotes
    and brackets. Each redirection is lifted out of its segment before the head
    is read: an fd copy is dropped, any other operator takes the next word as
-   its target. An operator with no target is `could-not-tell`
-   (`redirect-target-unseen`): the shell writes somewhere the reader cannot
-   see.
+   its target. An operator with no target makes the segment
+   `could-not-tell` (`redirect-target-unseen`) unless its words are a hit,
+   which wins: the shell writes somewhere the reader cannot see. A segment
+   gives at most one finding. Leading digits are an fd number only at the
+   start of a word (`list2>&1` keeps the word `list2`).
 
 Each segment then has its leading `NAME=VALUE` words and `HEAD_PREFIXES`
 stripped, and its head (basename, lower-cased, `.exe` dropped) is read. Only a
@@ -116,19 +118,26 @@ _ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=", re.S)
 # --- the raw reader --------------------------------------------------------------------------
 
 # Longest first: fd copies, &> and &>>, >|, here-documents and here-strings,
-# > and >>, <.
-_REDIRECT_RE = re.compile(r"[0-9]*[<>]&(?:[0-9]+|-)|&>>?|[0-9]*>\||[0-9]*<<[<-]?|[0-9]*>>?|[0-9]*<")
+# > and >>, <. Leading digits are an fd number only at the start of a word:
+# in `list2>&1` the shell's word is `list2` and the operator is `>&1`.
+_FD = r"(?:(?<![^\s;&|(){}])[0-9]+)?"
+_REDIRECT_RE = re.compile(_FD + r"[<>]&(?:[0-9]+|-)|&>>?|" + _FD + r">\||" + _FD
+                          + r"<<[<-]?|" + _FD + r">>?|" + _FD + r"<")
 _FD_COPY_RE = re.compile(r"[0-9]*[<>]&(?:[0-9]+|-)")
 _SEPARATORS_RE = re.compile(r"&&|\|\||[;|&\n\r]")
 _STRIP = "\"'(){}"
 _MARK = "\x01"
 _HIDE = str.maketrans({"&": "\x02", "|": "\x03"})
 _SHOW = str.maketrans({"\x02": "&", "\x03": "|"})
+# The marker characters in the command itself are replaced first, so no word
+# of the command can pass for a lifted operator.
+_UNMARK = str.maketrans({_MARK: "�", "\x02": "�", "\x03": "�"})
 
 
 def _protect(text):
     """`text` with each redirection operator turned into a word of its own
     that no separator cuts."""
+    text = text.translate(_UNMARK)
     return _REDIRECT_RE.sub(lambda m: f" {_MARK}{m.group(0).translate(_HIDE)} ", text)
 
 
@@ -313,12 +322,17 @@ def _plain_pass(commands):
 
 
 def _raw_pass(text):
+    """One finding per segment (A14). A dangling operator makes the segment
+    could-not-tell unless its words are a hit, which wins (A7)."""
     out = []
     for number, segment in enumerate(raw_segments(text)):
         where = {"pass": "raw", "command": number}
         if segment["dangling"]:
-            out.append(_finding(COULD_NOT_TELL, "redirect-target-unseen", TF_STATE,
-                                word=None, **where))
+            verdict, rule, word = _judge_words(segment["words"])
+            if verdict != HIT:
+                verdict, rule, word = COULD_NOT_TELL, "redirect-target-unseen", None
+            out.append(_finding(verdict, rule, TF_STATE, word=word, **where))
+            continue
         _judged(segment["words"], out, where)
     return out
 

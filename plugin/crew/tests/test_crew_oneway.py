@@ -232,9 +232,30 @@ def test_one_finding_per_segment():
 
 
 def test_a_dangling_operator_does_not_hide_a_hit():
+    # A7: a hit in the segment wins; A14: one finding per segment.
     result = run(crew_oneway, "terraform state rm x >")
     assert result["verdict"] == "hit"
-    assert sorted(rules(result)) == ["redirect-target-unseen", "tf-state-write"]
+    assert rules(result) == ["tf-state-write"]
+    assert len(result["findings"]) == 1
+
+
+def test_a_dangling_operator_gives_one_finding_per_segment():
+    result = run(crew_oneway, "terraform state $SUB x >")
+    assert rules(result) == ["redirect-target-unseen"]
+    assert len(result["findings"]) == 1
+
+
+# A trailing digit belongs to the word unless it starts one (bash reads
+# `list2>&1` as the word `list2` and the operator `>&1`).
+@pytest.mark.parametrize("command", ["terraform state list2>&1", "terraform state list2>out.txt",
+                                     "terraform state rm2>&1"])
+def test_a_digit_glued_to_a_word_stays_in_the_word(command):
+    assert_hit(crew_oneway, command, "tf-state-write")
+
+
+def test_a_marker_character_in_the_command_is_not_an_operator():
+    assert_hit(crew_oneway, "terraform state \x01name list show > out.txt", "tf-state-write")
+    assert_hit(crew_oneway, "terraform state \x02x > out.txt", "tf-state-write")
 
 
 def test_findings_name_rule_operation_and_place_only():
@@ -358,6 +379,9 @@ READER_ROWS = (
     ("cat <<-EOF", [seg(["cat"], [("<<-", "EOF")])]),
     ("cat <<< word", [seg(["cat"], [("<<<", "word")])]),
     ("a >& f", [seg(["a"], dangling=[">"]), seg(["f"])]),
+    ("a list2>&1", [seg(["a", "list2"])]),
+    ("a x2>f", [seg(["a", "x2"], [(">", "f")])]),
+    ("a 2>f", [seg(["a"], [("2>", "f")])]),
 )
 
 
@@ -692,6 +716,19 @@ def case_tie_keeps_earlier(mod):
     assert rules(result) == ["tf-state-unseen"], result
 
 
+def case_block_glued_digit(mod):
+    assert_hit(mod, "terraform state list2>&1", "tf-state-write")
+
+
+def case_block_marker_in_command(mod):
+    assert_hit(mod, "terraform state \x01name list show > out.txt", "tf-state-write")
+
+
+def case_one_finding_with_dangling(mod):
+    result = run(mod, "terraform state rm x >")
+    assert rules(result) == ["tf-state-write"], result
+
+
 MUTATIONS = (
     ("1 rm added to the state read set",
      'STATE_READ = frozenset(("list", "show", "pull", "identities"))',
@@ -755,6 +792,16 @@ MUTATIONS = (
     ("R7 the exec chain judged by plain recursion",
      "            memo[later] = _judge_from(words, later, memo)\n",
      "            pass\n", ("case_long_exec_chain",)),
+    ("R8 any digits before an operator taken as its fd",
+     '_FD = r"(?:(?<![^\\s;&|(){}])[0-9]+)?"', '_FD = r"[0-9]*"', ("case_block_glued_digit",)),
+    ("R9 marker characters in the command left in place",
+     "    text = text.translate(_UNMARK)\n", "", ("case_block_marker_in_command",)),
+    ("R10 a dangling segment reports both findings",
+     "            out.append(_finding(verdict, rule, TF_STATE, word=word, **where))\n"
+     "            continue\n",
+     '            out.append(_finding(COULD_NOT_TELL, "redirect-target-unseen", TF_STATE,\n'
+     "                                word=None, **where))\n",
+     ("case_one_finding_with_dangling",)),
 )
 
 
