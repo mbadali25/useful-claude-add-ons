@@ -1002,7 +1002,14 @@ skill files, none of them harness or `ALONGSIDE`), so both wait for the
 non-harness half. The store protection and the session binding are tripwires:
 the stores and the hook payload belong to the same OS user. The store name is
 also read through globs and unexpanded variables beside it
-(`crew_runapproval._veiled_store`), a check that raises is a refusal in every
+(`crew_runapproval._veiled_store`). DERIVED (R-20): the triggers are
+unchanged and only closed, plain shapes are excused, each clause by its own
+excuse: `_plain_commands` (one strict scan; not plain means no excuse),
+`_on_table`/`_all_on_table` (the closed command table; `sed` only alone and
+with a hook name only in a file operand; no `@file` on a `python -m` row),
+`_drop_messages` (a commit, tag or PR message dropped only beside RO rows and
+`git add`), `_claude_excused`, `_placed_reading` (D6) and `_destination_only`
+(D7), all in `plugin/crew/hooks/scripts/crew_runapproval.py`. A check that raises is a refusal in every
 mode (`scope_guard._store_held`), all of it only while a class is on
 (`store_refusal` reads `settings` first and returns None with none on, so a
 repo that never set the key sees no new refusal), and the binding does not stop a child that

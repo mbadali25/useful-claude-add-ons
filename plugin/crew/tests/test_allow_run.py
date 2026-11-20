@@ -41,6 +41,7 @@ import json
 import os
 import pathlib
 import re
+import tempfile
 import threading
 
 import pytest
@@ -766,7 +767,6 @@ _CREW = "~/.claude/crew"
     ("Bash", f"cd {_CREW} && rm -rf *"),
     ("Bash", "touch $X/receipts/ar-0123456789ab.json"),
     ("Bash", "cp r.json */requests/"),
-    ("Bash", "rm -rf run-*"),
     ("Bash", "touch *-approvals/receipts/a.json"),
     ("PowerShell", "Set-Content $HOME\\.claude\\crew\\run-*\\receipts\\x.json '{}'"),
     ("PowerShell", "Set-Content $env:USERPROFILE\\.claude\\crew\\$name\\receipts\\x.json '{}'"),
@@ -775,7 +775,7 @@ _CREW = "~/.claude/crew"
 ], ids=["star", "bracket", "question-mark", "braced-variable", "bare-variable", "substitution",
         "backticks", "whole-segment-star", "crew-dir-star", "one-letter-star", "brace-list",
         "extended-glob", "quotes-in-glob", "dot-dot", "variable-beside-crew-dir", "cd-then-star",
-        "variable-before-receipts", "star-before-requests", "bare-run-star", "star-approvals",
+        "variable-before-receipts", "star-before-requests", "star-approvals",
         "ps-star", "ps-variable-segment", "cmd-variable", "globbed-read-with-redirect"])
 def test_a_shell_command_veiling_the_store_name_is_refused_with_the_guard_off(repo, capsys,
                                                                              tool_name, command):
@@ -1214,3 +1214,453 @@ def test_the_module_changed_beside_feature_code_is_refused():
                                 "plugin/crew/hooks/scripts/cloud_guard.py"], set())
 
     assert code == 1
+
+
+# --- R-20: the store tripwire stops refusing everyday commands ------------------------
+#
+# Every row runs with a class ON. A must-allow row is a recorded over-refusal (O1-O17
+# of the R-20 spec, section 2) or a neighbour of one; a must-block row is a shape the
+# excuses do not recognise and must keep refusing, and is also checked with the class
+# OFF, where it must pass: that pins the refusal on the store tripwire and nothing else.
+# Ids are the ones the R-20 sabotage rows (`sabotage_runapproval.py`) name.
+
+_S = "plugin/crew/hooks/scripts"
+_B = "~/.claude/crew/forged/a.json"
+_C = "~\\.claude\\crew\\forged\\a.json"
+_TAIL = " && git log -1 --oneline | cut -d ' ' -f 2- | bash"
+_TOUCH = "touch ~/.claude/crew/run-approvals/receipts/a"
+
+_R20_ALLOW = [
+    # O1-O17, verbatim (section 2 of the spec)
+    ("O1", "Bash", "python3 -m pytest plugin/crew/tests/test_approval_hook.py -q"),
+    ("O2", "Bash", f"git add {_S}/crew_hook.py"),
+    ("O3", "Bash", f"git add {_S}/approval_hook.py plugin/crew/CHANGELOG.md"),
+    ("O4", "Bash", "git commit -m 'fix(crew): approval_hook reads the prompt id'"),
+    ("O5", "Bash", f"python3 -m pylint {_S}/crew_hook.py"),
+    ("O6", "Bash", f"sed -i 's/a/b/' {_S}/approval_hook.py"),
+    ("O7", "PowerShell", f"git add {_S}/approval_hook.py"),
+    ("O8", "Bash", "git commit -m 'docs: the run-approvals store'"),
+    ("O9", "Bash", "python3 -m pytest plugin/crew/tests/test_allow_run.py > run-approvals.log"),
+    ("O10", "Bash", f"python3 -m ruff check {_S}/crew_runapproval.py"),
+    ("O11", "Bash", "claude -p 'summarise' --output-format json | jq -r .result"),
+    ("O12", "Bash", "claude --version && rm -rf build"),
+    ("O13", "Bash", "claude mcp list | head -c 200"),
+    ("O14", "Bash", "claude -p 'summarise the diff' > $OUT"),
+    ("O15", "Bash", "rm -rf run-*"),
+    ("O16", "Bash", "rm -rf /tmp/run-*"),
+    ("O17", "Bash", "cp $SRC ~/.claude/crew/config.json.bak"),
+    ("bare-run-star", "Bash", "rm -rf run-*"),
+    # the prompt hook and the module (D2, D3)
+    ("hook-diff-then-add", "Bash", f"git diff --stat -- {_S}/approval_hook.py && git add -A"),
+    ("pytest-k", "Bash", "python3 -m pytest plugin/crew/tests/test_crew_hook.py -k dispatch"),
+    ("git-log-hook", "Bash", f"git log --oneline -- {_S}/approval_hook.py"),
+    ("git-diff-dispatcher", "Bash", f"git diff -- {_S}/crew_hook.py"),
+    ("rg-hook", "Bash", "rg -n approval_hook plugin/crew/hooks/hooks.json"),
+    ("ps-get-content-hook", "PowerShell", f"Get-Content {_S}/crew_hook.py"),
+    ("shellcheck-launcher", "Bash", f"shellcheck {_S}/crew-hook.sh"),
+    ("pipe-table", "Bash", f"git diff | python3 -m pylint --from-stdin {_S}/crew_hook.py"),
+    ("commit-import-word", "Bash", "git commit -m 'import crew_runapproval lazily in scope_guard'"),
+    # the store's name (D4)
+    ("gh-pr-create", "Bash", "gh pr create --title 'crew: run-approvals tripwire' --body 'see /crew:allow-run'"),
+    ("commit-separators", "Bash", "git commit -m 'a; b | c'"),
+    ("store-read-table", "Bash", "git grep -n run-approvals -- plugin/crew"),
+    ("git-log-grep-store", "Bash", "git log --oneline --grep=run-approvals"),
+    ("rg-store", "Bash", "rg -n run-approvals plugin/crew"),
+    ("ps-select-string-store", "PowerShell", "Select-String -Path plugin/crew/CONFIG.md -Pattern run-approvals"),
+    ("msg-add-then-commit", "Bash", "git add -A && git commit -m 'fix: approval_hook reads the prompt id'"),
+    ("add-hook-then-commit-hook", "Bash",
+     f"git add {_S}/approval_hook.py && git commit -m 'fix: approval_hook reads the prompt id'"),
+    ("msg-commit-then-log", "Bash", "git commit -m 'docs: the run-approvals store' && git log -1 --oneline"),
+    ("msg-separators-in-message", "Bash", "git commit -m 'a; b | c run-approvals'"),
+    ("gh-pr-comment", "Bash", "gh pr comment 1 --body 'see run-approvals'"),
+    ("tag-message", "Bash", "git tag -a v1 -m 'run-approvals tripwire'"),
+    ("msg-add-commit-status", "Bash",
+     "git add -A && git commit -m 'docs: the run-approvals store' && git status"),
+    # Claude started fresh (D5)
+    ("claude-stream-json", "Bash", "claude -p 'x' --output-format stream-json | tee out.jsonl | jq -c ."),
+    ("claude-plugin-list-ls", "Bash", "claude plugin list; ls -lrt"),
+    ("cd-var-then-claude", "Bash", "cd \"$REPO\" && claude -p 'x'"),
+    ("claude-mcp-then-git-c", "Bash", "claude mcp list && git -c core.pager=cat log -1"),
+    # four letters of the name, placed away from the store (D6)
+    ("rm-dot-build", "Bash", "rm -rf ./build/run-*"),
+    ("rm-work-run-star", "Bash", "rm -rf .work/run-*"),
+    ("find-repo", "Bash", "find . -name 'run-*' -delete"),
+    ("ps-remove-build", "PowerShell", "Remove-Item -Recurse .\\build\\run-*"),
+    ("tmp-grandparent", "Bash", "rm -rf /tmp/*/run-*"),
+    ("var-tmp", "Bash", "rm -rf /var/tmp/run-*"),
+    ("variable-script-no-name", "Bash", "python3 $SCRIPT --flag"),
+    # one copy or move into the crew dir (D7)
+    ("cp-recursive-dest", "Bash", "cp -r $SRC ~/.claude/crew/backup.d"),
+    ("mv-plain", "Bash", "mv $SRC ~/.claude/crew/config.json.bak"),
+    ("cp-braced-variable", "Bash", "cp ${SRC} ~/.claude/crew/config.json.bak"),
+    ("ps-plain-copy", "PowerShell", f"Copy-Item $S {_C}"),
+    ("ps-env-variable-copy", "PowerShell", f"Copy-Item $env:SRC {_C}"),
+]
+
+_R20_BLOCK = [
+    # hook run (revs 2-5 groups; their commands are rebuilt from the ids, see the PR)
+    ("script-path", "Bash", f"python3 {_S}/approval_hook.py"),
+    ("python-X-flag", "Bash", f"python3 -X dev {_S}/approval_hook.py"),
+    ("pwsh-execpolicy", "PowerShell", f"pwsh -ExecutionPolicy Bypass -File {_S}/approval-hook.ps1"),
+    ("env-interpreter", "Bash", f"env python3 {_S}/approval_hook.py"),
+    ("message-substitution", "Bash", f"git commit -m \"$(python3 {_S}/approval_hook.py < p.json)\""),
+    ("module-crew-hook", "Bash", "python3 -m crew_hook UserPromptSubmit"),
+    ("runner-module", "Bash", f"python3 -m runpy {_S}/approval_hook.py"),
+    ("unlisted-module", "Bash", "python3 -m approval_hook"),
+    ("unlisted-module-stdin", "Bash", "python3 -m approval_hook < p.json"),
+    ("flag-cluster-ic", "Bash", "python3 -ic 'import approval_hook'"),
+    ("flag-cluster-Ic", "Bash", "python3 -Ic 'import approval_hook'"),
+    ("flag-cluster-sh-quoted", "Bash", f"bash -ec 'python3 {_S}/approval_hook.py'"),
+    ("flag-cluster-sh-subst", "Bash", f"sh -c \"$(cat {_S}/crew-hook.sh)\""),
+    ("flag-cluster-module", "Bash", "python3 -Im approval_hook"),
+    ("pwsh-prefix", "PowerShell", f"& python {_S}/approval_hook.py"),
+    ("unknown-flag", "Bash", f"python3 -m pytest --confcutdir=. {_S}/approval_hook.py"),
+    ("dev-stdin", "Bash", f"python3 /dev/stdin < {_S}/approval_hook.py"),
+    ("process-substitution", "Bash", f"python3 <(cat {_S}/approval_hook.py)"),
+    ("variable-script", "Bash", f"H={_S}/approval_hook.py; python3 $H"),
+    ("interpreter-env", "Bash", f"PYTHONSTARTUP={_S}/approval_hook.py python3 -m pytest -q"),
+    # module run
+    ("run-module-script", "Bash", f"python3 {_S}/crew_runapproval.py"),
+    ("module-runapproval", "Bash", "python3 -m crew_runapproval"),
+    ("stdin-heredoc-import", "Bash", "python3 - <<'EOF'\nimport crew_runapproval\nEOF"),
+    # the store's name
+    ("python-join", "Bash", "python3 -c \"import os; open(os.path.join(os.path.expanduser('~'), "
+                            "'.claude', 'crew', 'run-approvals', 'receipts', 'a.json'), 'w')\""),
+    ("semicolon-boundary", "Bash", "cd ~/.claude/crew/run-approvals;touch receipts/a.json"),
+    ("git-inside-quoted-string", "Bash", f"echo \"git commit -m '\" ; {_TOUCH} ; echo \"'\""),
+    ("git-after-another-word", "Bash", f"git add -- git commit -m '{_TOUCH}'"),
+    # claude
+    ("resume-after-redirect", "Bash", "claude > $OUT -r 5f1c"),
+    ("resume-after-quoted-pipe", "Bash", "claude -p 'a | b' --resume 5f1c < p.txt"),
+    ("claude-quoted-flag", "Bash", "claude -p x '--resume' 5f1c"),
+    ("claude-quoted-flag-dq", "Bash", "claude -p x \"--resume=5f1c\""),
+    ("claude-wrapper", "Bash", "timeout 600 claude -p 'x' --resume 5f1c"),
+    ("claude-keyword", "Bash", "if true; then claude --resume 5f1c -p x < p.txt; fi"),
+    ("claude-grouping", "Bash", "(claude -r 5f1c -p x < p.txt)"),
+    ("claude-flags-variable", "Bash", "claude -p $FLAGS"),
+    # veiled
+    ("cd-then-run-star", "Bash", "cd ~/.claude/crew && rm -rf run-*"),
+    ("copy-into-crew-dir", "Bash", "cp -r $SRC ~/.claude/crew/"),
+    ("copy-into-crew-dir-bare", "Bash", "cp -r $SRC ~/.claude/crew"),
+    ("crew-dir-dotdot", "Bash", "cp -r $SRC ~/.claude/crew/x/.."),
+    ("O18", "Bash", "d=~/.claude/crew; ls $d > listing.txt"),
+    ("O19", "PowerShell", "Remove-Item -Recurse $env:TEMP\\run-*"),
+    ("veiled-grandparent", "Bash", "rm -rf ~/.claude/*/run-*"),
+    ("tilde-user", "Bash", "rm -rf ~root/.claude/crew/run-*"),
+    ("tilde-user-elsewhere", "Bash", "rm -rf ~owner/tmp/run-*"),
+    ("tilde-stack", "Bash", "rm -rf ~+/run-*"),
+    ("tilde-walker-root", "Bash", "find ~root -name 'run-*' -delete"),
+    ("home-rooted", "Bash", "rm -rf ~/build/run-*"),
+    ("other-rooted", "Bash", "rm -rf /opt/build/run-*"),
+    ("cd-chain", "Bash", "cd ~ && cd .claude && cd crew && rm -rf run-*"),
+    ("crew-dir-chdir-flag", "Bash", "git -C ~/.claude/crew/tmp rm -r $X"),
+    # walkers
+    ("find-claude-exec", "Bash", "find ~/.claude -name 'run-*' -exec rm -rf {} +"),
+    ("find-from-home-delete", "Bash", "find ~ -name 'run-*' -delete"),
+    ("gci-recurse", "PowerShell", "Get-ChildItem -Recurse ~ -Filter run-* | Remove-Item -Recurse"),
+    ("code-glob", "Bash", "python3 -c \"import glob, shutil; [shutil.rmtree(p) for p in "
+                          "glob.glob('/home/*/.claude/crew/run-*')]\""),
+    # rev 6 classes
+    ("wrapper", "Bash", f"timeout 10 python3 {_S}/approval_hook.py < p.json"),
+    ("wrapper-nice", "Bash", f"nice python3 {_S}/crew_hook.py UserPromptSubmit"),
+    ("uv-run", "Bash", f"uv run {_S}/approval_hook.py"),
+    ("shell-keyword", "Bash", f"if true; then python3 {_S}/approval_hook.py < p.json; fi"),
+    ("shell-keyword-for", "Bash", f"for i in 1; do bash {_S}/crew-hook.sh UserPromptSubmit; done"),
+    ("negation", "Bash", f"! python3 {_S}/approval_hook.py"),
+    ("grouping", "Bash", f"(python3 {_S}/approval_hook.py < p.json)"),
+    ("grouping-brace", "Bash", f"{{ python3 {_S}/approval_hook.py; }} < p.json"),
+    ("variable-command-word", "Bash", f"PY=python3; $PY {_S}/approval_hook.py"),
+    ("find-exec", "Bash", "find plugin -name approval_hook.py -exec python3 {} \\;"),
+    ("git-alias", "Bash", f"git -c alias.x='!python3 {_S}/approval_hook.py' x"),
+    ("ps-block", "PowerShell", f"if ($true) {{ python {_S}/approval_hook.py }}"),
+    ("ps-cmd-c", "PowerShell", f"cmd /c python {_S}/approval_hook.py"),
+    ("ps-start-process", "PowerShell", f"Start-Process python -ArgumentList {_S}/approval_hook.py"),
+    ("ps-set-alias", "PowerShell", f"Set-Alias p python; p {_S}/approval_hook.py"),
+    ("module-wrapper", "Bash", f"timeout 10 python3 {_S}/crew_runapproval.py"),
+    ("module-keyword", "Bash", "if true; then python3 -c 'import crew_runapproval'; fi"),
+    # the table itself
+    ("cat-pipe-python", "Bash", f"cat {_S}/approval_hook.py | python3"),
+    ("pylint-init-hook", "Bash",
+     "python3 -m pylint --init-hook='import approval_hook; approval_hook.main()' x.py"),
+    ("rg-pre", "Bash", f"rg --pre {_S}/crew-hook.sh x ."),
+    ("pytest-p", "Bash", "python3 -m pytest -p approval_hook"),
+    ("git-ext-diff", "Bash", f"git diff --ext-diff -- {_S}/approval_hook.py"),
+    ("redirect-copy", "Bash", f"git show HEAD:{_S}/approval_hook.py > x.py"),
+    ("copy-then-run", "Bash", f"cp {_S}/approval_hook.py x.py && python3 x.py"),
+    ("assignment-prefix", "Bash", f"GIT_EXTERNAL_DIFF=python3 git diff -- {_S}/approval_hook.py"),
+    ("sed-exec", "Bash", f"sed -i '1e bash {_S}/crew-hook.sh' README.md"),
+    ("sed-exec-bare", "Bash", f"sed -i e {_S}/crew-hook.sh"),
+    ("function-shadow", "Bash", f"git() {{ python3 \"$2\"; }}; git add {_S}/approval_hook.py"),
+    ("flags-before-m", "Bash", f"python3 -I -m pylint {_S}/approval_hook.py"),
+    ("json-tool-outfile", "Bash",
+     "python3 -m json.tool forged.json ~/.claude/crew/run-approvals/receipts/ar-0123456789ab.json"),
+    ("rm-store-table", "Bash", "rm -rf ~/.claude/crew/run-approvals"),
+    ("cd-then-add", "Bash", "cd plugin/crew && git add hooks/scripts/crew_hook.py"),
+    ("diff-pipe-head", "Bash", f"git diff -- {_S}/crew_hook.py | head -20"),
+    ("heredoc-commit", "Bash", "git commit -m \"$(cat <<'EOF'\ndocs: the run-approvals store\nEOF\n)\""),
+    ("ps-backslash-quote", "PowerShell",
+     "git commit -m \"a\\\" ; ni ~/.claude/crew/run-approvals/receipts/a ; echo \\\"b\""),
+    # rev 7
+    ("cp-target-flag", "Bash", "cp -t $DST ~/.claude/crew/forged/ar-0123456789ab.json"),
+    ("cp-target-long", "Bash", f"cp --target-directory=$DST {_B}"),
+    ("ps-destination-first", "PowerShell", f"Copy-Item -Destination $D {_C}"),
+    ("pylint-output-file", "Bash", f"python3 -m pylint --output-format=json:out.json {_S}/approval_hook.py"),
+    ("ps-pipe-into-write", "PowerShell", f"Get-Content {_S}/approval_hook.py | Remove-Item"),
+    # rev 8
+    ("ps-path-named-copy", "PowerShell", f"Copy-Item $S -Path {_C}"),
+    ("ps-literalpath-named-move", "PowerShell", f"Move-Item $S -LiteralPath {_C}"),
+    ("ps-cp-alias-literalpath", "PowerShell", f"cp $S -LiteralPath {_C}"),
+    ("ps-mv-alias-path", "PowerShell", f"mv $S -Path {_C}"),
+    ("ps-cp-bash-letters", "PowerShell", f"cp -r $S {_C}"),
+    ("ps-path-first-copy", "PowerShell", f"Copy-Item -Path $S {_C}"),
+    ("ps-lone-operand", "PowerShell", f"Set-Location $D; Copy-Item {_C}"),
+    ("ps-lone-operand-recurse", "PowerShell", f"Set-Location $D; Copy-Item -Recurse {_C}"),
+    # rev 9 (the dashes are written by code point, never pasted)
+    ("cp-quoted-target-flag", "Bash", f"cp '-t' $DST {_B}"),
+    ("cp-dquoted-target-flag", "Bash", f"cp \"-t\" $DST {_B}"),
+    ("cp-part-quoted-target-flag", "Bash", f"cp -'t' $DST {_B}"),
+    ("cp-escaped-target-flag", "Bash", f"cp \\-t $DST {_B}"),
+    ("cp-quoted-target-long", "Bash", f"cp \"--target-directory=$DST\" x {_B}"),
+    ("mv-quoted-target-flag", "Bash", f"mv '-t' $DST {_B}"),
+    ("ps-endash-destination", "PowerShell", f"Copy-Item {chr(0x2013)}Destination $D {_C}"),
+    ("ps-emdash-destination-move", "PowerShell", f"Move-Item {chr(0x2014)}Destination $D {_C}"),
+    ("ps-hbar-destination", "PowerShell", f"Copy-Item {chr(0x2015)}Destination $D {_C}"),
+    ("ps-comma-sources", "PowerShell", f"Set-Location $D; Copy-Item $A, {_C}"),
+    ("ps-comma-word-sources", "PowerShell", f"Set-Location $D; Copy-Item $A , {_C}"),
+    ("ps-comma-sources-move", "PowerShell", f"Set-Location $D; Move-Item $A, {_C}"),
+    ("ps-comma-word-sources-alone", "PowerShell", f"Copy-Item $A , {_C}"),
+    ("cp-assignment-same-command", "Bash", f"S=\"-t $DST\"; cp $S {_B}"),
+    ("cp-function-shadow", "Bash", f"cp() {{ command cp -t $DST \"$2\"; }}; cp $SRC {_B}"),
+    ("ps-function-shadow", "PowerShell",
+     "function Copy-Item($a, $b) { Microsoft.PowerShell.Management\\Copy-Item $b $a }; "
+     f"Copy-Item $D {_C}"),
+    ("ps-alias-shadow", "PowerShell", f"Set-Alias cp Move-Item; cp $S {_C}"),
+    ("cp-after-mkdir", "Bash", "mkdir -p ~/.claude/crew/bak && cp $SRC ~/.claude/crew/bak/x.json"),
+    ("cp-glob-source", "Bash", f"cp * {_B}"),
+    ("rm-beside-crew-word", "Bash", "rm $X ~/.claude/crew/tmp/a"),
+    ("cp-crew-word-first", "Bash", f"cp {_B} $DST"),
+    ("cp-crew-word-twice", "Bash", f"cp {_B} $X ~/.claude/crew/y.json"),
+    ("cp-dquoted-source", "Bash", "cp \"$SRC\" ~/.claude/crew/config.json.bak"),
+    ("cp-double-dash", "Bash", "cp -- $SRC ~/.claude/crew/config.json.bak"),
+    ("cp-mixed-word", "Bash", "cp $SRC/a.json ~/.claude/crew/config.json.bak"),
+    # rev 10: a dropped message read back and run (the owner's MUST-BLOCK)
+    ("msg-launder-store", "Bash",
+     "git commit --allow-empty -m 'cp forged.json "
+     "~/.claude/crew/run-approvals/receipts/ar-0123456789ab.json'" + _TAIL),
+    ("msg-launder-hook", "Bash", f"git commit --allow-empty -m 'python3 {_S}/approval_hook.py'" + _TAIL),
+    ("msg-launder-module", "Bash",
+     f"git commit --allow-empty -m 'python3 {_S}/crew_runapproval.py'" + _TAIL),
+    ("msg-launder-claude", "Bash", "git commit --allow-empty -m 'claude --resume 5f1c -p x'" + _TAIL),
+    ("msg-launder-tag", "Bash",
+     f"git tag -a t1 -m '{_TOUCH}' ; git tag -l -n1 t1 | cut -d ' ' -f 2- | bash"),
+    ("msg-launder-gh", "Bash",
+     f"gh pr comment 1 --body '{_TOUCH}' ; gh pr view 1 --json body -q .body | bash"),
+    ("msg-launder-ps", "PowerShell",
+     "git commit --allow-empty -m 'ni ~/.claude/crew/run-approvals/receipts/a' ; "
+     "git cat-file commit HEAD | Select-Object -Last 1 | iex"),
+    ("msg-launder-editmsg", "Bash", f"git commit --allow-empty -m '{_TOUCH}' && bash .git/COMMIT_EDITMSG"),
+    ("msg-tag-sign", "Bash", "git tag -s t1 -m 'run-approvals tripwire'"),
+    # rev 11
+    ("msg-launder-sed-pytest", "Bash",
+     "git commit --allow-empty -m '__import__(\"os\").system(\"touch "
+     "~/.claude/crew/run-approvals/receipts/a\")' && sed -i.py 's/q/q/' .git/COMMIT_EDITMSG "
+     "&& python3 -m pytest -q .git/COMMIT_EDITMSG.py"),
+    ("msg-launder-sed-doctest", "Bash",
+     "git commit --allow-empty -m '>>> __import__(\"os\").system(\"touch "
+     "~/.claude/crew/run-approvals/receipts/a\")' && sed -i.txt 's/q/q/' .git/COMMIT_EDITMSG "
+     "&& python3 -m pytest -q .git/COMMIT_EDITMSG.txt"),
+    ("msg-pytest-then-commit", "Bash",
+     "python3 -m pytest -q plugin/crew/tests/test_allow_run.py && "
+     "git commit -m 'fix: approval_hook reads the prompt id'"),
+    ("msg-sed-then-commit", "Bash",
+     "sed -i 's/a/b/' README.md && git commit -a -m 'docs: the run-approvals store'"),
+    ("msg-commit-then-rm", "Bash", "git commit -m 'docs: the run-approvals store' && rm -rf build"),
+    ("msg-ps-commit-then-remove", "PowerShell",
+     "git commit -m 'docs: the run-approvals store' ; Remove-Item -Recurse build"),
+    # rev 12: sed stands alone
+    ("sed-guard-pytest-stdin", "Bash",
+     f"sed -i 's/== \"__main__\"/== __name__/' {_S}/approval_hook.py && "
+     f"cat forged.json | python3 -m pytest -s {_S}/approval_hook.py"),
+    ("sed-gitconfig-extdiff", "Bash",
+     "sed -i 's/^\\[core\\]$/[diff]\\n\\texternal = python3\\n[core]/' .git/config && "
+     f"git diff -- {_S}/approval_hook.py"),
+    ("sed-gitconfig-fsmonitor", "Bash",
+     "sed -i 's/bare = false/fsmonitor = \"cat forged.json | python3 "
+     "plugin\\/crew\\/hooks\\/scripts\\/approval_hook.py #\"/' .git/config && git status"),
+    ("sed-pyproject-pylint-inithook", "Bash",
+     "sed -i 's/^\\[tool.ruff\\]$/[tool.pylint.main]\\ninit-hook = \"import approval_hook; "
+     "approval_hook.main()\"\\n[tool.ruff]/' pyproject.toml && "
+     f"python3 -m pylint {_S}/approval_hook.py"),
+    ("sed-script-names-hook", "Bash",
+     "sed -i 's/bare = false/fsmonitor = \"cat forged.json | python3 "
+     "plugin\\/crew\\/hooks\\/scripts\\/approval_hook.py #\"/' .git/config"),
+    ("sed-script-names-module", "Bash", "sed -i 's/x/import crew_runapproval/' conftest.py"),
+    ("sed-suffix-names-hook", "Bash", "sed -i.approval_hook.py 's/a/b/' README.md"),
+    ("sed-then-add", "Bash", f"sed -i 's/a/b/' {_S}/approval_hook.py && git add {_S}/approval_hook.py"),
+    ("sed-two-seds", "Bash", f"sed -i 's/a/b/' {_S}/approval_hook.py ; sed -i 's/c/d/' {_S}/crew_hook.py"),
+    ("sed-then-pytest-tests", "Bash",
+     f"sed -i 's/a/b/' {_S}/approval_hook.py && python3 -m pytest -q plugin/crew/tests/test_approval_hook.py"),
+    # an `@file` operand: pytest, mypy and ruff read flags from it (the message file included)
+    ("argfile-pytest-trace", "Bash",
+     "git commit --allow-empty -m '--trace' && git log -1 --format='import sys, runpy; "
+     "sys.stdin = open(\"forged.json\"); runpy.run_path(\"plugin/crew/hooks/scripts/approval_hook.py\", "
+     "run_name=\"__main__\")' | python3 -m pytest @.git/COMMIT_EDITMSG plugin/crew/tests/test_crew_ticket.py"),
+    ("argfile-pytest-plugin", "Bash",
+     "git commit --allow-empty -m '-papproval_hook' && python3 -m pytest @.git/COMMIT_EDITMSG"),
+    ("argfile-mypy-python-executable", "Bash",
+     f"git commit --allow-empty -m '--python-executable={_S}/crew-hook.sh' && "
+     "python3 -m mypy @.git/COMMIT_EDITMSG x.py"),
+    ("argfile-pytest-earlier-state", "Bash", f"python3 -m pytest @args.txt {_S}/approval_hook.py"),
+]
+
+
+def _ids(rows):
+    return [row[0] for row in rows]
+
+
+@pytest.mark.parametrize("ident,tool_name,command", _R20_ALLOW, ids=_ids(_R20_ALLOW))
+def test_with_a_class_on_a_recorded_everyday_command_is_allowed(repo, capsys, ident, tool_name,
+                                                                command):
+    """R-20 must-allow: a recorded over-refusal, or its neighbour, in a shape
+    an excuse recognises. Every trigger still runs; only its own clause is
+    excused (section 3 "Order")."""
+    del ident
+    turn_on()
+
+    assert guard(capsys, shell(repo, command, tool=tool_name)) == (0, "")
+
+
+@pytest.mark.parametrize("ident,tool_name,command", _R20_BLOCK, ids=_ids(_R20_BLOCK))
+def test_with_a_class_on_a_shape_no_excuse_recognises_is_still_refused(repo, capsys, ident,
+                                                                       tool_name, command):
+    """R-20 must-block: not a recognised shape, so it is judged exactly as
+    before R-20. With the class off it passes: the store tripwire, and
+    nothing else, is what refuses it."""
+    del ident
+    turn_on(classes=())
+    assert guard(capsys, shell(repo, command, tool=tool_name))[0] == 0
+    turn_on()
+
+    code, err = guard(capsys, shell(repo, command, tool=tool_name))
+
+    assert (code, "SCOPE GUARD" in err) == (2, True)
+
+
+def _cwd_payload(repo, command, where):
+    payload = shell(repo, command)
+    if where is None:
+        del payload["cwd"]
+    else:
+        payload["cwd"] = str(where(_home()))
+    return payload
+
+
+@pytest.mark.parametrize("where,command,expected", [
+    (lambda home: home / "src" / "repo", "rm -rf ./build/run-*", 0),
+    (lambda home: home / "src" / "repo", "rm -rf run-*", 0),
+    (lambda home: home, "find . -name 'run-*' -delete", 2),
+    (lambda home: home, "rm -rf */*/run-*", 2),
+    (lambda home: home / "src" / "repo", "rm -rf ../../*/*/run-*", 2),
+    (None, "rm -rf run-*", 2),
+    (lambda home: home / ".claude" / "x", "rm -rf build/run-*", 2),
+], ids=["repo-relative", "repo-relative-bare", "cwd-home-find", "cwd-home-rm", "relative-climb",
+        "relative-no-cwd", "cwd-under-claude"])
+def test_with_a_class_on_a_relative_glob_is_placed_from_the_directory_it_runs_in(
+        repo, capsys, where, command, expected):
+    """D6: a relative word is placed elsewhere only under a cwd that is not
+    above the store and not under `~/.claude`; a climb, no cwd, a cwd of the
+    home or under `~/.claude` places nothing."""
+    turn_on()
+
+    code, _ = guard(capsys, _cwd_payload(repo, command, where))
+
+    assert code == expected
+
+
+def _store_lies_under_tmp():
+    """Whether a store target lies under `/tmp` as D6 reads it on this host:
+    the literal `/tmp`, its real path off Windows, the temp dir on Windows."""
+    bases = ["/tmp", tempfile.gettempdir() if os.name == "nt" else os.path.realpath("/tmp")]
+    home = os.path.expanduser("~")
+    targets = {os.path.join(h, ".claude", "crew", "run-approvals")
+               for h in (os.path.abspath(home), os.path.realpath(home))}
+    return any(os.path.normcase(t).startswith(os.path.normcase(os.path.abspath(b)).rstrip(os.sep) + os.sep)
+               for t in targets for b in bases)
+
+
+def test_with_a_class_on_find_from_tmp_is_allowed_only_when_the_store_is_not_under_it(repo, capsys):
+    """`find /tmp -name 'run-*' -delete` walks the store when the home is
+    under `/tmp` (the Linux CI's isolated home, the Windows temp dir): then
+    it is refused, otherwise allowed. The row never skips."""
+    turn_on()
+    expected = 2 if _store_lies_under_tmp() else 0
+
+    code, _ = guard(capsys, shell(repo, "find /tmp -name 'run-*' -delete"))
+
+    assert code == expected
+
+
+def _home_rows(home):
+    """Commands built from this test's own home (`<home>` in the spec)."""
+    text = str(home)
+    drive, rest = os.path.splitdrive(text)
+    rest = rest.replace("\\", "/").strip("/")
+    if drive:
+        letter = drive[0]
+        msys = f"rm -rf /{letter.lower()}/{rest}/*/crew/run-*"
+    else:
+        msys = f"rm -rf /proc/self/root{text}/*/crew/run-*"
+    parent, last = os.path.split(text.rstrip("\\/"))
+    short = os.path.join(parent, last[:6].upper() + "~1").replace("\\", "/")
+    back = text.replace("/", "\\")
+    return {"msys-root": ("Bash", msys),
+            "short-name": ("Bash", f"rm -rf {short}/*/crew/run-*"),
+            "ps-comma-array": ("PowerShell", f"Remove-Item -Recurse build\\x,{back}\\*\\*\\run-*"),
+            "ps-comma-array-fwd": ("PowerShell",
+                                   f"Remove-Item -Recurse build/x,{text.replace(chr(92), '/')}/*/*/run-*"),
+            "ps-provider": ("PowerShell", f"Remove-Item -Recurse FileSystem::{back}\\*\\*\\run-*")}
+
+
+@pytest.mark.parametrize("ident", ["msys-root", "short-name", "ps-comma-array", "ps-comma-array-fwd",
+                                   "ps-provider"])
+def test_with_a_class_on_a_rooted_or_joined_word_built_from_the_home_is_refused(repo, capsys, ident):
+    """D6's root forms and placed-word characters: a drive spelled `/c/`, a
+    short name, a PowerShell array or provider path is never placed."""
+    tool_name, command = _home_rows(_home())[ident]
+    turn_on()
+
+    code, _ = guard(capsys, shell(repo, command, tool=tool_name))
+
+    assert code == 2
+
+
+def test_with_a_class_on_a_home_reached_through_a_link_is_read_in_both_forms(repo, capsys,
+                                                                             monkeypatch, tmp_path):
+    """D6 compares against the home as written AND as its real path: HOME
+    points at a link to the real home, the command runs in the real home."""
+    turn_on()
+    real = _home()
+    link = tmp_path / "home-link"
+    if os.name == "nt":
+        import _winapi  # pylint: disable=import-outside-toplevel,import-error
+        _winapi.CreateJunction(str(real), str(link))
+    else:
+        link.symlink_to(real, target_is_directory=True)
+    for name in ("HOME", "USERPROFILE"):
+        monkeypatch.setenv(name, str(link))
+    payload = shell(repo, "find . -name 'run-*' -delete")
+    payload["cwd"] = os.path.realpath(str(link))
+
+    code, _ = guard(capsys, payload)
+
+    assert code == 2
+
+
+def test_on_powershell_off_windows_cp_gets_no_copy_excuse(repo, capsys, monkeypatch):
+    """`cp`/`mv` are Copy-Item / Move-Item only on Windows; elsewhere they are
+    the native programs, and a `$S` holding `-t/dir` is a flag to them."""
+    turn_on()
+    monkeypatch.setattr(ra, "_ps_cp_is_alias", lambda: False)
+
+    assert guard(capsys, shell(repo, f"cp $S {_C}", tool="PowerShell"))[0] == 2
+    assert guard(capsys, shell(repo, f"Copy-Item $S {_C}", tool="PowerShell")) == (0, "")

@@ -40,6 +40,8 @@ glob or an unexpanded variable beside it (`run-*`, `run-appro[v]als`,
 `${d}-approvals`), carries the owner's command text, names the prompt hook or
 starts Claude on an existing session, and refuses a Write/Edit under the
 store: a tripwire that stops drift. A check that raises refuses the call.
+Everyday work in a closed, plain shape is excused clause by clause (R-20,
+`store_refusal`); anything the shape test cannot read is judged as before.
 With no class on none of this is judged (`store_refusal`), so a receipt file
 written by hand then is held back by nothing but what it must name: this
 session's id, the worktree, the command's sha and a window an hour wide at
@@ -54,11 +56,14 @@ It does NOT stop a child that RESUMES this session: measured on claude
 2.1.326, the prompt hook of `claude -p --resume <sid>` (prompt as an argument
 or on stdin) is handed <sid>. Only the tripwire stands in front of that.
 """
+import collections
+import fnmatch
 import hashlib
 import json
 import os
 import re
 import secrets
+import tempfile
 import time
 import uuid
 
@@ -85,7 +90,10 @@ _OWNER_RE = re.compile(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?/[a-z0-9_][a-z0-9_.-]*"
 _PYTHON_RE = re.compile(r"(?:python[0-9.]*|py)(?:\.exe)?", re.IGNORECASE)
 # One plain literal word: nothing a shell expands, quotes, escapes or splits.
 _PLAIN_RE = re.compile(r"[A-Za-z0-9_./:=,@%+-]+")
-_STORE_NAME_RE = re.compile(r"run[-_]approvals", re.IGNORECASE)
+# R-20 D4 (a): the name counts unless it is glued to another name character on the left
+# (`my-run-approvals`) or goes on as a longer name on the right (`run-approvals2`,
+# `run-approvals.log`). Every other neighbour, `/` `;` `>` `'` a space or the end, is a boundary.
+_STORE_NAME_RE = re.compile(r"(?<![\w.-])run[-_]approvals(?![\w-]|\.\w)", re.IGNORECASE)
 _MODULE_RE = re.compile(r"crew[-_]runapproval", re.IGNORECASE)
 # The owner's command WITH something that can stand for an id after it: a
 # literal id, or a character a shell expands. A commit message or a grep that
@@ -678,19 +686,54 @@ def store_refusal(data, readings, read_only, real):
     (`claude -p --resume <sid> < prompt.txt`) or with arguments the text does
     not settle. A Write/Edit is refused when its real or named path lies under
     the store or has `run-approvals` as a segment. This function may raise;
-    `scope_guard.decide` turns that into a refusal."""
+    `scope_guard.decide` turns that into a refusal.
+
+    EXCUSES (R-20). The triggers above are unchanged; a reading of a closed,
+    plain shape is excused, and an excuse clears its own clause only (every
+    later clause still judges). D2/D3: the hook name or the module beside an
+    interpreter, when every simple command is on the closed table
+    (`_GIT_ROWS`, `_SIMPLE_ROWS`, `_MODULES`, closed flags; `sed` only alone, with the name only in a
+    file operand, because `sed -i` writes chosen text into `.git/config`,
+    `pyproject.toml`, `conftest.py` or the hook's own `__main__` guard, which
+    the other rows read; no `@file` on a `python -m` row, which pytest, mypy
+    and ruff read as more flags). D4: the name's boundary; a commit, tag or PR
+    message dropped only when every other command is an RO row or `git add`
+    (`sed -i<suffix>` copies the message file and pytest runs a `.py`, `.txt`
+    or `.rst` operand; `git log | cut | bash` runs it back); a store name read
+    by RO rows only. D5: `claude` as a whole command word with no resume flag
+    in its own words. D6: `run-*` placed under a cwd not above the store, or
+    under `/tmp`/`/var/tmp` at another depth. D7: one copy or move into the
+    crew dir in one closed shape. Changing a table, row, flag or shape is a
+    harness change. Kept over-refusals: O18, O19, a variable, redirect or `cd`
+    beside a hook name, a heredoc commit message, a rooted word outside `/tmp`
+    (`~/x/run-*`), a message naming the store or a hook beside a non-RO row,
+    `sed` beside anything, and every copy into the crew dir that is not D7's
+    shape (`"$SRC"`, `--`, a mixed word, a second command, `-Path`).
+    Residuals, not closed here: R7 a hook imported by pytest or pylint without
+    its `__main__` entry; R10 state an earlier call left (`git config`, a
+    `conftest.py`, a `sed` into `.git/config`, an `@args.txt`); R1/R9 a stale
+    payload cwd; R14 a flag inside a variable set outside the command (Bash);
+    R15 `sed -i` on any hook copy, its `__main__` guard included, then a
+    pytest run of it in the next call; R16 a copy onto the machine
+    `config.json`; R17 a message dropped in one call and read back and run in
+    the next."""
     # `anywhere`: a session standing in `~` or `~/.claude/crew` has the machine file INSIDE its
     # working directory, where `settings` reads "off"; the store is no less the store there.
     if not settings(anywhere=True)["classes"]:
         return None
     tool_input = data.get("tool_input")
-    if data.get("tool_name") in ("Bash", "PowerShell"):
+    tool = data.get("tool_name")
+    if tool in ("Bash", "PowerShell"):
         command = tool_input.get("command") if isinstance(tool_input, dict) else None
         if not isinstance(command, str):
             return None
         for reading in readings(command):
-            for text in (reading, _QUOTE_RE.sub("", reading)):
-                reason = _shell_reason(text, data)
+            # D4 (b): a commit, tag or PR message is dropped before the triggers read the
+            # text, only when nothing beside it in the reading can run it (`_drop_messages`).
+            dropped = _drop_messages(reading, tool)
+            for text, undropped in ((dropped, reading),
+                                    (_QUOTE_RE.sub("", dropped), _QUOTE_RE.sub("", reading))):
+                reason = _shell_reason(text, data, reading, undropped)
                 # `~` only expands to a home directory and a glob to file names: neither
                 # makes a read a write, and the read-only parser has no word for them.
                 if reason and not read_only(_GLOB_RE.sub("_", reading)):
@@ -712,19 +755,28 @@ def store_refusal(data, readings, read_only, real):
     return None
 
 
-def _shell_reason(text, data):
-    if _STORE_NAME_RE.search(text):
+def _shell_reason(text, data, reading=None, undropped=None):
+    """Why `text` is refused, or None. `text` is one reading, as written or with its quotes
+    deleted, with its messages dropped (D4 b); `undropped` is the same text before the drop,
+    which only the owner-command clause reads (D4 c); `reading` is the reading as written, the
+    only thing an excuse is read from (R-20). With no `reading` there is no excuse: every
+    clause judges as it did before R-20. Each clause keeps its own trigger, and an excuse
+    clears its own clause only (R-20 "Order"): judging goes on to every later clause."""
+    tool = data.get("tool_name")
+    undropped = text if undropped is None else undropped
+    if _STORE_NAME_RE.search(text) and not _read_rows_only(reading, tool):
         return ("it names the run-approval store; only the owner's typed /crew:allow-run "
                 "gives a receipt")
-    if _veiled_store(text, data.get("cwd")):
+    if _veiled_store(text, data.get("cwd"), reading, tool):
         return ("it may name the run-approval store through a glob or an unexpanded variable; "
                 "only the owner's typed /crew:allow-run gives a receipt")
-    if _OWNER_COMMAND_RE.search(text):
+    if _OWNER_COMMAND_RE.search(undropped):
         return ("it carries `/crew:allow-run` with an id, which only the owner types, in "
                 "their own prompt")
-    if _MODULE_RE.search(text) and _RUNS_CODE_RE.search(text):
+    if (_MODULE_RE.search(text) and _RUNS_CODE_RE.search(text)
+            and not _named_excused(reading, tool)):
         return "it runs code beside crew_runapproval, the module that records the owner's receipts"
-    if _PROMPT_HOOK_RE.search(text):
+    if _PROMPT_HOOK_RE.search(text) and not _named_excused(reading, tool):
         cwd = data.get("cwd") if isinstance(data.get("cwd"), str) else None
         if settings(cwd)["classes"]:
             return ("it names the prompt hook, which only the owner's own prompt may drive "
@@ -732,7 +784,7 @@ def _shell_reason(text, data):
     started = _CLAUDE_RE.search(text)
     if started and (_RESUME_RE.search(text[started.end():]) or _UNREAD_RE.search(text)):
         cwd = data.get("cwd") if isinstance(data.get("cwd"), str) else None
-        if settings(cwd)["classes"]:
+        if settings(cwd)["classes"] and not _claude_excused(reading, tool):
             return ("it starts Claude on an existing session (--resume, --continue, "
                     "--session-id) or with arguments the text does not settle; a prompt "
                     "submitted there counts as this session's (approvals.run.classes is on)")
@@ -772,7 +824,7 @@ def _could_be(segment, name, least):
                 and re.fullmatch(pattern, name, re.IGNORECASE | re.DOTALL))
 
 
-def _veiled_store(text, cwd=None):
+def _veiled_store(text, cwd=None, reading=None, tool=None):
     """True when a word of `text` may expand to the store's path although it
     does not spell `run-approvals`: a segment holding a glob character or an
     unexpanded variable or substitution that can stand for the store's name,
@@ -781,9 +833,17 @@ def _veiled_store(text, cwd=None):
     after it (`$X/receipts/a.json`), `.claude/crew` before it (in the word, or
     as the directory the command runs in), or `.claude/crew` named anywhere
     else in the command. Unknown is read as "may": this over-refuses near the
-    store and says nothing about a bare `rm *` elsewhere."""
+    store and says nothing about a bare `rm *` elsewhere.
+
+    R-20, two narrowings, each read from `reading` as written: `.claude/crew`
+    named elsewhere is not counted when the whole reading is one copy or move
+    INTO the crew dir in D7's closed shape (`_destination_only`); and four
+    letters alone refuse only when D6 cannot place every such word away from
+    the store (`_placed_reading`). The store child and `.claude/crew`-before
+    tests are untouched."""
     veiled = _EXPANSION_RE.sub(_ANY, text)
-    named = bool(_CREW_DIR_RE.search(text))
+    named = bool(_CREW_DIR_RE.search(text)) and not _destination_only(reading, tool)
+    four = False
     base = [s for s in re.split(r"[/\\]+", cwd) if s] if isinstance(cwd, str) else []
     for word in _WORD_SPLIT_RE.split(veiled):
         if not word:
@@ -801,14 +861,17 @@ def _veiled_store(text, cwd=None):
             pattern, literals, is_veiled = _segment(part)
             if not is_veiled or not re.fullmatch(pattern, STORE_NAME, re.IGNORECASE | re.DOTALL):
                 continue
-            if literals >= 4 or (named and not inside):
+            if named and not inside:
                 return True
             if i + 1 < len(parts) and any(_could_be(parts[i + 1], c, 3) for c in _STORE_CHILDREN):
                 return True
             if i >= 2 and _could_be(parts[i - 1], "crew", 2) and _could_be(parts[i - 2],
                                                                            ".claude", 3):
                 return True
-    return False
+            if literals >= 4:
+                four = True
+    # Four letters alone: refused unless D6 places every such word away from the store.
+    return four and not _placed_reading(reading, tool, cwd)
 
 
 def _targets(tool_input):
@@ -819,3 +882,849 @@ def _targets(tool_input):
         if isinstance(edit, dict):
             found.append(edit.get("file_path"))
     return [p for p in dict.fromkeys(found) if isinstance(p, str) and p]
+
+
+# ------------------------------------------------------------------ R-20 excuses
+#
+# The store tripwire's triggers above are unchanged. What follows only EXCUSES
+# a reading of a recognised, closed shape, and an excuse clears its own clause
+# only. A reading this code cannot read is "not plain" and is judged exactly as
+# before (could-not-tell stays a refusal). Every table, row, flag, module and
+# shape here is CLOSED: adding one is a harness change with its own review.
+
+_Word = collections.namedtuple("_Word", "value quoted start end")
+_Cmd = collections.namedtuple("_Cmd", "words redirects after")
+
+
+class _NotPlain(Exception):
+    """The reading holds something the plain scan (G) does not read."""
+
+
+_PLAIN_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./:=,@+-*?[]")
+_ENDS_WORD = " \t\n;&|"
+_PIPES = ("&&", "||", "|")
+_NAME_EQ_RE = re.compile(r"--[A-Za-z0-9][A-Za-z0-9_-]*=", re.ASCII)
+_VARIABLE_RE = re.compile(r"\$(?:env:)?[A-Za-z_][A-Za-z0-9_]*|\$\{[A-Za-z_][A-Za-z0-9_]*\}", re.ASCII)
+_DIGITS_RE = re.compile(r"[0-9]+", re.ASCII)
+
+
+def _plain_commands(reading, tool, loose=False):
+    """G. The simple commands of `reading` (one continuation reading, as
+    written) as `_Cmd`s of `_Word`s (value with quotes removed, "was quoted",
+    span), or None when the reading is not plain. Plain: words of
+    `A-Z a-z 0-9 _ . / : = , @ + -` and `* ? [ ]`, a `~` first in a word,
+    on PowerShell also `\\`; quoted spans that are a whole word or the whole
+    value of a `--name=` word; the separators `&& || | ;` and newline. Escapes
+    per tool: Bash backslash and PowerShell backtick are not plain; a Bash
+    double-quoted span holds no `$`, backtick or backslash, a PowerShell one no
+    `$` or backtick and ends at the next `"`. `loose` (D5 only) also admits a
+    plain variable and the redirects `> >> 2> 2>> &> <` with one word, and
+    `2>&1`, returned apart from the words."""
+    try:
+        return _Scan(reading, tool == "PowerShell", loose).commands()
+    except _NotPlain:
+        return None
+
+
+class _Scan:
+    """One strict pass over a reading (G). Raises _NotPlain on anything else."""
+
+    def __init__(self, reading, ps, loose):
+        if not isinstance(reading, str):
+            raise _NotPlain
+        self.text, self.ps, self.loose = reading, ps, loose
+        self.out, self.words, self.redirects = [], [], []
+        self.after = self.target = None
+
+    def close(self, sep):
+        if self.target is not None:
+            raise _NotPlain
+        if self.words:
+            self.out.append(_Cmd(tuple(self.words), tuple(self.redirects), self.after))
+        elif self.redirects or sep in _PIPES or self.after in _PIPES:
+            raise _NotPlain
+        self.words, self.redirects, self.after = [], [], sep
+
+    def commands(self):
+        text, i, n = self.text, 0, len(self.text)
+        while i < n:
+            char, pair = text[i], text[i:i + 2]
+            if char in " \t":
+                i += 1
+            elif char in "\n;":
+                self.close(char)
+                i += 1
+            elif pair in ("&&", "||"):
+                self.close(pair)
+                i += 2
+            elif char == "|":
+                self.close(char)
+                i += 1
+            elif self.loose and pair == "&>" and self.target is None:
+                self.target, i = pair, i + 2
+            elif self.loose and char in "<>" and self.target is None:
+                self.target = ">>" if pair == ">>" else char
+                i += len(self.target)
+            else:
+                i = self.word(i)
+        self.close(None)
+        if not self.out:
+            raise _NotPlain
+        return self.out
+
+    def word(self, i):
+        word, end = _scan_word(self.text, i, self.ps, self.loose)
+        if self.target is not None:
+            self.redirects.append((self.target, word))
+            self.target = None
+        elif self.loose and word.value == "2" and not word.quoted and self.text[end:end + 1] == ">":
+            if self.text.startswith(">&1", end):
+                self.redirects.append(("2>&1", None))
+                return end + 3
+            self.target = "2>>" if self.text.startswith(">>", end) else "2>"
+            return end + len(self.target) - 1
+        else:
+            self.words.append(word)
+        return end
+
+
+def _scan_word(text, i, ps, loose):
+    """One word of a plain reading, from `i`: `(_Word, end)`."""
+    start, n, value, quoted = i, len(text), [], False
+    stops = _ENDS_WORD + ("<>" if loose else "")
+    while i < n and text[i] not in stops:
+        char = text[i]
+        if char in "'\"":
+            if i != start and not _NAME_EQ_RE.fullmatch("".join(value)):
+                raise _NotPlain
+            close = text.find(char, i + 1)
+            if close < 0:
+                raise _NotPlain
+            body = text[i + 1:close]
+            if char == '"':
+                bare = _VARIABLE_RE.sub("", body) if loose else body
+                if "$" in bare or "`" in bare or (not ps and "\\" in body):
+                    raise _NotPlain
+            value.append(body)
+            quoted, i = True, close + 1
+            if i < n and text[i] not in _ENDS_WORD:
+                raise _NotPlain  # a closing quote ends the word
+            break
+        if char == "$" and loose:
+            match = _VARIABLE_RE.match(text, i)
+            if not match:
+                raise _NotPlain
+            value.append(match.group())
+            i = match.end()
+            continue
+        if not (char in _PLAIN_CHARS or (char == "~" and i == start) or (char == "\\" and ps)):
+            raise _NotPlain
+        value.append(char)
+        i += 1
+    word = "".join(value)
+    if i == start or (ps and not quoted and word.startswith("@")):
+        raise _NotPlain
+    return _Word(word, quoted, start, i), i
+
+
+# --- T: the command table (closed) ---------------------------------------------
+
+_Spec = collections.namedtuple("_Spec", "flags letters fold checks")
+
+
+def _any_value(_value):
+    return True
+
+
+def _spec(text, fold=False, checks=None):
+    """A closed flag list written as the R-20 spec writes it: `-x` a flag,
+    `-x <w>` a flag and its value word, `-x <n>` a value of digits only,
+    `--x=` the attached form `--x=<value>`, `-<n>` a dash and digits.
+    Single-letter flags that take no value may cluster (`-rf`); a PowerShell
+    cmdlet's names (`fold`) are compared ignoring case and never cluster."""
+    flags, tokens = {}, text.split()
+    for j, token in enumerate(tokens):
+        if token in ("<w>", "<n>"):
+            continue
+        following = tokens[j + 1] if j + 1 < len(tokens) else ""
+        kind = following if following in ("<w>", "<n>") else ("=" if token.endswith("=") else "")
+        flags[token.lower() if fold else token] = kind
+    letters = "" if fold else "".join(name[1] for name, kind in flags.items()
+                                      if len(name) == 2 and name[0] == "-" and name[1].isalnum()
+                                      and not kind)
+    return _Spec(flags, frozenset(letters), fold, checks or {})
+
+
+def _flag_width(words, i, spec):
+    """How many words the flag at `words[i]` takes (1 or 2), or 0 when the
+    row does not list it in that form."""
+    value = words[i].value
+    name = value.lower() if spec.fold else value
+    kind = spec.flags.get(name)
+    if kind == "":
+        return 1
+    if kind in ("<w>", "<n>"):
+        if i + 1 >= len(words):
+            return 0
+        given = words[i + 1].value
+        if kind == "<n>" and not _DIGITS_RE.fullmatch(given):
+            return 0
+        return 2 if spec.checks.get(name, _any_value)(given) else 0
+    key, equals, given = name.partition("=")
+    if equals and spec.flags.get(key + "=") == "=":
+        return 1 if spec.checks.get(key + "=", _any_value)(given) else 0
+    if "-<n>" in spec.flags and re.fullmatch(r"-[0-9]+", value, re.ASCII):
+        return 1
+    if spec.letters and re.fullmatch(r"-[A-Za-z0-9]+", value, re.ASCII) and set(value[1:]) <= spec.letters:
+        return 1
+    return 0
+
+
+def _fit(words, spec, ps):
+    """The operands of `words` (a command's words after its name) when every
+    flag fits `spec`, else None. A word whose value starts with `-` and stands
+    before a bare `--` is a flag. On PowerShell a quoted word is never a
+    parameter, so a quoted word starting with `-` takes the command off."""
+    operands, i, ended = [], 0, False
+    while i < len(words):
+        word = words[i]
+        if ended or not word.value.startswith("-"):
+            operands.append(word)
+            i += 1
+            continue
+        if ps and word.quoted:
+            return None
+        if word.value == "--":
+            ended, i = True, i + 1
+            continue
+        width = _flag_width(words, i, spec)
+        if not width:
+            return None  # an unlisted flag takes the command off the table
+        i += width
+    return operands
+
+
+_GIT_ROWS = {  # subcommand: (closed flags, RO)
+    "status": (_spec("-s --short -b --branch --porcelain --porcelain= --ignored --untracked-files= "
+                     "-uno -uall"), True),
+    "diff": (_spec("--stat --cached --staged --name-only --name-status --numstat --shortstat "
+                   "--unified= -w -b -p --color --no-color --no-ext-diff --no-textconv"), True),
+    "log": (_spec("--oneline -<n> -n <n> --max-count= --stat --name-only --name-status --graph "
+                  "--decorate --all --follow -p --patch -i --grep= --author= --since= --until= "
+                  "--format= --pretty= --no-merges"), True),
+    "show": (_spec("--stat --name-only --name-status --oneline -s --no-patch --format= --pretty="), True),
+    "grep": (_spec("-n --line-number -i --ignore-case -l --files-with-matches -w -E -F -P -h -H "
+                   "--count -e <w>"), True),
+    "add": (_spec("-A --all -u --update -f --force -n --dry-run -v --verbose -N --intent-to-add"), False),
+    "commit": (_spec("-m <w> --message= -a --all -s --signoff -q --quiet -v --amend --no-edit "
+                     "--allow-empty"), False),
+}
+_BOTH, _BASH, _PWSH = ("Bash", "PowerShell"), ("Bash",), ("PowerShell",)
+_SIMPLE_ROWS = {  # name (PowerShell: lower case): (tools, closed flags, RO)
+    "rg": (_BOTH, _spec("-n -i -l -w -F -S -c --count --hidden --no-heading -e <w> -g <w> --glob= "
+                        "-t <w> --type= -A <n> -B <n> -C <n>"), True),
+    "grep": (_BASH, _spec("-n -i -l -w -E -F -r -R -c -h -H -o -v -q -s -e <w> --include= "
+                          "--exclude= --exclude-dir= -A <n> -B <n> -C <n>"), True),
+    "cat": (_BASH, _spec("-n"), True),
+    "ls": (_BASH, _spec("-l -a -A -r -t -h -d -R -1"), True),
+    "shellcheck": (_BOTH, _spec("-x --external-sources -s <w> --shell= -S <w> --severity= -e <w> "
+                                "--exclude= -f <w> --format="), True),
+    "get-content": (_PWSH, _spec("-Path <w> -LiteralPath <w> -Raw -TotalCount <n> -Tail <n> "
+                                 "-Encoding <w>", fold=True), True),
+    "select-string": (_PWSH, _spec("-Path <w> -LiteralPath <w> -Pattern <w> -SimpleMatch "
+                                   "-CaseSensitive -List -NotMatch -AllMatches -Context <n>",
+                                   fold=True), True),
+    "rm": (_BASH, _spec("-r -R -f -v"), False),
+    "remove-item": (_PWSH, _spec("-Recurse -Force -Path <w> -LiteralPath <w> -ErrorAction <w>",
+                                 fold=True), False),
+}
+_PS_ALIASES = {"gc": "get-content", "sls": "select-string", "ri": "remove-item"}
+_PYLINT_FORMATS = ("text", "parseable", "colorized", "json", "json2", "msvs", "github")
+_MODULES = {  # `python -m <module>`, the full dotted name compared exactly
+    "pytest": _spec("-q -v -vv -x -s -k <w> -m <w> --tb= --maxfail= -n <w> --co --collect-only "
+                    "--lf --ff -p <w>", checks={"-p": lambda value: value.startswith("no:")
+                                                and len(value) > 3}),
+    "pylint": _spec("--from-stdin -E --errors-only --disable= --enable= -j <n> --output-format= "
+                    "--score= --reports=",
+                    checks={"--output-format=": lambda value: value in _PYLINT_FORMATS}),
+    "ruff": _spec("--fix --diff --check -q --quiet --select= --ignore= --output-format= --no-cache"),
+    "mypy": _spec("--strict --ignore-missing-imports --no-incremental"),
+    "flake8": _spec("--max-line-length= --select= --ignore="),
+    "pycodestyle": _spec("--max-line-length= --select= --ignore="),
+    "black": _spec("--check --diff -q -l <n> --line-length="),
+    "isort": _spec("--check --check-only --diff -q"),
+    "pyflakes": _spec(""),
+    "pyright": _spec(""),
+    "json.tool": _spec("--sort-keys --indent <n>"),
+}
+_RO_ROWS = frozenset(["git " + sub for sub, (_flags, ro) in _GIT_ROWS.items() if ro]
+                     + [name for name, (_tools, _flags, ro) in _SIMPLE_ROWS.items() if ro])
+# D4 (b1): what may stand beside a dropped message. Read from T's RO column, plus `git add`;
+# a non-RO row admitted here is a harness change with its own review.
+_BESIDE_MESSAGE = _RO_ROWS | {"git add"}
+_FIND_PRIMARIES = {"-name": "<w>", "-iname": "<w>", "-type": "<w>", "-maxdepth": "<n>",
+                   "-mindepth": "<n>", "-print": "", "-delete": ""}
+
+
+def _program(word, tool):
+    """The command word as T compares it: exact on Bash; on PowerShell
+    ignoring case, a trailing `.exe` dropped, a listed alias resolved. None
+    for a quoted word."""
+    if word.quoted:
+        return None
+    name = word.value
+    if tool == "PowerShell":
+        name = name.lower()
+        name = name[:-4] if name.endswith(".exe") else name
+        name = _PS_ALIASES.get(name, name)
+    return name
+
+
+def _on_table(cmd, tool):
+    """T. The row `cmd` stands on (`git log`, `rg`, `sed`, `python -m pytest`
+    ...), or None when it is off the table. No prefix is stripped: an
+    assignment, a wrapper, a keyword or a path-qualified program leaves a
+    first word that is not a row's name."""
+    words = cmd.words
+    ps = tool == "PowerShell"
+    name = _program(words[0], tool)
+    if name == "git":
+        return _git_row(words, ps)
+    if name in ("python3", "python", "py"):
+        return _module_row(words, name, ps)
+    if name == "sed" and not ps:
+        parts = _sed_parts(words)
+        if parts is None or not _sed_script_ok(parts[1].value):
+            return None
+        return "sed"
+    if name == "find" and not ps:
+        return "find" if _find_parts(words) is not None else None
+    row = _SIMPLE_ROWS.get(name)
+    if row is None or tool not in row[0] or _fit(words[1:], row[1], ps) is None:
+        return None
+    return name
+
+
+def _git_row(words, ps):
+    k = 2 if len(words) > 1 and words[1].value == "--no-pager" else 1
+    if len(words) <= k or words[k].quoted:
+        return None  # `git -c`, `git -C`, `--git-dir` ... stand where the subcommand must
+    row = _GIT_ROWS.get(words[k].value)
+    if row is None or _fit(words[k + 1:], row[0], ps) is None:
+        return None
+    return "git " + words[k].value
+
+
+def _module_row(words, name, ps):
+    rest = list(words[1:])
+    if name == "py" and rest[:1] and rest[0].value == "-3":
+        rest = rest[1:]
+    if len(rest) < 2 or rest[0].value != "-m":
+        return None  # `-m` second: no interpreter flag is admitted
+    module = rest[1].value
+    spec = _MODULES.get(module)
+    if spec is None:  # a module not on the list is off the table
+        return None
+    if any(word.value.startswith("@") for word in rest[2:]):
+        return None  # an `@file` operand is read as more flags (pytest, mypy, ruff response files)
+    operands = _fit(rest[2:], spec, ps)
+    if operands is None:
+        return None
+    if module == "ruff" and (not operands or operands[0].value not in ("check", "format")):
+        return None
+    if module == "json.tool" and len(operands) > 1:
+        return None  # a second operand is an output file
+    return "python -m " + module
+
+
+def _sed_parts(words):
+    """`(in-place word, script word, file operands)` of a `sed -i[<suffix>]
+    [-E|-r] <script> <file>...` (or `-e <script>`), or None."""
+    in_place = script = None
+    extended = ended = False
+    files, k = [], 1
+    while k < len(words):
+        word = words[k]
+        if ended or not word.value.startswith("-"):
+            if script is None:
+                script = word
+            else:
+                files.append(word)
+        elif word.value == "--":
+            ended = True
+        elif word.value.startswith("-i") and in_place is None:
+            in_place = word
+        elif word.value in ("-E", "-r") and not extended:
+            extended = True
+        elif word.value == "-e" and script is None and k + 1 < len(words):
+            script, k = words[k + 1], k + 1
+        else:
+            return None
+        k += 1
+    if in_place is None or script is None or not files:
+        return None
+    return in_place, script, files
+
+
+def _sed_script_ok(script):
+    """One substitution and nothing else: `s`, a delimiter that is not a
+    letter, digit, space or backslash, exactly three unescaped delimiters,
+    then flags from `g I i` and digits. GNU sed's `e` and `w` run a command
+    and write a file; neither fits."""
+    if "\n" in script or len(script) < 4 or script[0] != "s":
+        return False
+    delimiter = script[1]
+    if delimiter.isalnum() or delimiter in " \\" or ord(delimiter) > 127:
+        return False
+    count, last, k = 0, -1, 1
+    while k < len(script):
+        if script[k] == "\\":
+            k += 2
+            continue
+        if script[k] == delimiter:
+            count, last = count + 1, k
+        k += 1
+    return count == 3 and re.fullmatch(r"[gIi0-9]*", script[last + 1:], re.ASCII) is not None
+
+
+def _sed_names_outside_files(cmd):
+    """True when a word of this `sed` other than a file operand (its script,
+    a `-e` script, its `-i<suffix>`) names a hook or this module."""
+    parts = _sed_parts(cmd.words)
+    files = {word.start for word in parts[2]} if parts else set()
+    return any(_PROMPT_HOOK_RE.search(word.value) or _MODULE_RE.search(word.value)
+               for word in cmd.words if word.start not in files)
+
+
+def _find_parts(words):
+    """`(roots, pattern word indexes)` of a `find <root>... <primaries>` on
+    its row, or None."""
+    k, roots, patterns = 1, [], set()
+    while k < len(words) and not words[k].value.startswith("-"):
+        roots.append(words[k])
+        k += 1
+    while k < len(words):
+        kind = _FIND_PRIMARIES.get(words[k].value)
+        if kind is None:
+            return None
+        if kind:
+            if k + 1 >= len(words) or (kind == "<n>" and not _DIGITS_RE.fullmatch(words[k + 1].value)):
+                return None
+            if words[k].value in ("-name", "-iname"):
+                patterns.add(k + 1)
+            k += 2
+        else:
+            k += 1
+    return roots, patterns
+
+
+def _rows(cmds, tool):
+    """The row of every simple command, or None when one is off the table.
+    On PowerShell a pipe binds objects to the next cmdlet's parameters
+    (`Get-Content list.txt | Remove-Item`), so what stands after `|` must be
+    on an RO row."""
+    if not cmds:
+        return None
+    rows = []
+    for cmd in cmds:
+        row = _on_table(cmd, tool)
+        if row is None:
+            return None
+        if tool == "PowerShell" and cmd.after == "|" and row not in _RO_ROWS:
+            return None
+        rows.append(row)
+    return rows
+
+
+def _all_on_table(cmds, tool):
+    """T's one test for D2, D3 and D6 (1): every simple command on the table,
+    and `sed` stands alone. `sed -i` writes text the command chooses into any
+    existing file, and the other rows read `.git/config`, `pyproject.toml`,
+    `conftest.py` and the hook's own `__main__` guard, so a `sed` is excused
+    only as the reading's only simple command, and only with a hook or module
+    name in a file operand (never in its script or suffix)."""
+    rows = _rows(cmds, tool)
+    if rows is None:
+        return False
+    if "sed" in rows and len(rows) != 1:
+        return False
+    if any(_sed_names_outside_files(cmd) for cmd, row in zip(cmds, rows) if row == "sed"):
+        return False
+    return True
+
+
+def _named_excused(reading, tool):
+    """D2 and D3: a reading that names the prompt hook, or runs code beside
+    this module, is excused when it is plain and every simple command of it
+    is on the table (`_all_on_table`). A name that stands in a commit, tag or
+    PR message is never excused here: a message D4 (b1) did not drop is
+    judged as written, beside whatever stands with it."""
+    if reading is None or _names_in_messages(reading, tool):
+        return False
+    return _all_on_table(_plain_commands(reading, tool), tool)
+
+
+def _names_in_messages(reading, tool):
+    """True when a message word of a message command in the reading names a
+    hook or this module and D4 (b1) kept that message."""
+    if _drop_messages(reading, tool) != reading:
+        return False  # the messages were dropped: the triggers never read them
+    for cmd in _plain_commands(reading, tool) or ():
+        for start, end in _message_args(cmd, tool) or ():
+            if _PROMPT_HOOK_RE.search(reading[start:end]) or _MODULE_RE.search(reading[start:end]):
+                return True
+    return False
+
+
+def _read_rows_only(reading, tool):
+    """D4 (d): a reading that names the store is excused when it is plain and
+    every simple command of it stands on an RO row (it can only read)."""
+    rows = _rows(_plain_commands(reading, tool), tool) if reading is not None else None
+    return rows is not None and all(row in _RO_ROWS for row in rows)
+
+
+# --- D4 (b): message dropping ---------------------------------------------------
+
+_MESSAGE_ROWS = {  # closed; used by D4 (b1) only, so it excuses nothing on its own
+    "git tag": (_spec("-a --annotate -m <w> --message= -f --force"), (1, 2)),
+    "gh pr create": (_spec("--title <w> --title= -t <w> --body <w> --body= -b <w> --label <w> -l <w> "
+                           "--base <w> -B <w> --head <w> -H <w> --draft -d"), (0, 0)),
+    "gh issue create": (_spec("--title <w> --title= -t <w> --body <w> --body= -b <w> --label <w> "
+                              "-l <w>"), (0, 0)),
+    "gh pr edit": (_spec("--title <w> --title= -t <w> --body <w> --body= -b <w> --add-label <w> "
+                         "--remove-label <w>"), (1, 1)),
+    "gh issue edit": (_spec("--title <w> --title= -t <w> --body <w> --body= -b <w> --add-label <w> "
+                            "--remove-label <w>"), (1, 1)),
+    "gh pr comment": (_spec("--body <w> --body= -b <w>"), (1, 1)),
+    "gh issue comment": (_spec("--body <w> --body= -b <w>"), (1, 1)),
+}
+_MESSAGE_FLAGS = {"git": ("-m", "--message="), "gh": ("--title", "-t", "--body", "-b", "--title=",
+                                                      "--body=")}
+
+
+def _message_args(cmd, tool):
+    """D4 (b1) (iii). The spans of the quoted message words of a message
+    command on its closed row (`git commit` on T's row, `git tag` and `gh` on
+    `_MESSAGE_ROWS`), or None when `cmd` is not one. Only a command whose
+    command word is `git` with `commit`/`tag` next, or `gh` with
+    `pr|issue create|edit|comment` next, is one."""
+    words = cmd.words
+    if tool == "PowerShell" and cmd.after == "|":
+        return None
+    head = 0
+    words = words[head:]
+    name = _program(words[0], tool)
+    sub = [word.value for word in words[1:3]]
+    if name == "git" and sub[:1] == ["commit"]:
+        if _git_row(words, tool == "PowerShell") != "git commit":
+            return None
+        key = None
+    elif name == "git" and sub[:1] == ["tag"]:
+        key = "git tag"
+    elif name == "gh" and len(sub) == 2:
+        key = "gh " + " ".join(sub)
+        if key not in _MESSAGE_ROWS:
+            return None
+    else:
+        return None
+    if key is not None:
+        spec, (least, most) = _MESSAGE_ROWS[key]
+        operands = _fit(words[len(key.split()):], spec, tool == "PowerShell")
+        if operands is None or not least <= len(operands) <= most:
+            return None
+        if most and key != "git tag" and not _DIGITS_RE.fullmatch(operands[0].value):
+            return None
+    flags, spans, k = _MESSAGE_FLAGS[name], [], 1
+    while k < len(words):
+        word = words[k]
+        if word.value in flags and k + 1 < len(words):
+            if words[k + 1].quoted:
+                spans.append((words[k + 1].start, words[k + 1].end))
+            k += 2
+            continue
+        for prefix in flags:
+            if prefix.endswith("=") and word.quoted and word.value.startswith(prefix):
+                spans.append((word.start + len(prefix), word.end))
+        k += 1
+    return spans
+
+
+def _beside_message(cmd, tool):
+    """D4 (b1) (i) and (ii): an RO row of T, or `git add`."""
+    row = _on_table(cmd, tool)
+    if tool == "PowerShell" and cmd.after == "|" and row not in _RO_ROWS:
+        return False
+    return row in _BESIDE_MESSAGE
+
+
+def _drop_messages(reading, tool):
+    """D4 (b). `reading` with each commit, tag or PR message (one quoted
+    word) removed, when the reading is plain and EVERY simple command of it
+    is an RO row of T, `git add`, or a message command on its closed row.
+    Anything else anywhere in the reading, and nothing is dropped: git keeps
+    the message, so a later command of the same reading could read it back
+    and run it (`git log -1 --oneline | cut -d ' ' -f 2- | bash`), and
+    `sed -i<suffix>` copies `.git/COMMIT_EDITMSG` to a name pytest runs
+    (`.py`, or a `.txt`/`.rst` doctest)."""
+    cmds = _plain_commands(reading, tool)
+    if not cmds:
+        return reading
+    spans = []
+    for cmd in cmds:
+        message = _message_args(cmd, tool)
+        if message is None and not _beside_message(cmd, tool):
+            return reading  # (b1): something beside the message could run it
+        spans.extend(message or ())
+    for start, end in sorted(spans, reverse=True):
+        reading = reading[:start] + reading[end:]
+    return reading
+
+
+# --- D5: Claude started fresh ---------------------------------------------------
+
+_CLAUDE_WORD_RE = re.compile(r"claude(?:-code)?(?:\.exe|\.cmd|\.bat|\.ps1)?", re.IGNORECASE | re.ASCII)
+
+
+def _claude_excused(reading, tool):
+    """D5. Excused when the reading is plain under `loose`, every claude word
+    in it is the whole command word of a simple command (or `npx
+    <...>/claude-code`), and each such command's own words, read as values
+    (quotes removed) and never its redirect targets, hold no resume flag and
+    nothing the text does not settle."""
+    cmds = _plain_commands(reading, tool, loose=True) if reading is not None else None
+    if cmds is None:
+        return False
+    owned = {}
+    for cmd in cmds:
+        words = cmd.words
+        if not words[0].quoted and _CLAUDE_WORD_RE.fullmatch(words[0].value):
+            owned[words[0].end] = words[1:]
+        elif (_program(words[0], tool) == "npx" and len(words) > 1 and not words[1].quoted
+              and words[1].value.lower().endswith("/claude-code")):
+            owned[words[1].end] = words[2:]
+    matches = list(_CLAUDE_RE.finditer(reading))
+    if len(_CLAUDE_RE.findall(_QUOTE_RE.sub("", reading))) != len(matches):
+        return False  # (2) a claude word inside a quoted argument (`bash -c 'claude ...'`)
+    for match in matches:
+        args = owned.get(match.end())
+        if args is None:
+            return False  # (2) a claude word that is not a whole command word
+        own = " ".join(word.value for word in args)
+        if _RESUME_RE.search(own) or _UNREAD_RE.search(own):
+            return False
+    return True
+
+
+# --- D6: four letters of the name, placed away from the store -------------------
+
+_PLACED_RE = re.compile(r"[A-Za-z0-9_.*?\[\]/-]+", re.ASCII)
+_PS_PLACED_RE = re.compile(r"[A-Za-z0-9_.*?\[\]/\\-]+", re.ASCII)
+_TMP_ROOTS = ("/tmp/", "/var/tmp/")
+_HAS_GLOB_RE = re.compile(r"[*?\[\]]")
+
+
+def _store_targets():
+    """The home in both forms (`expanduser`, as `_machine_path` places the
+    store, literal and real) and the store under each."""
+    home = os.path.expanduser("~")
+    homes = {os.path.abspath(home), os.path.realpath(home)}
+    return homes, [os.path.join(h, ".claude", "crew", STORE_NAME) for h in homes]
+
+
+def _under(path, folder):
+    path, folder = os.path.normcase(path), os.path.normcase(folder)
+    return path == folder or path.startswith(folder.rstrip(os.sep) + os.sep)
+
+
+def _segments(word, ps):
+    return [s for s in re.split(r"[/\\]" if ps else "/", word) if s not in ("", ".")]
+
+
+def _segments_ok(segments):
+    for segment in segments:
+        if segment == "..":
+            return False  # a climb leaves the directory the word is read from
+        if "**" in segment or segment.endswith(" ") or (segment.endswith(".") and segment != ".."):
+            return False
+    return True
+
+
+def _holds_four(value):
+    """True when `value` holds a glob or expansion that can stand for the
+    store's name and spells four or more of its letters."""
+    for piece in _WORD_SPLIT_RE.split(_EXPANSION_RE.sub(_ANY, value)):
+        for part in re.split(r"[/\\]+", piece):
+            pattern, literals, veiled = _segment(part)
+            if veiled and literals >= 4 and re.fullmatch(pattern, STORE_NAME,
+                                                         re.IGNORECASE | re.DOTALL):
+                return True
+    return False
+
+
+def _cwd_clear(cwd):
+    """The relative form's test: a string absolute cwd that, in both its
+    forms, is neither an ancestor-or-self of a store target nor at or under
+    `<home>/.claude` (in both its forms)."""
+    if not isinstance(cwd, str) or not os.path.isabs(cwd):
+        return False  # a relative word with no string cwd is not placed
+    homes, targets = _store_targets()
+    forms = {os.path.abspath(cwd), os.path.realpath(cwd)}
+    above = any(_under(target, form) for target in targets for form in forms)
+    return not above and not any(_under(form, os.path.join(home, ".claude"))
+                                 for form in forms for home in homes)
+
+
+def _tmp_bases(root):
+    real = tempfile.gettempdir() if os.name == "nt" else os.path.realpath(root)
+    return {root, real}
+
+
+def _placed(word, tool, cwd):
+    """D6: True when `word` (a value as G returns it) stays away from the
+    store in one of two closed forms: relative under a cwd that is not above
+    the store, or under `/tmp` / `/var/tmp` (Bash) at a depth the store cannot
+    have. Every other start of a word is not placed."""
+    ps = tool == "PowerShell"
+    if not (_PS_PLACED_RE if ps else _PLACED_RE).fullmatch(word):
+        return False
+    if not ps and word.startswith(_TMP_ROOTS):
+        root = "/var/tmp" if word.startswith("/var/tmp/") else "/tmp"
+        rest = _segments(word[len(root):], False)
+        if not rest or not _segments_ok(rest):
+            return False
+        _homes, targets = _store_targets()
+        for base in _tmp_bases(root):
+            path = _segments(base, True) + rest
+            for target in targets:
+                goal = _segments(target, True)
+                if len(goal) == len(path) and all(fnmatch.fnmatchcase(t.lower(), w.lower())
+                                                  for w, t in zip(path, goal)):
+                    return False
+        return True
+    if word[0] in "/\\":
+        return False  # every other root form is not placed (/c/, //host, /proc, /opt ...)
+    segments = _segments(word, ps)
+    return bool(segments) and _segments_ok(segments) and _cwd_clear(cwd)
+
+
+def _placed_root(word, tool, cwd):
+    """D6 (3): a `find` root, literal segments only, is placed when no store
+    target lies at or under it."""
+    if not _PLACED_RE.fullmatch(word) or _HAS_GLOB_RE.search(word):
+        return False
+    _homes, targets = _store_targets()
+    if word in ("/tmp", "/var/tmp") or word.startswith(_TMP_ROOTS):
+        root = "/var/tmp" if word.startswith("/var/tmp") else "/tmp"
+        rest = _segments(word[len(root):], False)
+        if not _segments_ok(rest):
+            return False
+        paths = [os.path.join(base, *rest) for base in _tmp_bases(root)]
+    elif word.startswith("/"):
+        return False
+    else:
+        segments = _segments(word, tool == "PowerShell")
+        if not _segments_ok(segments) or not isinstance(cwd, str) or not os.path.isabs(cwd):
+            return False
+        paths = [os.path.join(form, *segments)
+                 for form in (os.path.abspath(cwd), os.path.realpath(cwd))]
+    return not any(_under(target, os.path.abspath(path)) for target in targets for path in paths)
+
+
+_DOT = _Word(".", False, 0, 0)
+
+
+def _placed_reading(reading, tool, cwd):
+    """D6. A reading whose only store hint is four of the name's letters in a
+    glob is excused when (1) it is plain and every simple command is on the
+    table, (2) every word holding such a candidate is placed elsewhere (a
+    `find -name` word is a pattern, not a path) and (3) every `find` root is
+    placed elsewhere as a root (no root: the cwd)."""
+    if reading is None:
+        return False
+    cmds = _plain_commands(reading, tool)
+    if not _all_on_table(cmds, tool):  # D6 (1)
+        return False
+    for cmd in cmds:
+        parts = _find_parts(cmd.words) if _program(cmd.words[0], tool) == "find" else None
+        roots, patterns = (parts[0] or [_DOT], parts[1]) if parts else ((), set())
+        for k, word in enumerate(cmd.words):
+            if k not in patterns and _holds_four(word.value) and not _placed(word.value, tool, cwd):
+                return False
+        if not all(_placed_root(root.value, tool, cwd) for root in roots):
+            return False
+    return True
+
+
+# --- D7: one copy or move INTO the crew dir, one closed shape --------------------
+
+def _ps_cp_is_alias():
+    """On a PowerShell payload `cp` and `mv` are Copy-Item / Move-Item only
+    on Windows; elsewhere they are the native programs."""
+    return os.name == "nt"
+
+
+_D7_HEADS = {False: {"cp": "copy", "mv": "move"},
+             True: {"copy-item": "copy", "move-item": "move", "cp": "copy", "mv": "move"}}
+_D7_BASH_FLAGS = {"copy": re.compile(r"-[rRfpvani]+", re.ASCII), "move": re.compile(r"-[fvni]+", re.ASCII)}
+_D7_PS_FLAGS = {"copy": ("-recurse", "-force"), "move": ("-force",)}
+_D7_VARIABLE_RE = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*|\$\{[A-Za-z_][A-Za-z0-9_]*\}", re.ASCII)
+_D7_PS_VARIABLE_RE = re.compile(r"\$(?:env:)?[A-Za-z_][A-Za-z0-9_]*|\$\{[A-Za-z_][A-Za-z0-9_]*\}",
+                                re.ASCII)
+_D7_LITERAL_RE = re.compile(r"[A-Za-z0-9_./][A-Za-z0-9_./-]*", re.ASCII)
+_D7_PS_LITERAL_RE = re.compile(r"[A-Za-z0-9_./\\][A-Za-z0-9_./\\-]*", re.ASCII)
+_D7_LAST_RE = re.compile(r"~/\.claude/crew(?:/[A-Za-z0-9_.-]+)+", re.IGNORECASE | re.ASCII)
+_D7_PS_LAST_RE = re.compile(r"~[/\\]\.claude[/\\]crew(?:[/\\][A-Za-z0-9_.-]+)+", re.IGNORECASE | re.ASCII)
+
+
+def _destination_only(reading, tool):
+    """D7. True when the WHOLE reading is one copy or move into the crew dir,
+    `<cp|mv> [<flag or source>...] ~/.claude/crew/<segment>[/<segment>...]`,
+    every word matching its form in full. No quote, escape, glob, comma,
+    separator or non-ASCII character is in any form, so the shell rewrites
+    nothing and the last word is the destination."""
+    if not isinstance(reading, str):
+        return False
+    ps = tool == "PowerShell"
+    words = re.split(r"[ \t]+", reading.strip(" \t"))
+    if len(words) < 2:
+        return False
+    head = words[0].lower() if ps else words[0]
+    if ps and head in ("cp", "mv") and not _ps_cp_is_alias():
+        return False
+    kind = _D7_HEADS[ps].get(head)
+    if kind is None:  # D7: only cp, mv, Copy-Item, Move-Item
+        return False
+    for word in words[1:-1]:
+        if word.startswith("-"):
+            if not _d7_flag(word, head, kind, ps):
+                return False
+        elif not _d7_source(word, ps):
+            return False
+    return _d7_last(words[-1], ps)
+
+
+def _d7_flag(word, head, kind, ps):  # pylint: disable=unused-argument
+    """A listed flag that takes no value: never a target, a destination or a
+    source. The list is chosen by the tool, never by the spelling of `head`."""
+    if ps:
+        return word.lower() in _D7_PS_FLAGS[kind]
+    return _D7_BASH_FLAGS[kind].fullmatch(word) is not None
+
+
+def _d7_source(word, ps):
+    """A plain variable or a literal, the whole word; never a mix of the two."""
+    variable, literal = (_D7_PS_VARIABLE_RE, _D7_PS_LITERAL_RE) if ps else (_D7_VARIABLE_RE, _D7_LITERAL_RE)
+    return bool(variable.fullmatch(word) or literal.fullmatch(word))
+
+
+def _d7_last(word, ps):
+    """`~/.claude/crew/<segment>...`, ending past the crew dir, no segment
+    `.`/`..`, ending in `.`, or the store's name or a store child."""
+    if not (_D7_PS_LAST_RE if ps else _D7_LAST_RE).fullmatch(word):
+        return False
+    for segment in re.split(r"[/\\]", word)[3:]:
+        if segment in (".", "..") or segment.endswith("."):
+            return False
+        if _could_be(segment, STORE_NAME, 4) or any(_could_be(segment, c, 3) for c in _STORE_CHILDREN):
+            return False
+    return True
