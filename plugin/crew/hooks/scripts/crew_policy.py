@@ -667,7 +667,8 @@ def decide(request: Any) -> dict:
     spec = OPERATIONS.get(name) or Op(SERIOUS_ALWAYS, tiered=True,
                                       serious=UNPLACED)
     walk = _Walk(name, tier, unplaced)
-    walk.look("-", f"operation {name or '<missing>'!r}, tier {tier}, "
+    # !a, not !r: the name is the caller's text and the trace stays ASCII.
+    walk.look("-", f"operation {name or '<missing>'!a}, tier {tier}, "
                    f"{'attended' if attended else 'unattended'}")
     if unplaced:
         walk.look("-", "operation is not in the table, so it is serious")
@@ -984,11 +985,12 @@ def _classify_request(request: Any) -> dict:
 
 def _main(argv: list) -> int:
     cmd = argv[1] if len(argv) > 1 else ""
-    if cmd == "operations":
+    # Exact argument counts: an extra argument is bad input, not ignored.
+    if cmd == "operations" and len(argv) == 2:
         for key in sorted(OPERATIONS):
             print(f"{key}\t{OPERATIONS[key].lane}")
         return 0
-    if cmd not in ("decide", "explain", "classify") or len(argv) < 3:
+    if cmd not in ("decide", "explain", "classify") or len(argv) != 3:
         print("usage: crew_policy.py decide|explain|classify <json|-> | "
               "operations", file=sys.stderr)
         return 2

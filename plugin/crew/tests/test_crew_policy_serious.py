@@ -388,8 +388,9 @@ def _d6_requests():
 
 
 def check_malformed_account_stops(m):
-    """A present account outside the closed list stops at rule 2 in every
-    branch; absent and 'none' keep their answer."""
+    """A present account outside the closed list stops at rule 2 for every
+    request that reaches rule 2 (rule 1's never lane and the machine-layer
+    check run first); absent and 'none' keep their answer."""
     bad = []
     for label, base, control in _d6_requests():
         for presence in ("attended", "unattended"):
@@ -634,7 +635,68 @@ def check_cli_refusals(m):
         why = refused(run_main(m, [verb, '{"operation": "commit\udcff"}']))
         if why:
             bad.append(f"{verb} argv lone surrogate: {why}")
-    return bad + flags_clear(m)
+    return bad + check_cli_argument_counts(m) + flags_clear(m)
+
+
+def check_cli_argument_counts(m):
+    """Exact argument counts: a verb takes one request and `operations`
+    none; a missing or an extra argument exits 2 with nothing on stdout."""
+    bad = []
+    body = json.dumps(BASE)
+    for verb in VERBS:
+        for args in ([verb], [verb, body, "extra"], [verb, "-", "extra"],
+                     [verb, body, body]):
+            why = refused(run_main(m, args, b"" if "-" in args else None))
+            if why:
+                bad.append(f"{' '.join(a[:12] for a in args)}: {why}")
+    for args in (["operations", "{}"], ["operations", "x", "y"], []):
+        why = refused(run_main(m, args))
+        if why:
+            bad.append(f"operations args {args!r}: {why}")
+    why = answered(run_main(m, ["operations"]))
+    if why:
+        bad.append(f"operations must answer: {why}")
+    return bad
+
+
+def check_trace_is_ascii(m):
+    """The trace and the JSON answers are ASCII whatever the caller's text
+    (non-ASCII operation names and effect keys included)."""
+    bad = []
+    for request in (dict(BASE, operation="café"),
+                    dict(BASE, operation="中文 commit"),
+                    dict(BASE, effects=dict(BENIGN, **{"été": True}))):
+        body = json.dumps(request)
+        for verb in VERBS:
+            code, out, err = run_main(m, [verb, body])
+            if code != 0 or not out.isascii() or err:
+                bad.append(f"{verb} {body[:60]}: code {code}, ascii {out.isascii()}")
+        if not "\n".join(m.decide(request)["trace"]).isascii():
+            bad.append(f"decide trace not ASCII for {body[:60]}")
+    return bad
+
+
+def check_effects_add_the_account_need(m):
+    """A class the effects add brings its own account need: an operation
+    whose own row passes rule 2 with account 'none' stops at rule 2 once
+    writes:true makes it a production write (the effects-expanded run)."""
+    bad = []
+    for presence in ("attended", "unattended"):
+        for account in ("none", "read-verified", GONE):
+            request = {"operation": "commit", "tier": "prod", "presence": presence,
+                       "machine_layer": "clear", "target": "repo",
+                       "effects": fx(writes=True)}
+            if account is not GONE:
+                request["account"] = account
+            done = brief(m.decide(request))
+            if done[:2] != (STOP[presence], "2"):
+                bad.append(f"commit prod {presence} account {account!r} writes:true: "
+                           f"{done}, want {(STOP[presence], '2')}")
+            plain = dict(request, effects=BENIGN)
+            if brief(m.decide(plain))[1] == "2":
+                bad.append(f"control: commit prod {presence} account {account!r} "
+                           "benign effects must pass rule 2")
+    return bad
 
 
 @contextlib.contextmanager
@@ -697,6 +759,7 @@ def check_cli_classify_answers(m):
 CHECKS = (check_serious_cases, check_cost_values, check_must_allow,
           check_pinned_context, check_threshold, check_presence_not_value,
           check_union_with_own_class, check_malformed_account_stops,
+          check_effects_add_the_account_need, check_trace_is_ascii,
           check_cli_classify_answers, check_cli_single_wrapper,
           check_cli_refusals, check_r01_parity, check_benign_effects_parity,
           check_a_serious_answer_never_creates_an_allow,
@@ -856,6 +919,13 @@ def test_the_cli_ignores_facts_classified_as_and_threshold():
     assert json.loads(plain)["classes"] == sorted(["money", "production-write"])
 
 
+@pytest.mark.parametrize("args", [["decide", "{}", "extra"], ["explain", "{}", "x"],
+                                  ["classify", "{}", "{}"], ["operations", "{}"],
+                                  ["decide"]])
+def test_the_cli_process_refuses_a_wrong_argument_count(args):
+    assert _refused_proc(_cli(args)), args
+
+
 def test_the_usage_line_names_classify():
     done = _cli(["frobnicate", "{}"])
     assert done.returncode == 2 and done.stdout == b""
@@ -918,6 +988,8 @@ MUTATIONS = (
      'if "effects" in req else None', 'if req.get("effects") is not None else None'),
     ("16 the rule-2 run with the effects classes is removed",
      "(base, classes) if classes != base else (classes,)", "(classes,)"),
+    ("16b the rule-2 run with the effects classes is dropped (base only)",
+     "(base, classes) if classes != base else (classes,)", "(base,)"),
     ("17 a malformed account passes", "        bad += (UNKNOWN,)\n", "        bad += ()\n"),
     ("18 a null account is treated as absent",
      '    if "account" in req:\n', '    if req.get("account") is not None:\n'),
@@ -951,6 +1023,13 @@ MUTATIONS = (
      'classify(req.get("effects"), "prod")'),
     ("31 a Decimal is made by a direct call on the constant",
      "ctx.create_decimal(", "_DECIMAL.create_decimal("),
+    ("32 a verb ignores an extra argument",
+     "    if cmd not in (\"decide\", \"explain\", \"classify\") or len(argv) != 3:\n",
+     "    if cmd not in (\"decide\", \"explain\", \"classify\") or len(argv) < 3:\n"),
+    ("33 operations ignores an extra argument",
+     '    if cmd == "operations" and len(argv) == 2:\n', '    if cmd == "operations":\n'),
+    ("34 the trace quotes the operation name with repr",
+     "'<missing>'!a}", "'<missing>'!r}"),
 )
 
 
