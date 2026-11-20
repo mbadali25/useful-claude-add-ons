@@ -1281,6 +1281,11 @@ _R20_ALLOW = [
     ("msg-label-double-dash", "Bash", "gh pr create --label '--' --title 'run-approvals'"),
     ("msg-ps-label-double-dash", "PowerShell", "gh pr create --label '--' --title 'run-approvals'"),
     ("msg-commit-message-double-dash", "Bash", "git commit -m '--' -m 'run-approvals'"),
+    # review round 3: a single typographic quote is a literal inside a PowerShell "..."
+    ("msg-ps-apostrophe-in-double", "PowerShell",
+     f"git commit -m \"docs: the run-approvals store{chr(0x2019)}s receipts\""),
+    ("msg-ps-double-in-single", "PowerShell",
+     f"git commit -m 'docs: the {chr(0x201c)}run-approvals{chr(0x201d)} store'"),
     # Claude started fresh (D5)
     ("claude-stream-json", "Bash", "claude -p 'x' --output-format stream-json | tee out.jsonl | jq -c ."),
     ("claude-plugin-list-ls", "Bash", "claude plugin list; ls -lrt"),
@@ -1397,6 +1402,10 @@ _R20_BLOCK = [
     ("sed-exec-bare", "Bash", f"sed -i e {_S}/crew-hook.sh"),
     ("function-shadow", "Bash", f"git() {{ python3 \"$2\"; }}; git add {_S}/approval_hook.py"),
     ("flags-before-m", "Bash", f"python3 -I -m pylint {_S}/approval_hook.py"),
+    # review round 3: the withdrawn rev 5 neighbours the spec keeps refused (section 0, 5.1)
+    ("known-cluster", "Bash", f"python3 -uB -m pytest {_S}/approval_hook.py"),
+    ("env-no-name", "Bash", f"PYTHONPATH={_S} python3 -m pytest {_S}/approval_hook.py"),
+    ("version-then-add", "Bash", f"python3 --version && git add {_S}/approval_hook.py"),
     ("json-tool-outfile", "Bash",
      "python3 -m json.tool forged.json ~/.claude/crew/run-approvals/receipts/ar-0123456789ab.json"),
     ("rm-store-table", "Bash", "rm -rf ~/.claude/crew/run-approvals"),
@@ -1475,6 +1484,13 @@ _R20_BLOCK = [
      f"git tag -a t1 -m '{_TOUCH}' ; git tag -l -n1 t1 | cut -d ' ' -f 2- | bash"),
     ("msg-launder-gh", "Bash",
      f"gh pr comment 1 --body '{_TOUCH}' ; gh pr view 1 --json body -q .body | bash"),
+    # review round 3: each reads back the same field it wrote
+    ("msg-launder-gh-comment", "Bash",
+     f"gh pr comment 1 --body '{_TOUCH}' ; gh pr view 1 --json comments -q '.comments[-1].body' | bash"),
+    ("msg-launder-gh-body", "Bash",
+     f"gh pr edit 1 --body '{_TOUCH}' ; gh pr view 1 --json body -q .body | bash"),
+    ("msg-launder-gh-title", "Bash",
+     f"gh pr edit 1 --title '{_TOUCH}' ; gh pr view 1 --json title -q .title | bash"),
     ("msg-launder-ps", "PowerShell",
      "git commit --allow-empty -m 'ni ~/.claude/crew/run-approvals/receipts/a' ; "
      "git cat-file commit HEAD | Select-Object -Last 1 | iex"),
@@ -1628,12 +1644,18 @@ def _home_rows(home):
     if drive:
         letter = drive[0]
         msys = f"rm -rf /{letter.lower()}/{rest}/*/crew/run-*"
-    else:
+        dotc = f"rm -rf /{letter.lower()}/{rest}/.c*/*/run-*"
+        unc = f"rm -rf //localhost/{letter.upper()}$/{rest}/*/crew/run-*"
+    else:  # no drive: the same three shapes under /proc/self/root and a //host root
         msys = f"rm -rf /proc/self/root{text}/*/crew/run-*"
+        dotc = f"rm -rf /proc/self/root{text}/.c*/*/run-*"
+        unc = f"rm -rf //localhost{text}/*/crew/run-*"
     parent, last = os.path.split(text.rstrip("\\/"))
     short = os.path.join(parent, last[:6].upper() + "~1").replace("\\", "/")
     back = text.replace("/", "\\")
     return {"msys-root": ("Bash", msys),
+            "msys-root-dotc": ("Bash", dotc),
+            "msys-root-localhost": ("Bash", unc),
             "short-name": ("Bash", f"rm -rf {short}/*/crew/run-*"),
             "ps-comma-array": ("PowerShell", f"Remove-Item -Recurse build\\x,{back}\\*\\*\\run-*"),
             "ps-comma-array-fwd": ("PowerShell",
@@ -1641,8 +1663,8 @@ def _home_rows(home):
             "ps-provider": ("PowerShell", f"Remove-Item -Recurse FileSystem::{back}\\*\\*\\run-*")}
 
 
-@pytest.mark.parametrize("ident", ["msys-root", "short-name", "ps-comma-array", "ps-comma-array-fwd",
-                                   "ps-provider"])
+@pytest.mark.parametrize("ident", ["msys-root", "msys-root-dotc", "msys-root-localhost", "short-name",
+                                   "ps-comma-array", "ps-comma-array-fwd", "ps-provider"])
 def test_with_a_class_on_a_rooted_or_joined_word_built_from_the_home_is_refused(repo, capsys, ident):
     """D6's root forms and placed-word characters: a drive spelled `/c/`, a
     short name, a PowerShell array or provider path is never placed."""

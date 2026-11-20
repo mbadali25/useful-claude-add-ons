@@ -903,8 +903,9 @@ class _NotPlain(Exception):
 _PLAIN_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./:=,@+-*?[]")
 _ENDS_WORD = " \t\n;&|"
 # PowerShell's single quotes (U+2018 U+2019 U+201A U+201B) and double quotes (U+201C
-# U+201D U+201E): any of them ends a span an ASCII quote opened.
-_PS_QUOTES = "‘’‚‛“”„"
+# U+201D U+201E): one of the same kind ends a span an ASCII quote opened. One of the
+# other kind is a literal character there (an apostrophe in a "..." message).
+_PS_QUOTES = {"'": "‘’‚‛", '"': "“”„"}
 _PIPES = ("&&", "||", "|")
 _NAME_EQ_RE = re.compile(r"--[A-Za-z0-9][A-Za-z0-9_-]*=", re.ASCII)
 _VARIABLE_RE = re.compile(r"\$(?:env:)?[A-Za-z_][A-Za-z0-9_]*|\$\{[A-Za-z_][A-Za-z0-9_]*\}", re.ASCII)
@@ -1004,8 +1005,8 @@ def _scan_word(text, i, ps, loose):
             if close < 0:
                 raise _NotPlain
             body = text[i + 1:close]
-            if ps and any(quote in body for quote in _PS_QUOTES):
-                raise _NotPlain  # PowerShell closes a quote on any of these, not only the ASCII one
+            if ps and any(quote in body for quote in _PS_QUOTES[char]):
+                raise _NotPlain  # PowerShell closes a quote on these too, not only the ASCII one
             if char == '"':
                 bare = _VARIABLE_RE.sub("", body) if loose else body
                 if "$" in bare or "`" in bare or (not ps and "\\" in body):

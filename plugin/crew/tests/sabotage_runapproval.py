@@ -280,7 +280,24 @@ _LAST_CREW = ('    reading = next((p for p in reversed(re.split(r";|&&|\\|\\||\\
 _SED_ALONE = '    if "sed" in rows and len(rows) != 1:\n        return False\n'
 _SED_NAME = ('    if any(_sed_names_outside_files(cmd) for cmd, row in zip(cmds, rows) if row == "sed"):\n'
              "        return False\n")
-_TABLE_CALL = "    return _all_on_table(_plain_commands(reading, tool), tool)\n"
+_D5_SCAN = "    cmds = _plain_commands(reading, tool, loose=True) if reading is not None else None\n"
+_D5_SCAN_GROUPED = ("    cmds = _plain_commands(reading.translate({40: 95, 41: 95}), tool, loose=True)"
+                    " if reading is not None else None\n")
+_D5_WHOLE_WORD = "            return False  # (2) a claude word that is not a whole command word\n"
+_D5_BODY = (
+    "    if cmds is None:\n        return False\n    owned = {}\n    for cmd in cmds:\n"
+    "        words = cmd.words\n"
+    "        if not words[0].quoted and _CLAUDE_WORD_RE.fullmatch(words[0].value):\n"
+    "            owned[words[0].end] = words[1:]\n"
+    '        elif (_program(words[0], tool) == "npx" and len(words) > 1 and not words[1].quoted\n'
+    '              and words[1].value.lower().endswith("/claude-code")):\n'
+    "            owned[words[1].end] = words[2:]\n"
+    "    matches = list(_CLAUDE_RE.finditer(reading))\n"
+    '    if len(_CLAUDE_RE.findall(_QUOTE_RE.sub("", reading))) != len(matches):\n'
+    "        return False  # (2) a claude word inside a quoted argument (`bash -c 'claude ...'`)\n"
+    "    for match in matches:\n        args = owned.get(match.end())\n        if args is None:\n"
+    + _D5_WHOLE_WORD)
+_TABLE_CALL ="    return _all_on_table(_plain_commands(reading, tool), tool)\n"
 _REV5_POLARITY = (
     '    return not any(re.fullmatch(r"python[0-9.]*|py|pypy[0-9.]*|bash|sh|zsh|dash|pwsh|powershell'
     '|node|\\.|source", (re.sub(r"^(?:(?:env|command|exec|nohup|time|sudo|xargs)\\s+)*", "", '
@@ -307,7 +324,17 @@ _R20_ROWS = (
      "_STORE_NAME_RE = re.compile(" + _STORE_RE,
      '_STORE_NAME_RE = re.compile(r"(?<![\\w.-])run[-_]approvals(?=[/\\\\])", re.IGNORECASE)\n',
      [_BLOCK.format("python-join")]),
-    ("S9 message dropping takes git wherever it stands, not only as the command word",
+    # Re-aimed rows (spec rev 12, 5.3: a named id another rule also holds is re-aimed at an id
+    # only this rule holds, never the rule weakened; recorded on CLDDEV-27, comment 52805):
+    # S9 [git-inside-quoted-string] -> [git-after-another-word] (another rule holds the former);
+    # S29 [git-alias] -> [git-ext-diff] (G and git's own shape hold the former);
+    # S32 [sed-exec] -> [sed-exec-bare] (the sed name rule holds the former);
+    # S34 [json-tool-outfile] -> [rm-store-table] (json.tool is off the table: two operands);
+    # S35 [claude-grouping] -> row S35b, which undoes G's grouping rejection as well;
+    # S37 does not name [msys-root-localhost]: its `$` (`//localhost/C$/...`) is not plain, so G holds it;
+# S40 [cwd-home-find] -> [cwd-home-rm], [cwd-under-claude] (find's as-root test holds it).
+    ("S9 message dropping takes git wherever it stands, not only as the command word"
+     " (re-aimed from [git-inside-quoted-string])",
      "    head = 0\n",
      '    head = next((k for k in range(len(words) - 1) if words[k].value == "git"'
      ' and words[k + 1].value in ("commit", "tag")), 0)\n',
@@ -326,7 +353,7 @@ _R20_ROWS = (
                                  "find-exec", "ps-block", "module-wrapper")]),
     ("S28 only the simple commands that hold a name must be on the table",
      _TABLE_CALL, _NAMED_ONLY, [_BLOCK.format("cat-pipe-python")]),
-    ("S29 a table command accepts any flag",
+    ("S29 a table command accepts any flag (re-aimed from [git-alias] to [git-ext-diff])",
      "            return None  # an unlisted flag takes the command off the table\n",
      "            width = 1\n",
      [_BLOCK.format(i) for i in ("pylint-init-hook", "rg-pre", "pytest-p", "git-ext-diff")]),
@@ -340,7 +367,7 @@ _R20_ROWS = (
      'r"[A-Za-z_][A-Za-z0-9_]*=.*", w.value)), 0):]\n'
      '    ps = tool == "PowerShell"\n    name = _program(words[0], tool)\n',
      [_BLOCK.format("assignment-prefix")]),
-    ("S32 any sed script is accepted",
+    ("S32 any sed script is accepted (re-aimed from [sed-exec])",
      "        if parts is None or not _sed_script_ok(parts[1].value):\n",
      "        if parts is None:\n",
      [_BLOCK.format("sed-exec-bare")]),
@@ -348,7 +375,7 @@ _R20_ROWS = (
      "    if spec is None:  # a module not on the list is off the table\n        return None\n",
      '    if spec is None:\n        spec = _spec("")\n',
      [_BLOCK.format("runner-module")]),
-    ("S34 a store name is excused beside any table row, not only RO",
+    ("S34 a store name is excused beside any table row, not only RO (re-aimed from [json-tool-outfile])",
      "    return rows is not None and all(row in _RO_ROWS for row in rows)\n",
      "    return rows is not None\n",
      [_BLOCK.format("rm-store-table")]),
@@ -356,6 +383,10 @@ _R20_ROWS = (
      "            return False  # (2) a claude word that is not a whole command word\n",
      "            continue\n",
      [_BLOCK.format("claude-wrapper"), _BLOCK.format("claude-keyword")]),
+    ("S35b two rules undone: G admits a grouping in D5's scan and a claude word that is not a"
+     " command word is skipped",
+     _D5_SCAN + _D5_BODY, _D5_SCAN_GROUPED + _D5_BODY.replace(_D5_WHOLE_WORD, "            continue\n"),
+     [_BLOCK.format("claude-grouping")]),
     ("S36 a backslash escapes a double quote on PowerShell too",
      "            close = text.find(char, i + 1)\n",
      '            close = next((k for k in range(i + 1, len(text)) if text[k] == char'
@@ -363,7 +394,7 @@ _R20_ROWS = (
      [_BLOCK.format("ps-backslash-quote")]),
     ("S37 a rooted word is placed unless it lines up with expanduser('~')",
      "        return False  # every other root form is not placed (/c/, //host, /proc, /opt ...)\n",
-     _LINES_UP, [_HOME.format("msys-root")]),
+     _LINES_UP, [_HOME.format(i) for i in ("msys-root", "msys-root-dotc")]),
     ("S38 a relative word holding .. is read as staying under the cwd",
      "            return False  # a climb leaves the directory the word is read from\n",
      "            continue\n",
@@ -463,7 +494,8 @@ _R20_ROWS = (
      [_BLOCK.format(i) for i in ("msg-launder-store", "msg-launder-hook", "msg-launder-module",
                                  "msg-launder-claude", "msg-launder-tag", "msg-launder-gh",
                                  "msg-launder-ps", "msg-launder-editmsg", "msg-launder-sed-pytest",
-                                 "msg-launder-sed-doctest")]),
+                                 "msg-launder-sed-doctest", "msg-launder-gh-comment",
+                                 "msg-launder-gh-body", "msg-launder-gh-title")]),
     ("S61 the message rows accept any flag",
      '        operands = _fit(words[first:], spec, tool == "PowerShell")\n',
      '        operands = [w for w in words[first:] if not w.value.startswith("-")]\n',
@@ -510,8 +542,8 @@ _R20_ROWS = (
      [_BLOCK.format(i) for i in ("cp-crew-source-relative", "cp-crew-source-nested",
                                  "ps-crew-source-relative")]),
     ("S72 PowerShell quote spans close only on ASCII quotes (review round 2)",
-     "            if ps and any(quote in body for quote in _PS_QUOTES):\n"
-     "                raise _NotPlain  # PowerShell closes a quote on any of these, not only the ASCII one\n",
+     "            if ps and any(quote in body for quote in _PS_QUOTES[char]):\n"
+     "                raise _NotPlain  # PowerShell closes a quote on these too, not only the ASCII one\n",
      "",
      [_BLOCK.format(i) for i in ("msg-ps-typographic-single", "msg-ps-typographic-double",
                                  "msg-ps-typographic-low")]),
