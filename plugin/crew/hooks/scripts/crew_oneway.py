@@ -1,4 +1,4 @@
-"""The one-way lane's command-text tripwire, REPORT-ONLY (R-34a).
+"""The one-way lane's command-text tripwire, REPORT-ONLY (R-34a, R-34b).
 
     python3 crew_oneway.py judge [--shell bash|powershell] -- "<command>"
     python3 crew_oneway.py payload          (a PreToolUse JSON payload on stdin)
@@ -6,15 +6,36 @@
 
 The revision-3 plan's one-way list (4.3) names operations only the owner may
 approve. This module recognises the first of them in the text of a command a
-model runs, and nothing else:
+model runs, or in a file tool's payload, and nothing else:
 
 - `hand-edit-terraform-state`: `terraform`, `tofu` or `terragrunt` running
   `state <write>` (anything but `list`, `show`, `pull`, `identities`),
-  `import`, `taint`, `untaint`, `force-unlock` or `refresh`.
+  `import`, `taint`, `untaint`, `force-unlock` or `refresh` (R-34a); and any
+  command or file tool that writes a terraform state file directly (R-34b).
 
-Later tickets add their own operations and head-keyed rows (state-file writes
-and file tools, branch and worktree deletes, wrappers, gh); the entry points
-and the result shape are already final.
+A *state word* is a word whose basename (quotes, brackets and trailing
+slashes stripped) ends in `.tfstate` or `.tfstate.<anything>`, any case:
+`terraform.tfstate.backup` and the workspace directory `terraform.tfstate.d`
+count. In `-x=v` the value `v` is read, and the word is an *option value*.
+A state file is written by:
+
+- a redirection whose operator holds `>` into a state word, whatever the
+  head (`tfstate-redirect`); an unexpanded write target (`$`, backtick, `%`)
+  in a segment that holds a state word is `could-not-tell`;
+- a state word after a writing head: the remove, move, write and in-place
+  heads, the last positional of a copy head, `aws s3 rm|mv|cp`, `gsutil
+  rm|cp`, `az storage blob upload|delete`, and `git rm|mv|checkout|restore`
+  after git's global options. A read head (`cat`, `jq`, `ls`, ...) or a git
+  read (`status`, `diff`, `add`, `commit`, ...) is clear; any other head
+  with a state word after it is `could-not-tell`. A terraform head is judged
+  by its own table only (head precedence);
+- `Write`, `Edit`, `MultiEdit` or `NotebookEdit` naming a state file, its
+  paths read as `scope_guard.targets` reads them; with no readable path the
+  payload is `could-not-tell`.
+
+Later tickets add their own operations and head-keyed rows (branch and
+worktree deletes, wrappers, gh); the entry points and the result shape are
+already final.
 
 REPORT-ONLY: nothing in the plugin imports this module, and a test fails if
 anything does. It emits the operation name as a string and never imports the
@@ -46,8 +67,11 @@ Reading a command:
    `<<< a" b"`), an escaped quote closes nothing (`<<< "a\\" b"`; the
    escape is `\\` in bash and a backtick in powershell) and an escaped space
    joins the next token. An operator inside the quotes is put back as it
-   stood (`>"a>b"` records `a>b`). The words stop at a comment, a `#` that
-   starts an unquoted word: `terraform state rm x # -help` is a hit. An operator
+   stood (`>"a>b"` records `a>b`), and the whitespace between a target's
+   tokens is kept as the command had it. The words stop at a comment, a `#`
+   that starts an unquoted word: `terraform state rm x # -help` is a hit. The
+   comment stops only its own segment, so `echo ok # x; terraform state rm x`
+   is a known over-report (a hit). An operator
    with no target, or with a quoted one the segment never closes, makes the
    segment `could-not-tell` (`redirect-target-unseen`) unless its words are
    a hit, which wins: the shell writes somewhere the reader cannot see. A
@@ -55,9 +79,10 @@ Reading a command:
    start of a word (`list2>&1` keeps the word `list2`).
 
 Each segment then has its leading `NAME=VALUE` words and `HEAD_PREFIXES`
-stripped, and its head (basename, lower-cased, `.exe` dropped) is read. Only a
-terraform head is judged; text after any other head never matches (head
-precedence). Global options are skipped with `skip_options`, which also
+stripped, and its head (basename, lower-cased, `.exe` dropped) is read. A
+terraform head is judged by the terraform table; text after any other head
+never matches it (head precedence), and is read only for state words.
+Global options are skipped with `skip_options`, which also
 returns every place an unknown option may have swallowed a table subcommand
 or terragrunt's `exec`; every such reading is judged and the worst kept, the
 earliest on a tie. terragrunt's `run`, `run-all` and `exec` are unwrapped; what
@@ -66,8 +91,9 @@ judging it takes time linear in its length.
 
 It is a tripwire, not a boundary (plan 4.0, layer 1). It does not see
 terraform behind `bash -c`, `make`, a script, `xargs`, `sudo -u <user>` or a
-substitution, terragrunt's `stack run` and `graph`, or a state file written
-by any other program.
+substitution, terragrunt's `stack run` and `graph`, a state file written by
+a script or a substitution or under an unexpanded name (`rm $F`), a copy into a directory
+(`cp terraform.tfstate backup/`), or a state word only in git's globals.
 
 Exit codes: 0 for every judgement (report-only) and for `shapes`, 2 for a
 usage error.
@@ -118,6 +144,30 @@ SHAPES = (
     ("subcommand missing, or holding $ ` %", "tf-sub-unseen", COULD_NOT_TELL),
     ("terragrunt exec [opts] cmd with options and no --", "tg-exec-unseen", COULD_NOT_TELL),
     ("redirection operator with no target", "redirect-target-unseen", COULD_NOT_TELL),
+    ("redirection (> >> >| &> *> ...) into a state word", "tfstate-redirect", HIT),
+    ("redirection into $ ` % while the segment holds a state word", "tfstate-redirect-unseen",
+     COULD_NOT_TELL),
+    ("rm rmdir unlink shred truncate del erase remove-item ri, a state word", "tfstate-remove",
+     HIT),
+    ("mv move move-item ren, a state word", "tfstate-move", HIT),
+    ("cp copy copy-item install rsync, a state word as the last positional",
+     "tfstate-overwrite", HIT),
+    ("sed or perl with -i (or a bundle holding i, --in-place), a state word",
+     "tfstate-inplace", HIT),
+    ("tee set-content add-content out-file sc, a state word", "tfstate-write", HIT),
+    ("aws s3 rm|mv, aws s3 cp or gsutil cp into a state word, gsutil rm, "
+     "az storage blob upload|delete", "tfstate-remote", HIT),
+    ("a read head (cat jq ls ...) or git read, a state word only as an option value",
+     "tfstate-option-value", COULD_NOT_TELL),
+    ("any other head, a state word after it", "tfstate-head-unseen", COULD_NOT_TELL),
+    ("git rm, a state word after the subcommand", "tfstate-git-remove", HIT),
+    ("git mv, a state word after the subcommand", "tfstate-git-move", HIT),
+    ("git checkout|restore, a state word after the subcommand", "tfstate-git-overwrite", HIT),
+    ("git, another subcommand or none, a state word after it", "tfstate-git-unseen",
+     COULD_NOT_TELL),
+    ("Write Edit MultiEdit NotebookEdit naming a state file", "tfstate-file-tool", HIT),
+    ("Write Edit MultiEdit NotebookEdit with no readable path", "file-tool-path-unseen",
+     COULD_NOT_TELL),
 )
 
 # --- the head --------------------------------------------------------------------------------
@@ -127,6 +177,24 @@ SHAPES = (
 HEAD_PREFIXES = frozenset(("env", "sudo", "command", "time", "then", "do", "else", "!",
                            "if", "elif", "while", "until"))
 _ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=", re.S)
+
+# --- state-file writes (R-34b) ---------------------------------------------------------------
+
+_STATE_RE = re.compile(r"\.tfstate(?:\..*)?$", re.I | re.S)
+REMOVE_HEADS = frozenset(("rm", "rmdir", "unlink", "shred", "truncate", "del", "erase",
+                          "remove-item", "ri"))
+MOVE_HEADS = frozenset(("mv", "move", "move-item", "ren"))
+COPY_HEADS = frozenset(("cp", "copy", "copy-item", "install", "rsync"))
+INPLACE_HEADS = frozenset(("sed", "perl"))
+WRITE_HEADS = frozenset(("tee", "set-content", "add-content", "out-file", "sc"))
+READ_HEADS = frozenset(("cat", "type", "less", "more", "head", "tail", "jq", "grep", "rg",
+                        "get-content", "gc", "ls", "dir", "stat", "file", "wc", "sha256sum",
+                        "echo", "printf", "write-output", "write-host"))
+GIT_READ_SUBS = frozenset(("status", "log", "diff", "show", "ls-files", "add", "blame"))
+GIT_WRITE_SUBS = {"rm": "tfstate-git-remove", "mv": "tfstate-git-move",
+                  "checkout": "tfstate-git-overwrite", "restore": "tfstate-git-overwrite"}
+_INPLACE_RE = re.compile(r"^(?:-[A-Za-z]*i.*|--in-place(?:=.*)?)$", re.S)
+FILE_TOOLS = frozenset(("Write", "Edit", "MultiEdit", "NotebookEdit"))
 
 # --- the raw reader --------------------------------------------------------------------------
 
@@ -201,7 +269,24 @@ def _quotes(text, quote, skip, escape):
     return quote, skip
 
 
-def _target(tokens, index, escape="\\"):
+def _tokens(piece):
+    """(tokens, gaps) of one raw segment: `gaps[i]` is the whitespace the
+    command had before `tokens[i]`, the one space `_protect` pads a lifted
+    operator with on each side taken off (F1). A token that is only brackets
+    is dropped; a token that is only quotes is kept (an empty word)."""
+    tokens, gaps, after_mark = [], [], False
+    for match in re.finditer(r"(\s*)(\S+)", piece):
+        gap, token = match.groups()
+        mark = token.startswith(_MARK)
+        gap = gap[after_mark:len(gap) - mark]
+        after_mark = mark
+        if token.strip(_STRIP) or any(quote in token for quote in _QUOTES):
+            tokens.append(token)
+            gaps.append(gap)
+    return tokens, gaps
+
+
+def _target(tokens, gaps, index, escape="\\"):
     """(target, next index) of the operator that stands before `index`;
     the target is None when the reader cannot see one.
 
@@ -209,16 +294,17 @@ def _target(tokens, index, escape="\\"):
     The target runs to the token where every quote it opens is closed
     (`<<< "a b"`, `<<< a" b"`); an escaped quote closes nothing and an
     escaped space joins the next token. An operator lifted from inside the
-    quotes is put back as it stood. When nothing in the segment closes the
-    quote, the rest of the segment is the unseen target."""
+    quotes is put back as it stood, and the whitespace between the target's
+    tokens is the command's own (`gaps`). When nothing in the segment closes
+    the quote, the rest of the segment is the unseen target."""
     if index >= len(tokens) or tokens[index].startswith(_MARK) or _comment(tokens[index]):
         return None, index
-    parts, quote, skip, glued = [], None, False, True
+    parts, quote, skip = [], None, False
     while True:
-        text, left, right = tokens[index], False, False
+        text, right = tokens[index], False
         if text.startswith(_MARK):
-            text, left, right = text[2:].translate(_SHOW), text[1] in "13", text[1] in "23"
-        piece = text if glued or left else " " + text
+            text, right = text[2:].translate(_SHOW), text[1] in "23"
+        piece = text if not parts else gaps[index] + text
         parts.append(piece)
         quote, skip = _quotes(piece, quote, skip, escape)
         glued = right
@@ -240,8 +326,7 @@ def _lift(piece, escape="\\"):
     A token that is only brackets is dropped. A token that is only quotes is
     an empty word: dropped as a word, kept as an operator's target. The
     words stop at a comment (`# -help` is not an argument)."""
-    tokens = [token for token in piece.split()
-              if token.strip(_STRIP) or any(quote in token for quote in _QUOTES)]
+    tokens, gaps = _tokens(piece)
     out, targets, dangling = [], [], []
     index = 0
     while index < len(tokens):
@@ -257,7 +342,7 @@ def _lift(piece, escape="\\"):
         index += 1
         if _FD_COPY_RE.fullmatch(operator):
             continue
-        target, index = _target(tokens, index, escape)
+        target, index = _target(tokens, gaps, index, escape)
         if target is None:
             dangling.append(operator)
         else:
@@ -351,6 +436,13 @@ class _Scan:  # pylint: disable=too-few-public-methods
                 self.end[i] = self.end[i + (2 if _takes_value(words, i) else 1)]
         self.swallowed = [j + 1 for j in range(count - 1) if _may_swallow(words, j)]
         self.memo = {}
+        self._state = None
+
+    def state_words(self):
+        """The same words read for state words (`_StateWords`), once."""
+        if self._state is None:
+            self._state = _StateWords(self.words)
+        return self._state
 
 
 def skip_options(args, index, scan=None):
@@ -426,7 +518,7 @@ def _judge_words(words, start=0):
     repeated) then needs no deep recursion. The words are read once
     (`_Scan`), so a long command costs time linear in its length."""
     if _tf_head(words, start) is None:
-        return _CLEAR
+        return _state_head(_StateWords(words), start)
     scan = _Scan(words)
     starts = {scan.end[at + 1] for at in range(start, len(words)) if words[at] == "exec"}
     for later in sorted(starts, reverse=True):
@@ -435,22 +527,198 @@ def _judge_words(words, start=0):
     return _judge_from(scan, start)
 
 
-def _tf_head(words, start):
-    """(index, head) of the terraform head of the command at `start`, or None."""
+def _head(words, start):
+    """(index, head) of the command at `start`, prefixes stripped, or None."""
     index = start
     while index < len(words) and (words[index] in HEAD_PREFIXES or _ASSIGN_RE.match(words[index])):
         index += 1
     if index >= len(words):
         return None
-    head = _head_name(words[index])
-    return (index, head) if head in TF_HEADS else None
+    return index, _head_name(words[index])
+
+
+def _tf_head(words, start):
+    """(index, head) of the terraform head of the command at `start`, or None."""
+    found = _head(words, start)
+    return found if found is not None and found[1] in TF_HEADS else None
 
 
 def _judge_from(scan, start):
     if start not in scan.memo:
         found = _tf_head(scan.words, start)
-        scan.memo[start] = _CLEAR if found is None else _judge_tf(scan, found[1], found[0] + 1)
+        scan.memo[start] = (_state_head(scan.state_words(), start) if found is None
+                            else _judge_tf(scan, found[1], found[0] + 1))
     return scan.memo[start]
+
+
+# --- state-file writes under any other head (R-34b) ------------------------------------------
+
+def _state_path(text):
+    """Whether `text` names a terraform state file: its basename, quotes,
+    brackets and trailing slashes stripped, ends in `.tfstate` or
+    `.tfstate.<anything>` (the backup, the workspace directory), any case."""
+    base = text.strip(_STRIP).rstrip("/\\")
+    return bool(_STATE_RE.search(re.split(r"[\\/]", base)[-1]))
+
+
+def _state_kind(word):
+    """"word" when `word` is a state word, "option" when it is one only as
+    an option (`-x=<state>`, or a word that starts with `-`), else None."""
+    if word.startswith("-") and "=" in word:
+        return "option" if _state_path(word.partition("=")[2]) else None
+    if not _state_path(word):
+        return None
+    return "option" if word.startswith("-") else "word"
+
+
+class _StateWords:  # pylint: disable=too-few-public-methods
+    """One command's words read once for state words, so every start judged
+    in it costs constant time past the head (`_Scan`'s linear rule).
+
+    `kind[i]` is `_state_kind`; `next_state[i]` / `next_word[i]` are the
+    first index at or after `i` holding a state word of any kind / a
+    positional one (`len(words)` when none); `next_plain[i]` the first word
+    there not starting with `-`; `next_dashdash[i]` the first `--`;
+    `inplace_from[i]` whether an in-place option stands there or later;
+    `last_plain` the last word not starting with `-` (-1 when none)."""
+
+    def __init__(self, words):
+        count = len(words)
+        self.words = words
+        self.kind = [_state_kind(word) for word in words]
+        self.next_state = [count] * (count + 1)
+        self.next_word = [count] * (count + 1)
+        self.next_plain = [count] * (count + 1)
+        self.next_dashdash = [count] * (count + 1)
+        self.inplace_from = [False] * (count + 1)
+        self.last_plain = -1
+        for i in range(count - 1, -1, -1):
+            word, kind = words[i], self.kind[i]
+            plain = not word.startswith("-")
+            self.next_state[i] = i if kind else self.next_state[i + 1]
+            self.next_word[i] = i if kind == "word" else self.next_word[i + 1]
+            self.next_plain[i] = i if plain else self.next_plain[i + 1]
+            self.next_dashdash[i] = i if word == "--" else self.next_dashdash[i + 1]
+            self.inplace_from[i] = self.inplace_from[i + 1] or bool(_INPLACE_RE.match(word))
+            if plain and self.last_plain < 0:
+                self.last_plain = i
+
+
+def _last_positional(info, head):
+    """The index of the last positional word after `head`, or None: the last
+    word when a `--` stands before it, else the last word not starting with
+    `-`."""
+    count = len(info.words)
+    if info.next_dashdash[head + 1] < count - 1:
+        return count - 1
+    return info.last_plain if info.last_plain > head else None
+
+
+def _destination(info, head, rule):
+    """A copy writes its last positional: a hit when that is a state word."""
+    last = _last_positional(info, head)
+    if last is not None and info.kind[last]:
+        return (HIT, rule, last)
+    return _CLEAR
+
+
+def _positional(info, index, nth):
+    """The `nth` word not starting with `-` from `index` (0 is the first),
+    or None."""
+    count = len(info.words)
+    index = info.next_plain[min(index, count)]
+    for _ in range(nth):
+        if index >= count:
+            return None
+        index = info.next_plain[index + 1]
+    return info.words[index] if index < count else None
+
+
+def _remote(info, head, name):
+    """aws, gsutil and az: (verdict, rule, index), or None for any other
+    subcommand (could-not-tell, as for any other head)."""
+    first = _positional(info, head + 1, 0)
+    if name == "aws" and first == "s3":
+        sub = _positional(info, head + 1, 1)
+        if sub in ("rm", "mv"):
+            return (HIT, "tfstate-remote", info.next_state[head + 1])
+        if sub == "cp":
+            return _destination(info, head, "tfstate-remote")
+    if name == "gsutil" and first == "rm":
+        return (HIT, "tfstate-remote", info.next_state[head + 1])
+    if name == "gsutil" and first == "cp":
+        return _destination(info, head, "tfstate-remote")
+    if name == "az" and first == "storage" and _positional(info, head + 1, 1) == "blob" and (
+            _positional(info, head + 1, 2) in ("upload", "delete")):
+        return (HIT, "tfstate-remote", info.next_state[head + 1])
+    return None
+
+
+def _git_state(info, head):
+    """git: only state words after the subcommand are read (git's globals
+    are not, B6)."""
+    # pylint: disable=protected-access
+    args = info.words[head + 1:]
+    sub = crew_gitallow.subcommand(args)
+    after = min(head + 1 + crew_gitallow._global_split(args)[1] + 1, len(info.words))
+    git_first = info.next_state[after]
+    if git_first >= len(info.words):
+        return _CLEAR
+    if sub in GIT_READ_SUBS:
+        if info.next_word[after] < len(info.words):
+            return _CLEAR
+        return (COULD_NOT_TELL, "tfstate-option-value", git_first)
+    if sub == "commit":
+        return _CLEAR
+    if sub in GIT_WRITE_SUBS:
+        return (HIT, GIT_WRITE_SUBS[sub], git_first)
+    return (COULD_NOT_TELL, "tfstate-git-unseen", git_first)
+
+
+def _state_head(info, start):
+    """(verdict, rule, word index) of a command at `start` whose head is not
+    terraform's: clear unless a state word stands after the head."""
+    found = _head(info.words, start)
+    if found is None:
+        return _CLEAR
+    index, head = found
+    first = info.next_state[index + 1]
+    if first >= len(info.words):
+        return _CLEAR
+    if head == "git":
+        return _git_state(info, index)
+    if head in REMOVE_HEADS:
+        return (HIT, "tfstate-remove", first)
+    if head in MOVE_HEADS:
+        return (HIT, "tfstate-move", first)
+    if head in COPY_HEADS:
+        return _destination(info, index, "tfstate-overwrite")
+    if head in INPLACE_HEADS and info.inplace_from[index + 1]:
+        return (HIT, "tfstate-inplace", first)
+    if head in WRITE_HEADS:
+        return (HIT, "tfstate-write", first)
+    if head in ("aws", "gsutil", "az"):
+        remote = _remote(info, index, head)
+        if remote is not None:
+            return remote
+    if head in READ_HEADS:
+        if info.next_word[index + 1] < len(info.words):
+            return _CLEAR
+        return (COULD_NOT_TELL, "tfstate-option-value", first)
+    return (COULD_NOT_TELL, "tfstate-head-unseen", first)
+
+
+def _write_reading(operator, target, held):
+    """A lifted redirection: a write when its operator holds `>` (fd copies
+    are already dropped). The state-word test runs before the expansion
+    test, so `> "$D/terraform.tfstate"` is a hit (B3)."""
+    if ">" not in operator:
+        return _CLEAR
+    if _state_path(target):
+        return (HIT, "tfstate-redirect", None)
+    if held and _unseen(target):
+        return (COULD_NOT_TELL, "tfstate-redirect-unseen", None)
+    return _CLEAR
 
 
 # --- the two passes --------------------------------------------------------------------------
@@ -475,18 +743,21 @@ def _plain_pass(commands):
 
 
 def _raw_pass(text, shell):
-    """One finding per segment (A14). A dangling operator makes the segment
-    could-not-tell unless its words are a hit, which wins (A7)."""
+    """One finding per segment (A14): the head's reading and each write
+    target's (B3) are combined, the first worst kept. A dangling operator
+    makes the segment could-not-tell unless that reading is a hit, which
+    wins (A7)."""
     out = []
     for number, segment in enumerate(raw_segments(text, shell)):
         where = {"pass": "raw", "command": number}
-        if segment["dangling"]:
-            verdict, rule, word = _judge_words(segment["words"])
-            if verdict != HIT:
-                verdict, rule, word = COULD_NOT_TELL, "redirect-target-unseen", None
+        readings = [_judge_words(segment["words"])]
+        held = any(_state_kind(word) for word in segment["words"])
+        readings += [_write_reading(op, target, held) for op, target in segment["targets"]]
+        verdict, rule, word = _first_worst(readings)
+        if segment["dangling"] and verdict != HIT:
+            verdict, rule, word = COULD_NOT_TELL, "redirect-target-unseen", None
+        if verdict != CLEAR:
             out.append(_finding(verdict, rule, TF_STATE, word=word, **where))
-            continue
-        _judged(segment["words"], out, where)
     return out
 
 
@@ -530,12 +801,41 @@ def judge(command, shell="bash", context=None):
 _SHELLS = {"Bash": "bash", "PowerShell": "powershell"}
 
 
+def _tool_paths(tool_input):
+    """Every path a file tool's input names, read as `scope_guard.targets`
+    reads them (pinned by the test), except that an `edits` that is not a
+    list is ignored and an unhashable value is skipped, never raised on."""
+    if not isinstance(tool_input, dict):
+        return []
+    edits = tool_input.get("edits")
+    found = [tool_input.get(key) for key in ("file_path", "notebook_path")] + (
+        [edit.get("file_path") for edit in edits if isinstance(edit, dict)]
+        if isinstance(edits, list) else [])
+    return list(dict.fromkeys(path for path in found if isinstance(path, str) and path))
+
+
+def _file_tool(payload):
+    """`Write`, `Edit`, `MultiEdit`, `NotebookEdit`: a hit when any path is
+    a state file, could-not-tell when there is no path. No path is ever put
+    in the result."""
+    paths = _tool_paths(payload.get("tool_input"))
+    where = {"pass": "file-tool", "command": None, "word": None}
+    if not paths:
+        return _result([_finding(COULD_NOT_TELL, "file-tool-path-unseen", TF_STATE, **where)])
+    if any(_state_path(path) for path in paths):
+        return _result([_finding(HIT, "tfstate-file-tool", TF_STATE, **where)])
+    return _result([])
+
+
 def judge_payload(payload, context=None):
-    """Judge a PreToolUse-shaped payload. A tool other than Bash or
-    PowerShell is `not-a-command`; a command payload without a command string
-    is `could-not-tell` (`unreadable-input`)."""
+    """Judge a PreToolUse-shaped payload. A file tool is judged on its paths
+    (`_file_tool`); a tool other than those and Bash or PowerShell is
+    `not-a-command`; a command payload without a command string is
+    `could-not-tell` (`unreadable-input`)."""
     payload = payload if isinstance(payload, dict) else {}
     tool = payload.get("tool_name")
+    if isinstance(tool, str) and tool in FILE_TOOLS:
+        return _file_tool(payload)
     shell = _SHELLS.get(tool) if isinstance(tool, str) else None
     if shell is None:
         return {"verdict": NOT_A_COMMAND, "report_only": True, "operations": [],

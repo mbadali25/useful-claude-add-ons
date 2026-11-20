@@ -1,4 +1,8 @@
-"""R-34a: the one-way lane's command-text tripwire (`crew_oneway.py`), report-only.
+"""R-34a, R-34b: the one-way lane's command-text tripwire (`crew_oneway.py`), report-only.
+
+R-34b adds state-file writes (redirections, head-keyed rows, the git table)
+and file-tool payloads, all under the same operation, and keeps a recorded
+redirection target's whitespace (F1).
 
 Must-block rows (verdict `hit`, operation `hand-edit-terraform-state`), must-allow
 rows (verdict `clear`, including the known false negatives pinned so the ticket
@@ -30,6 +34,7 @@ import crew_guards
 import crew_never
 import crew_oneway
 import crew_policy
+import scope_guard
 
 SCRIPTS = os.path.dirname(os.path.abspath(crew_oneway.__file__))
 PLUGIN = os.path.dirname(os.path.dirname(SCRIPTS))
@@ -153,6 +158,47 @@ MUST_BLOCK = (
     ("bash", r'terraform > "a\"b c" state rm x', "tf-state-write"),
     ("powershell", 'terraform *> "a`" b" state rm x', "tf-state-write"),
     ("bash", 'terraform state rm x >"a>b"', "tf-state-write"),
+    # R-34b (B3): a redirection into a state word, whatever the head.
+    ("bash", "echo {} > terraform.tfstate", "tfstate-redirect"),
+    ("bash", "echo {} >terraform.tfstate", "tfstate-redirect"),
+    ("bash", "echo {}>terraform.tfstate", "tfstate-redirect"),
+    ("bash", "echo {} >>terraform.tfstate", "tfstate-redirect"),
+    ("bash", "echo {} 1>terraform.tfstate", "tfstate-redirect"),
+    ("bash", "echo {} >| terraform.tfstate", "tfstate-redirect"),
+    ("bash", "echo {} &> terraform.tfstate", "tfstate-redirect"),
+    ("bash", "terraform show -json &> terraform.tfstate", "tfstate-redirect"),
+    ("bash", "terraform show -json > terraform.tfstate", "tfstate-redirect"),
+    # a known over-report (the backup idiom), pinned here.
+    ("bash", "terraform state pull > backup.tfstate", "tfstate-redirect"),
+    ("bash", "cd infra && echo {} > envs/prod/terraform.tfstate", "tfstate-redirect"),
+    ("powershell", "echo x *> terraform.tfstate", "tfstate-redirect"),
+    ("powershell", "echo x > terraform.tfstate", "tfstate-redirect"),
+    # the state-word test runs before the expansion test.
+    ("bash", 'cat x.json > "$D/terraform.tfstate"', "tfstate-redirect"),
+    # R-34b (B5): a state word after a writing head.
+    ("bash", "rm terraform.tfstate", "tfstate-remove"),
+    ("bash", "rm -f envs/prod/terraform.tfstate.backup", "tfstate-remove"),
+    ("bash", "rm -rf terraform.tfstate.d", "tfstate-remove"),
+    ("bash", "sudo rm terraform.tfstate", "tfstate-remove"),
+    ("bash", "mv a.tfstate b.tfstate", "tfstate-move"),
+    ("bash", "cp fixed.json terraform.tfstate", "tfstate-overwrite"),
+    ("bash", "sed -i s/a/b/ terraform.tfstate", "tfstate-inplace"),
+    ("bash", "perl -pi -e s/a/b/ terraform.tfstate", "tfstate-inplace"),
+    ("bash", "jq . x.json | tee terraform.tfstate", "tfstate-write"),
+    ("bash", "aws s3 cp state.json s3://b/env/terraform.tfstate", "tfstate-remote"),
+    ("bash", "aws s3 rm s3://b/env/terraform.tfstate", "tfstate-remote"),
+    ("bash", "gsutil rm gs://b/terraform.tfstate", "tfstate-remote"),
+    ("powershell", "Remove-Item terraform.tfstate", "tfstate-remove"),
+    ("powershell", "Set-Content terraform.tfstate x", "tfstate-write"),
+    ("bash", "terragrunt exec -- rm terraform.tfstate", "tfstate-remove"),
+    # R-34b (B6): the git table, state words after the subcommand.
+    ("bash", "git rm terraform.tfstate", "tfstate-git-remove"),
+    # a known over-report (`--cached` keeps the file), pinned here.
+    ("bash", "git rm --cached terraform.tfstate", "tfstate-git-remove"),
+    ("bash", "git -C infra rm terraform.tfstate", "tfstate-git-remove"),
+    ("bash", "git mv terraform.tfstate old.tfstate", "tfstate-git-move"),
+    ("bash", "git checkout -- terraform.tfstate", "tfstate-git-overwrite"),
+    ("bash", "git restore terraform.tfstate", "tfstate-git-overwrite"),
 )
 
 # (shell, command)
@@ -206,6 +252,35 @@ MUST_ALLOW = (
     ("bash", r"terraform <<< x\ state rm y"),
     ("bash", r'terraform state list <<< "a\" b"'),
     ("bash", 'terraform state list >"a>b"'),
+    # R-34b: reading a state file, or a redirection that is not a write.
+    ("bash", "cat terraform.tfstate"),
+    ("bash", "cat < terraform.tfstate"),
+    ("bash", "jq .serial terraform.tfstate"),
+    ("bash", "jq . terraform.tfstate > out.json"),
+    ("bash", "cp terraform.tfstate /tmp/inspect.json"),
+    ("bash", "aws s3 cp s3://b/env/terraform.tfstate state.json"),
+    ("bash", "ls *.tfstate"),
+    ("bash", "echo terraform.tfstate"),
+    ("bash", "echo x > notes.txt"),
+    ("bash", "echo x >notes.txt"),
+    ("bash", "echo x > $OUT"),
+    ("bash", "cat terraform.tfstate 2>&1"),
+    ("bash", "cat terraform.tfstate >&2"),
+    ("bash", "cat <<< terraform.tfstate"),
+    # R-34b: head precedence, a terraform head reads its own table only.
+    ("bash", "terraform show terraform.tfstate"),
+    ("bash", "terraform plan -state=terraform.tfstate"),
+    # R-34b: git reads.
+    ("bash", "git status terraform.tfstate"),
+    ("bash", "git diff terraform.tfstate"),
+    ("bash", "git log -- terraform.tfstate"),
+    ("bash", "git add terraform.tfstate"),
+    ("bash", "git show HEAD:terraform.tfstate"),
+    ("bash", 'git commit -m "stop tracking terraform.tfstate"'),
+    ("bash", 'git commit --message="drop terraform.tfstate"'),
+    # the plain pass: nothing is lifted from inside the quotes.
+    ("bash", 'git commit -m "a > terraform.tfstate"'),
+    ("bash", 'echo "a>terraform.tfstate"'),
 )
 
 # Known false negatives (Risks): terragrunt's `stack run` and `graph` run
@@ -215,6 +290,14 @@ KNOWN_FALSE_NEGATIVES = (
     "terragrunt stack run state rm x",
     "terragrunt stack run -- state rm x",
     "terragrunt graph state rm x",
+)
+
+# R-34b known false negatives (B6, B7, Risks), pinned clear: (shell, command).
+STATE_FALSE_NEGATIVES = (
+    ("bash", "cp terraform.tfstate backup/"),
+    ("powershell", "Copy-Item -Destination terraform.tfstate -Path x"),
+    ("bash", "git -C terraform.tfstate.d rm x"),
+    ("bash", "rm $F"),
 )
 
 # (command, rule)
@@ -249,6 +332,15 @@ COULD_NOT_TELL = (
     # round 6: a quote opened inside the target and never closed.
     ("terraform <<< it's state list", "redirect-target-unseen"),
     (r'terraform state list > "a\"', "redirect-target-unseen"),
+    # R-34b: a state word under a head crew does not list, or only as an
+    # option value under a read head, or an unexpanded write target.
+    ("chmod 600 terraform.tfstate", "tfstate-head-unseen"),
+    ("sed -n p terraform.tfstate", "tfstate-head-unseen"),
+    ("$CMD terraform.tfstate", "tfstate-head-unseen"),
+    ("git stash push terraform.tfstate", "tfstate-git-unseen"),
+    ("git diff --output=terraform.tfstate", "tfstate-option-value"),
+    ("cat --x=terraform.tfstate", "tfstate-option-value"),
+    ("jq '.serial=5' terraform.tfstate > $T", "tfstate-redirect-unseen"),
 )
 
 # Known over-reports pinned as hits (Risks).
@@ -256,6 +348,20 @@ KNOWN_OVER_REPORTS = (
     ("terragrunt --unknown-flag refresh plan", "tf-refresh"),
     # quote-blind raw pass: the `;` inside the message cuts the segment.
     ('git add . && git commit -m "x; terraform state rm y"', "tf-state-write"),
+    # R-34b: a backup copy next to the state file reads as an overwrite.
+    ("cp terraform.tfstate terraform.tfstate.bak", "tfstate-overwrite"),
+    # R-34a review round 7 follow-up, left as main has it (R-34b approver
+    # condition, option A): a comment stops only its own segment, so the
+    # shell's comment-to-end-of-line is not followed. The fix is a later ticket.
+    ("echo ok # x; terraform state rm x", "tf-state-write"),
+)
+
+# Known over-reports pinned as could-not-tell (B11): the parent spec's
+# "known false positive" is could-not-tell on main, not hit. The raw
+# reader's target `terraform.tfstate"` opens a quote the segment never
+# closes, so the operator dangles.
+KNOWN_OVER_REPORTS_CNT = (
+    ('git add . && git commit -m "a > terraform.tfstate"', "redirect-target-unseen"),
 )
 
 
@@ -284,6 +390,41 @@ def test_known_over_reports_are_pinned_hits(command, rule):
     assert_hit(crew_oneway, command, rule)
 
 
+@pytest.mark.parametrize("command,rule", KNOWN_OVER_REPORTS_CNT)
+def test_known_over_reports_are_pinned_could_not_tell(command, rule):
+    assert_cnt(crew_oneway, command, rule)
+
+
+@pytest.mark.parametrize("shell,command", STATE_FALSE_NEGATIVES)
+def test_state_false_negatives_are_pinned_clear(shell, command):
+    assert_clear(crew_oneway, command, shell)
+
+
+# (word, kind): B1, the state word.
+STATE_WORDS = (
+    ("terraform.tfstate", "word"),
+    ("envs/prod/terraform.tfstate.backup", "word"),
+    ("terraform.tfstate.d", "word"),
+    ("terraform.tfstate.d/", "word"),
+    ("infra\\TERRAFORM.TFSTATE", "word"),
+    ("*.tfstate", "word"),
+    ('"terraform.tfstate"', "word"),
+    ("s3://b/env/terraform.tfstate", "word"),
+    ("HEAD:terraform.tfstate", "word"),
+    ("--output=terraform.tfstate", "option"),
+    ("-state=x/terraform.tfstate", "option"),
+    ("docs/tfstate-notes.md", None),
+    ("terraform.tfstatex", None),
+    ("terraform.tfstate/x.json", None),
+    ("--output=out.json", None),
+)
+
+
+@pytest.mark.parametrize("word,kind", STATE_WORDS)
+def test_the_state_word(word, kind):
+    assert crew_oneway._state_kind(word) == kind
+
+
 def test_a_tie_keeps_the_earlier_reading():
     result = assert_cnt(crew_oneway, "terragrunt --unknown-flag state")
     assert rules(result) == ["tf-state-unseen"]
@@ -299,10 +440,18 @@ LONG_COMMANDS = (
     ("terragrunt " + "--unknown state " * LONG + "rm x", "hit"),
     ("terragrunt " + "exec --unknown " * LONG + "terraform plan", "could-not-tell"),
     ("terraform " + "-x " * LONG + "state list", "clear"),
+    # R-34b: a head-keyed row at every exec start is judged in constant time.
+    ("terragrunt " + "exec -- cp " * LONG + "terraform.tfstate", "hit"),
+    # the first git's subcommand is `exec` (unlisted): could-not-tell.
+    ("terragrunt " + "exec -- git " * LONG + "rm terraform.tfstate " + "-x " * LONG,
+     "could-not-tell"),
+    ("terragrunt " + "exec -- aws " * LONG + "terraform.tfstate " + "-x " * LONG,
+     "could-not-tell"),
 )
 
 
-@pytest.mark.parametrize("command,verdict", LONG_COMMANDS, ids=[str(n) for n in range(5)])
+@pytest.mark.parametrize("command,verdict", LONG_COMMANDS,
+                         ids=[str(n) for n in range(len(LONG_COMMANDS))])
 def test_a_long_command_is_judged_in_linear_time(command, verdict):
     started = time.perf_counter()
     got = run(crew_oneway, command)["verdict"]
@@ -367,11 +516,80 @@ def test_context_is_accepted_and_ignored():
 
 # --- payloads --------------------------------------------------------------------------------
 
-@pytest.mark.parametrize("tool", ["Read", "Write", "Edit", "Glob", None, [], {}, 3, "bash"])
+@pytest.mark.parametrize("tool", ["Read", "Glob", "Grep", "WebFetch", "write", None, [], {}, 3,
+                                  "bash"])
 def test_a_payload_that_is_not_a_command(tool):
     payload = {"tool_name": tool, "tool_input": {"command": "terraform state rm x"}}
     assert crew_oneway.judge_payload(payload)["verdict"] == "not-a-command"
     assert crew_oneway.judge_payload("junk")["verdict"] == "not-a-command"
+
+
+def test_a_read_of_a_state_file_is_not_a_command():
+    payload = {"tool_name": "Read", "tool_input": {"file_path": "terraform.tfstate"}}
+    assert crew_oneway.judge_payload(payload)["verdict"] == "not-a-command"
+
+
+FILE_TOOL_PLACE = {"pass": "file-tool", "command": None, "word": None}
+
+# (tool, tool_input): B8, a file tool naming a state file.
+FILE_TOOL_BLOCK = (
+    ("Write", {"file_path": "infra/terraform.tfstate", "content": "{}"}),
+    ("Edit", {"file_path": "infra/terraform.tfstate", "old_string": "a", "new_string": "b"}),
+    ("NotebookEdit", {"notebook_path": "infra/terraform.tfstate", "new_source": "x"}),
+    ("MultiEdit", {"file_path": "main.tf",
+                   "edits": [{"old_string": "a"}, {"file_path": "terraform.tfstate"}]}),
+)
+FILE_TOOL_ALLOW = (
+    ("Write", {"file_path": "docs/tfstate-notes.md", "content": "x"}),
+    ("NotebookEdit", {"notebook_path": "nb/analysis.ipynb"}),
+)
+FILE_TOOL_UNSEEN = (
+    ("Write", {"content": "x"}),
+    ("Write", {"file_path": 123}),
+    ("NotebookEdit", {}),
+    ("MultiEdit", {"edits": "abc"}),
+    ("Write", "not a dict"),
+    ("Edit", None),
+    ("MultiEdit", {"edits": 5, "file_path": ""}),
+    ("MultiEdit", {"edits": [{"file_path": ["unhashable"]}, 7]}),
+)
+
+
+def _tool(tool, tool_input):
+    return crew_oneway.judge_payload({"tool_name": tool, "tool_input": tool_input})
+
+
+@pytest.mark.parametrize("tool,tool_input", FILE_TOOL_BLOCK)
+def test_a_file_tool_writing_a_state_file_is_a_hit(tool, tool_input):
+    got = _tool(tool, tool_input)
+    assert got["verdict"] == "hit" and got["operations"] == [OP], got
+    assert got["findings"] == [{"verdict": "hit", "rule": "tfstate-file-tool", "operation": OP,
+                                **FILE_TOOL_PLACE}]
+
+
+@pytest.mark.parametrize("tool,tool_input", FILE_TOOL_ALLOW)
+def test_a_file_tool_writing_another_file_is_clear(tool, tool_input):
+    got = _tool(tool, tool_input)
+    assert got["verdict"] == "clear" and got["operations"] == [] and got["findings"] == []
+
+
+@pytest.mark.parametrize("tool,tool_input", FILE_TOOL_UNSEEN)
+def test_a_file_tool_with_no_readable_path_is_could_not_tell(tool, tool_input):
+    got = _tool(tool, tool_input)
+    assert got["verdict"] == "could-not-tell" and got["operations"] == [OP], got
+    assert rules(got) == ["file-tool-path-unseen"]
+
+
+def test_the_file_tool_paths_are_scope_guards():
+    tool_input = {"file_path": "a.tf", "notebook_path": "b.ipynb",
+                  "edits": [{"file_path": "c.tfstate"}, {"file_path": "a.tf"}, "x",
+                            {"file_path": "d.md"}]}
+    want = scope_guard.targets({"tool_input": tool_input})
+    assert want == ["a.tf", "b.ipynb", "c.tfstate", "d.md"]
+    assert crew_oneway._tool_paths(tool_input) == want
+    for tool_input in ({}, {"file_path": ""}, {"edits": []}, {"notebook_path": "n"}):
+        assert crew_oneway._tool_paths(tool_input) == scope_guard.targets(
+            {"tool_input": tool_input})
 
 
 def test_payloads_that_are_commands():
@@ -509,7 +727,10 @@ READER_ROWS = (
     ("(a >)", [seg(["a"], dangling=[">"])]),
     # a target that opens a quote runs to the token that closes it.
     ('cat <<< "a b" x', [seg(["cat", "x"], [("<<<", "a b")])]),
-    ("cat <<< 'a  b c' x", [seg(["cat", "x"], [("<<<", "a b c")])]),
+    # R-34b (F1): the whitespace between a target's tokens is the command's own.
+    ("cat <<< 'a  b c' x", [seg(["cat", "x"], [("<<<", "a  b c")])]),
+    ("echo x >'a\tb.tfstate'", [seg(["echo", "x"], [(">", "a\tb.tfstate")])]),
+    ('a > "b  >  c" d', [seg(["a", "d"], [(">", "b  >  c")])]),
     ('cat <<< "a" x', [seg(["cat", "x"], [("<<<", "a")])]),
     ('cat <<< "a b', [seg(["cat"], dangling=["<<<"])]),
     ('cat <<< "a # b" x', [seg(["cat", "x"], [("<<<", "a # b")])]),
@@ -593,12 +814,42 @@ PLAIN_PINS = (
     ("powershell", "terraform state list 2>&1", None),
     ("powershell", "terraform state list >| out.txt", None),
     ("powershell", "terraform state list &> out.txt", None),
+    # R-34b: what the plain pass hands the head-keyed rows.
+    ("bash", "rm terraform.tfstate", [["rm", "terraform.tfstate"]]),
+    ("bash", "cp a terraform.tfstate", [["cp", "a", "terraform.tfstate"]]),
+    ("bash", "sed -i s/a/b/ terraform.tfstate", [["sed", "-i", "s/a/b/", "terraform.tfstate"]]),
+    ("bash", "chmod 600 terraform.tfstate", [["chmod", "600", "terraform.tfstate"]]),
+    ("powershell", "Remove-Item terraform.tfstate", [["Remove-Item", "terraform.tfstate"]]),
+    ("bash", "git rm terraform.tfstate", [["git", "rm", "terraform.tfstate"]]),
+    ("bash", "git -C infra rm terraform.tfstate",
+     [["git", "-C", "infra", "rm", "terraform.tfstate"]]),
+    ("bash", "git diff --output=terraform.tfstate",
+     [["git", "diff", "--output=terraform.tfstate"]]),
+    ("bash", 'git commit -m "a > terraform.tfstate"',
+     [["git", "commit", "-m", "a > terraform.tfstate"]]),
+    ("bash", 'echo "a>terraform.tfstate"', [["echo", "a>terraform.tfstate"]]),
+    ("bash", "echo {} > terraform.tfstate", None),
+    ("bash", "echo {} >terraform.tfstate", None),
+    ("bash", "echo {} &> terraform.tfstate", None),
+    ("bash", "cat < terraform.tfstate", None),
+    ("bash", "jq . x.json | tee terraform.tfstate", None),
 )
 
 
 @pytest.mark.parametrize("shell,command,expected", PLAIN_PINS)
 def test_plain_commands_pin(shell, command, expected):
     assert crew_gitallow.plain_commands(command, shell) == expected
+
+
+def test_gitallow_helper_pins():
+    """B6 reads git's subcommand and globals through these as they stand."""
+    assert crew_gitallow.subcommand(["-C", "infra", "rm", "terraform.tfstate"]) == "rm"
+    assert crew_gitallow._global_split(["-C", "infra", "rm", "terraform.tfstate"]) == (
+        ["-C", "infra"], 2)
+    assert crew_gitallow.subcommand(["commit", "-m", "x"]) == "commit"
+    assert crew_gitallow.subcommand(["Rm", "x"]) is None
+    assert crew_gitallow.subcommand(["$X", "rm"]) is None
+    assert crew_gitallow.UNSEEN is None
 
 
 def test_guards_helper_pins():
@@ -626,8 +877,10 @@ def _emitted():
     names = set(crew_oneway.OPERATIONS_EMITTED)
     for shell, command, _ in MUST_BLOCK:
         names.update(run(crew_oneway, command, shell)["operations"])
-    for command, _ in COULD_NOT_TELL:
+    for command, _ in COULD_NOT_TELL + KNOWN_OVER_REPORTS + KNOWN_OVER_REPORTS_CNT:
         names.update(run(crew_oneway, command)["operations"])
+    for tool, tool_input in FILE_TOOL_BLOCK + FILE_TOOL_UNSEEN:
+        names.update(_tool(tool, tool_input)["operations"])
     return names
 
 
@@ -658,12 +911,16 @@ def test_nothing_waves_the_one_way_row_through():
 
 # --- output ----------------------------------------------------------------------------------
 
-TARGETS = ("aws_s3_bucket.x", "x.tfstate", "out.txt")
+TARGETS = ("aws_s3_bucket.x", "x.tfstate", "out.txt", "envs/prod/terraform.tfstate")
 OUTPUT_LINES = (
     "terraform state rm aws_s3_bucket.x > out.txt",
     "cd infra && terraform state push x.tfstate 2> out.txt",
     "terraform import aws_s3_bucket.x b >> out.txt",
+    "rm envs/prod/terraform.tfstate",
+    "echo {} > envs/prod/terraform.tfstate",
 )
+OUTPUT_PAYLOAD = {"tool_name": "Write",
+                  "tool_input": {"file_path": "envs/prod/terraform.tfstate", "content": "{}"}}
 
 
 def test_no_finding_carries_a_word_of_the_command():
@@ -671,6 +928,8 @@ def test_no_finding_carries_a_word_of_the_command():
         shown = json.dumps(run(crew_oneway, command))
         for target in TARGETS:
             assert target not in shown, (command, shown)
+    shown = json.dumps(crew_oneway.judge_payload(OUTPUT_PAYLOAD))
+    assert '"hit"' in shown and "tfstate\"" not in shown and "envs" not in shown, shown
 
 
 # --- inertness -------------------------------------------------------------------------------
@@ -1021,6 +1280,96 @@ def case_allow_quoted_hash_then_help(mod):
     assert mod.raw_segments('a "#" b') == [seg(["a", "#", "b"])]
 
 
+# R-34b cases.
+
+def case_allow_cp_source(mod):
+    assert_clear(mod, "cp terraform.tfstate /tmp/inspect.json")
+
+
+def case_block_redirect(mod):
+    assert_hit(mod, "echo {} > terraform.tfstate", "tfstate-redirect")
+
+
+def case_cnt_other_head(mod):
+    assert_cnt(mod, "chmod 600 terraform.tfstate", "tfstate-head-unseen")
+
+
+def case_block_write_tool(mod):
+    got = mod.judge_payload({"tool_name": "Write",
+                             "tool_input": {"file_path": "infra/terraform.tfstate"}})
+    assert got["verdict"] == "hit", got
+
+
+def case_block_git_rm(mod):
+    assert_hit(mod, "git rm terraform.tfstate", "tfstate-git-remove")
+
+
+def case_allow_git_diff(mod):
+    assert_clear(mod, "git diff terraform.tfstate")
+
+
+def case_allow_terraform_head_precedence(mod):
+    assert_clear(mod, "terraform show terraform.tfstate")
+    assert_clear(mod, "terraform plan -state=terraform.tfstate")
+
+
+def case_block_glued_redirect(mod):
+    assert_hit(mod, "echo {} >terraform.tfstate", "tfstate-redirect")
+    assert_hit(mod, "echo {}>terraform.tfstate", "tfstate-redirect")
+    assert_hit(mod, "echo {} 1>terraform.tfstate", "tfstate-redirect")
+
+
+def case_allow_state_fd_copy(mod):
+    assert_clear(mod, "cat terraform.tfstate 2>&1")
+
+
+def case_allow_input_redirects(mod):
+    assert_clear(mod, "cat < terraform.tfstate")
+    assert_clear(mod, "cat <<< terraform.tfstate")
+
+
+def case_allow_plain_pass_quoted_operator(mod):
+    assert_clear(mod, 'git commit -m "a > terraform.tfstate"')
+    assert_clear(mod, 'echo "a>terraform.tfstate"')
+
+
+def case_allow_git_commit(mod):
+    assert_clear(mod, 'git commit -m "stop tracking terraform.tfstate"')
+
+
+def case_block_notebook_and_multiedit(mod):
+    for tool, tool_input in FILE_TOOL_BLOCK[2:]:
+        got = mod.judge_payload({"tool_name": tool, "tool_input": tool_input})
+        assert got["verdict"] == "hit", (tool, got)
+
+
+def case_cnt_write_tool_without_path(mod):
+    got = mod.judge_payload({"tool_name": "Write", "tool_input": {"content": "x"}})
+    assert got["verdict"] == "could-not-tell", got
+
+
+def case_reader_target_whitespace(mod):
+    assert mod.raw_segments("cat <<< 'a  b c' x") == [seg(["cat", "x"], [("<<<", "a  b c")])]
+
+
+def case_block_redirect_state_before_expansion(mod):
+    assert_hit(mod, 'cat x.json > "$D/terraform.tfstate"', "tfstate-redirect")
+
+
+def case_block_inplace(mod):
+    assert_hit(mod, "sed -i s/a/b/ terraform.tfstate", "tfstate-inplace")
+    assert_hit(mod, "perl -pi -e s/a/b/ terraform.tfstate", "tfstate-inplace")
+
+
+def case_block_exec_unwraps_a_state_head(mod):
+    assert_hit(mod, "terragrunt exec -- rm terraform.tfstate", "tfstate-remove")
+
+
+def case_cnt_option_value(mod):
+    assert_cnt(mod, "git diff --output=terraform.tfstate", "tfstate-option-value")
+    assert_cnt(mod, "cat --x=terraform.tfstate", "tfstate-option-value")
+
+
 MUTATIONS = (
     ("1 rm added to the state read set",
      'STATE_READ = frozenset(("list", "show", "pull", "identities"))',
@@ -1089,10 +1438,11 @@ MUTATIONS = (
     ("R9 marker characters in the command left in place",
      "    text = text.translate(_UNMARK)\n", "", ("case_block_marker_in_command",)),
     ("R10 a dangling segment reports both findings",
-     "            out.append(_finding(verdict, rule, TF_STATE, word=word, **where))\n"
-     "            continue\n",
+     '        if segment["dangling"] and verdict != HIT:\n',
+     '        if segment["dangling"]:\n'
      '            out.append(_finding(COULD_NOT_TELL, "redirect-target-unseen", TF_STATE,\n'
-     "                                word=None, **where))\n",
+     "                                word=None, **where))\n"
+     "        if False:\n",
      ("case_one_finding_with_dangling",)),
     ("R11 powershell's `*` stream not taken as an fd",
      '_PS_FD = r"(?:(?<![^\\s;&|(){}])(?:[0-9]+|\\*))?"', "_PS_FD = _FD",
@@ -1114,8 +1464,8 @@ MUTATIONS = (
      "    return args[j + 1] in AMBIGUOUS_SUBS or _unseen(args[j + 1])\n",
      "    return args[j + 1] in AMBIGUOUS_SUBS\n", ("case_cnt_swallowed_unseen_sub",)),
     ("R17 a quoted empty word dropped before the redirections are lifted",
-     "              if token.strip(_STRIP) or any(quote in token for quote in _QUOTES)]\n",
-     "              if token.strip(_STRIP)]\n", ("case_block_empty_here_string",)),
+     "        if token.strip(_STRIP) or any(quote in token for quote in _QUOTES):\n",
+     "        if token.strip(_STRIP):\n", ("case_block_empty_here_string",)),
     ("R18 a quoted target ends at its first token",
      "        if quote is None and not skip and not glued:\n            break\n",
      "        break\n",
@@ -1141,13 +1491,83 @@ MUTATIONS = (
      "        segment = _lift(piece, _ESCAPE[shell])\n", "        segment = _lift(piece)\n",
      ("case_block_escaped_quote_in_target",)),
     ("R25 an operator inside a quoted target keeps the reader's padding",
-     '        piece = text if glued or left else " " + text\n',
-     '        piece = text if not parts else " " + text\n',
+     "        gap = gap[after_mark:len(gap) - mark]\n", "",
      ("case_reader_operator_inside_quoted_target",)),
     ("R26 an operator inside a quoted target keeps the reader's marker",
-     "            text, left, right = text[2:].translate(_SHOW), text[1] in \"13\", text[1] in \"23\"\n",
-     "            left, right = text[1] in \"13\", text[1] in \"23\"\n",
+     "            text, right = text[2:].translate(_SHOW), text[1] in \"23\"\n",
+     "            right = text[1] in \"23\"\n",
      ("case_reader_operator_inside_quoted_target",)),
+    # R-34b. The numbers are the parent spec's sabotage rows.
+    ("6 every cp state word read as a write",
+     "    if last is not None and info.kind[last]:\n",
+     "    last = info.next_state[head + 1]\n    if True:\n",
+     ("case_allow_cp_source",)),
+    ("7 the write-target (redirection) row dropped",
+     '        readings += [_write_reading(op, target, held) for op, target in segment["targets"]]\n',
+     "", ("case_block_redirect", "case_block_glued_redirect")),
+    ("8 any other head becomes clear",
+     '    return (COULD_NOT_TELL, "tfstate-head-unseen", first)\n', "    return _CLEAR\n",
+     ("case_cnt_other_head",)),
+    ("9 the file-tool branch dropped",
+     "    if isinstance(tool, str) and tool in FILE_TOOLS:\n        return _file_tool(payload)\n",
+     "", ("case_block_write_tool",)),
+    ("23 the whole git head clear on a state word",
+     "        return _git_state(info, index)\n", "        return _CLEAR\n",
+     ("case_block_git_rm",)),
+    ("24 every git subcommand could-not-tell",
+     "    if sub in GIT_READ_SUBS:\n",
+     '    return (COULD_NOT_TELL, "tfstate-git-unseen", git_first)\n    if sub in GIT_READ_SUBS:\n',
+     ("case_allow_git_diff", "case_block_git_rm")),
+    ("25 the head-keyed rows applied to a terraform head",
+     "                            else _judge_tf(scan, found[1], found[0] + 1))\n",
+     "                            else _first_worst([_judge_tf(scan, found[1], found[0] + 1),\n"
+     "                                               _state_head(scan.state_words(), start)]))\n",
+     ("case_allow_terraform_head_precedence",)),
+    ("27 an operator lifted only with whitespace on both sides",
+     '        return f" {_MARK}{glue}{match.group(0).translate(_HIDE)} "\n',
+     "        return match.group(0) if glue else "
+     'f" {_MARK}{glue}{match.group(0).translate(_HIDE)} "\n',
+     ("case_block_glued_redirect",)),
+    ("28a an fd copy kept as an operator",
+     "        if _FD_COPY_RE.fullmatch(operator):\n            continue\n", "",
+     ("case_allow_state_fd_copy",)),
+    ("28b every lifted target read as a write, input operators included",
+     '    if ">" not in operator:\n        return _CLEAR\n', "",
+     ("case_allow_input_redirects",)),
+    ("35 the plain pass replaced by the raw pass",
+     "    return _plain_pass(commands)\n", "    return _raw_pass(command, shell)\n",
+     ("case_allow_plain_pass_quoted_operator",)),
+    ("36 commit dropped from the git clear list",
+     '    if sub == "commit":\n        return _CLEAR\n', "", ("case_allow_git_commit",)),
+    ("39 only file_path read in a file-tool payload",
+     '    found = [tool_input.get(key) for key in ("file_path", "notebook_path")] + (\n'
+     '        [edit.get("file_path") for edit in edits if isinstance(edit, dict)]\n'
+     "        if isinstance(edits, list) else [])\n",
+     '    found = [tool_input.get("file_path")]\n',
+     ("case_block_notebook_and_multiedit",)),
+    ("40 a file tool with no readable path is clear",
+     "    if not paths:\n", "    if not paths:\n        return _result([])\n",
+     ("case_cnt_write_tool_without_path",)),
+    ("F1 target tokens joined with one space",
+     "        piece = text if not parts else gaps[index] + text\n",
+     '        piece = text if not parts else " " + text\n',
+     ("case_reader_target_whitespace",)),
+    ("B3 the expansion test run before the state-word test",
+     "    if _state_path(target):\n        return (HIT, \"tfstate-redirect\", None)\n",
+     '    if _unseen(target):\n        return (COULD_NOT_TELL, "tfstate-redirect-unseen", None)\n'
+     "    if _state_path(target):\n        return (HIT, \"tfstate-redirect\", None)\n",
+     ("case_block_redirect_state_before_expansion",)),
+    ("B5 the in-place bundle read as -i only",
+     '_INPLACE_RE = re.compile(r"^(?:-[A-Za-z]*i.*|--in-place(?:=.*)?)$", re.S)',
+     '_INPLACE_RE = re.compile(r"^(?:-i.*|--in-place(?:=.*)?)$", re.S)',
+     ("case_block_inplace",)),
+    ("B2 an exec start with another head is clear",
+     "        scan.memo[start] = (_state_head(scan.state_words(), start) if found is None\n",
+     "        scan.memo[start] = (_CLEAR if found is None\n",
+     ("case_block_exec_unwraps_a_state_head",)),
+    ("B5 a read head's option value read as a positional",
+     "        if info.next_word[index + 1] < len(info.words):\n",
+     "        if True:\n", ("case_cnt_option_value",)),
 )
 
 
