@@ -1,0 +1,127 @@
+{
+  "schema": 8,
+  "qa": {
+    "codex": {
+      "reasoningEffort": null
+    },
+    "copilot": {
+      "model": null
+    },
+    "kimi": {
+      "model": null
+    }
+  },
+  "dev": {
+    "codex": {
+      "model": null,
+      "reasoningEffort": null
+    },
+    "copilot": {
+      "model": null
+    },
+    "kimi": {
+      "model": null
+    }
+  },
+  "secondOpinion": {
+    "model": null
+  },
+  "tracker": "files",
+  "jira": {
+    "project": null,
+    "cloudId": null
+  },
+  "obsidian": {
+    "vaultPath": null,
+    "boardDir": null
+  },
+  "memory": {
+    "vaultPath": null
+  },
+  "verifyGate": true,
+  "context": {
+    "enabled": true,
+    "warnAt": 0.4,
+    "reserveTokens": 0,
+    "autoClear": {
+      "enabled": null,
+      "wrapUp": null
+    }
+  },
+  "resume": {
+    "auto": null
+  },
+  "humanOnly": {
+    "approve": null,
+    "promoteMarker": null
+  },
+  "worktrees": {
+    "root": null
+  },
+  "promote": {
+    "deadlineSeconds": null
+  },
+  "verify": {
+    "stopBudgetSeconds": 60
+  },
+  "reaper": {
+    "protectedRegex": null
+  },
+  "emergency": {
+    "standDown": true,
+    "maxTtlMinutes": 480
+  },
+  "notify": {
+    "provider": null,
+    "chatId": null
+  },
+  "platform": {
+    "os": null,
+    "wsl": null,
+    "shell": null,
+    "windowsHostIp": null
+  },
+  "graph": {
+    "out": "graphify-out"
+  },
+  "guards": {
+    "git": {
+      "allow": null
+    }
+  },
+  "production": {
+    "databases": [],
+    "hosts": []
+  },
+  "cloud": {
+    "awsProfiles": [],
+    "awsRegions": [],
+    "azureSubscriptions": []
+  },
+  "environments": {
+    "nonProd": [],
+    "workflows": {},
+    "preProduction": {}
+  },
+  "scope": {
+    "mode": "off",
+    "allowCliApproval": false
+  },
+  "autopilot": {
+    "maxAutoReplans": 0,
+    "ship": "merge",
+    "sleep": {
+      "schedule": null,
+      "approval": null,
+      "questions": null,
+      "deploy": null
+    },
+    "maxTicketsPerRun": 3,
+    "maxTokensPerSession": 2000000,
+    "maxLanes": null,
+    "reviewPolicy": "stop"
+  },
+  "tickets": {
+    "baseBranch": null
+  }
+}

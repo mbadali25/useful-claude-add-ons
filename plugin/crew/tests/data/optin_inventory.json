@@ -456,6 +456,22 @@
    "target": "hooks/scripts/crew_tracker.py"
   },
   {
+   "file": "commands/jira-sync.md",
+   "home": "crew-trackers",
+   "in": "core",
+   "kind": "exec",
+   "line": 55,
+   "target": "hooks/scripts/crew_tracker.py"
+  },
+  {
+   "file": "commands/jira-sync.md",
+   "home": "crew-trackers",
+   "in": "core",
+   "kind": "exec",
+   "line": 79,
+   "target": "hooks/scripts/crew_tracker.py"
+  },
+  {
    "file": "commands/obsidian-sync.md",
    "home": "crew-trackers",
    "in": "core",
@@ -502,6 +518,14 @@
    "kind": "exec",
    "line": 11,
    "target": "hooks/scripts/crew_tracker.py"
+  },
+  {
+   "file": "commands/sdp-sync.md",
+   "home": "crew-trackers",
+   "in": "core",
+   "kind": "read",
+   "line": 69,
+   "target": "commands/jira-sync.md"
   },
   {
    "file": "skills/crew-change/SKILL.md",
@@ -962,7 +986,7 @@
     ]
    }
   ],
-  "mutations_total": 3421,
+  "mutations_total": 3436,
   "stays_in_core": [
    ".crew/codemap/install-scripts.md",
    ".crew/verify.json",
@@ -1060,6 +1084,7 @@
    "plugin/crew/hooks/scripts/review_metrics.py",
    "plugin/crew/hooks/scripts/review_patch.py",
    "plugin/crew/hooks/scripts/review_prompt.py",
+   "plugin/crew/hooks/scripts/review_providers.py",
    "plugin/crew/hooks/scripts/review_run.py",
    "plugin/crew/hooks/scripts/review_status.py",
    "plugin/crew/hooks/scripts/review_verdict.py",

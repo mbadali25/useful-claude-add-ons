@@ -155,9 +155,14 @@ def resolve(root):
     if name_problem:
         out["problem"] = name_problem
         return out
-    leaf = re.sub(r"[^A-Za-z0-9._-]+", "-", os.path.basename(main.rstrip("/\\")) or "repo").strip("-.") or "repo"
-    out["dir"] = os.path.join(base, f"{leaf}-{crew_state._repo_digest(main)}")  # pylint: disable=protected-access
+    out["dir"] = os.path.join(base, f"{_leaf(main)}-{crew_state._repo_digest(main)}")  # pylint: disable=protected-access
     return out
+
+
+def _leaf(main):
+    """The directory-name half of `<leaf>-<digest>` for main checkout `main`
+    (shared with crew_paths, so the two layouts cannot drift)."""
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", os.path.basename(main.rstrip("/\\")) or "repo").strip("-.") or "repo"
 
 
 def repo_dir(root):

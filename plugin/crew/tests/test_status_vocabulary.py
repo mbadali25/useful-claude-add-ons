@@ -97,3 +97,13 @@ def test_retired_words_are_hints_never_lanes():
             "land-blocked" in retired) == ([], [], False)
     assert sorted(crew_tracker.KNOWN_STATUSES) == sorted(crew_tracker.LANE_FOR_STATUS)
     assert len(crew_tracker.KNOWN_STATUSES) == len(set(crew_tracker.KNOWN_STATUSES))
+
+
+def test_status_maps_speak_the_one_vocabulary():
+    """R-72: every kind's map is keyed by crew words only, and the reverse map
+    lands on crew words only, so a map cannot add a status the tracker lacks."""
+    known = set(crew_tracker.KNOWN_STATUSES)
+
+    assert {kind: sorted(set(rows) - known) for kind, rows in crew_tracker.STATUS_MAP.items()} == {
+        kind: [] for kind in crew_tracker.KINDS}
+    assert sorted(set(crew_tracker.JIRA_TO_CREW.values()) - known) == []

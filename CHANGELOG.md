@@ -18,6 +18,10 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.186: re-bump only - interim number on the crew-paths branch (PR #803, commit 394002c5f, pushed, never on main) before an ALLOWED row for crew_paths.py in test_worktree_config.py changed plugin/crew again; the change is recorded under crew 1.3.187
+- crew 1.3.185 (R-04): re-bump only - interim number on the crew-paths branch (PR #803, commits f694b76ab and 169ac8467, pushed, never on main) before PR #802 landed 1.3.185 for R-33; the R-04 change is recorded under crew 1.3.187
+- crew 1.3.184: re-bump only - interim number on the Never-lane tripwire branch (PR #802, commit 94f7586b8, pushed, never on main) before main moved to 1.3.183 (PR #801) and was merged in; the change is recorded under crew 1.3.185
+- crew 1.3.180: re-bump only - interim number on the protected-policy comparator branch (PR #798, commit 6e6d7033, pushed, never on main) before an ALLOWED row for crew_protected.py in test_worktree_config.py changed plugin/crew again; the change is recorded under crew 1.3.181
 - crew 1.3.178: re-bump only - interim number on the Actions schema branch (PR #797, commit 43dc06fd6, pushed, never on main) before a short-test-id fix in test_crew_actions.py changed plugin/crew again; the change is recorded under crew 1.3.179
 - crew 1.3.175: re-bump only - interim number on the registry-completeness branch (PR #795, commit aa15361e2, pushed, never on main) before a pylint line-length fix changed plugin/crew again; the change is recorded under crew 1.3.176
 - crew 1.3.173: re-bump only - interim number on the crew_policy branch (PR #794, pushed, never on main) before review fixes changed plugin/crew again; the change is recorded under crew 1.3.174
@@ -144,6 +148,44 @@ read entries under any `## [` heading.
 - crew 1.3.160: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); main reached 1.3.161 and open PR #774 holds 1.3.157, so the branch re-bumped to 1.3.162; the change is recorded under crew 1.3.167
 - crew 1.3.159: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); the accepted-value test changed plugin/crew after the number was set, so the branch moved to 1.3.160; the change is recorded under crew 1.3.160
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
+
+### Added — crew 1.3.188: copy-safe config blanks, a per-key list and an annotated template (R-C2)
+
+- **Summary.** `crew` 1.3.188 ships `plugin/crew/docs/configuration/`: a repo and a machine config blank you can copy into an empty layer without changing any effective setting, a per-key fact list and an annotated template, all generated and checked for staleness.
+- **What.** `docs/guides/crew/src/config_reference.py --write` also writes `config.blank.json` (repo layer), `global.blank.json` (machine layer), `keys.json` and `template.annotated.md`; `--check` fails when any is stale. `crew_keys.py` gains `BLANK_EXCLUDED` (each left-out key with its reason) and `blank_problems()`, which `problems()` runs: a repo-blank key must be repo-only or `null` by default (R1), the machine blank leaves out personal keys (R2), and blank plus exclusions is the layer. Nothing at runtime reads the new files; no hook or default changes.
+- **Tests.** `test_config_blanks.py` proves a blank in an empty layer changes no effective value through `explain_config`, `resolve_guard`, `resolve_personal`, `crew_humanonly.resolve` and `crew_autocycle.settings`, with in-memory sabotage rows; `scripts/_test/config-reference.py` gains must-block and must-allow rows for the new files.
+
+### Added — crew 1.3.187: `crew_paths.py`, machine-owned run folders and the one safe delete (R-04)
+
+- **Summary.** `crew` 1.3.187 adds one resolver for every crew run folder, read from the machine config layer only, and the single recursive delete crew will use; nothing calls it yet.
+- **What.** New `hooks/scripts/crew_paths.py` resolves the `scratch`, `review`, `sandbox` and `tests` run folders, creates each exclusively with a `.crew-owner.json` record, and gives `delete_run_dir`, which refuses (changing nothing) unless the path passes string checks, a link walk anchored at the resolved root, the ownership record and a read-only pre-scan for mounts; the walk never follows a link, and links inside a run are removed as links. `crew_paths.py explain` reports an ignored repo `worktrees.root`; `check-delete <path> --run-id ID` is a dry run. `crew_worktrees.py` shares its helper.
+- **Tests.** `test_crew_paths.py` (link, junction, mount-crossing and root-replacement cases on Windows and Linux) and the `paths_mutations.py` sabotage rows.
+
+### Added — crew 1.3.185: `crew_never.py`, the Never-lane command tripwire and shared redactor, report-only (R-33)
+
+- **Summary.** `crew` 1.3.185 adds `crew_never.py`, which says whether a command a model runs skips git hooks or signing or carries a secret-shaped value, and holds the one shared redactor; nothing calls it yet, so no guard or command changes.
+- **What.** `plugin/crew/hooks/scripts/crew_never.py` recognises `skip-hooks-or-signing` (`--no-verify`, `commit -n`, `--no-gpg-sign`, `core.hooksPath`, `HUSKY=0` and the rest of the closed `SHAPES` list) and `write-secret-plaintext` (`crew_reference.SECRET_PATTERNS`, a bearer-token shape, the literal value of a secret-named environment variable). Verdicts are `hit`, `clear` and `could-not-tell`; a finding names its rule and place, never the matched value. `redact` replaces each match with `[redacted:<rule>]`. CLI: `judge`, `redact`, `shapes`. Crew's own coordination push runs in-process and is never a hook payload, so it is unaffected.
+- **Inert.** Nothing in the plugin imports it, and `test_crew_never.py` fails if anything does. R-33b (harness-only) reports it in guard.log; R-35 enforces it.
+- **Tests.** `test_crew_never.py`: must-block, must-allow, could-not-tell, the pinned raw-pass false positive, policy binding, the real coordination argv, inertness in a throwaway HOME, and 17 in-file mutations.
+
+### Added — crew 1.3.183: tracker status maps, Jira transition check and durable event ids (R-72)
+
+- **Summary.** `crew` 1.3.183 gives every tracker kind a status map, checks a Jira transition against the issue's last seen status before it is pushed, and gives each tracker post a durable event id so a timed-out post is not posted twice.
+- **What.** `crew_tracker.py` gains `STATUS_MAP` (files, obsidian and sdp take the crew word; Jira its 13-status workflow, `JIRA_STATUSES`) and `transition` (Jira only: go / unchanged / refused); a Jira delegated push prints a second line, `jira: target: <name>`, and `_line` is unchanged. New `crew_tracker_events.py` keeps a ledger under the git common dir and searches for the `crew-event: <id>` marker before re-posting; `events` is report-only (R-73 enforces). `jira-sync.md` holds the one "Posting once" procedure and `sdp-sync.md` points at it.
+- **Tests.** `test_crew_tracker_maps.py`, `test_crew_tracker_events.py` (with in-test mutants), plus additions to `test_crew_tracker.py`, `test_status_vocabulary.py` and `test_crew_autopilot_tracker.py`.
+
+### Changed — crew 1.3.182: review provider registry; one probe per attempt (R-10)
+
+- **Summary.** `crew` 1.3.182 moves each review provider's command, parser, limit text and probe kind into one registry row, so `review_run.py` no longer branches on `codex` by name; the default `/crew:review` path is unchanged.
+- **What.** `plugin/crew/hooks/scripts/review_providers.py` holds one frozen row per provider (command, final-message parser, limit text, probe kind, events file); `review_run.py` reads `command_for`, `LAUNCHED`, `PROVIDERS` and `RETRY_KEPT` from it. `--probe` takes any launched provider: copilot makes one opt-in call (never `limited`), kimi answers `PROBE=deferred` with no call because it probes inside its own launch, claude is a usage error. The family guard answers before any probe answer, deferred included; a limit marker answers only for the provider that wrote it, and no limit or probe outcome is an input to the family guard. `--resolve-run` takes `--provider codex|copilot` and reads codex when none is given.
+- **Tests.** `test_review_providers.py` (T1-T9, must-block MB1-MB6, must-allow MA1-MA7); `sabotage_review.py` gains `R10_MUTATIONS` (S1-S11); the review goldens replay unchanged.
+
+### Added — crew 1.3.181: `crew_protected.py`, the protected-policy comparator, report-only (R-32)
+
+- **Summary.** `crew` 1.3.181 adds `crew_protected.py`, which compares the protected policy crew actually enforces before and after a change and says whether each protected key stays the same, narrows, widens or cannot be told; nothing calls it yet, so no guard or command changes.
+- **What.** `plugin/crew/hooks/scripts/crew_protected.py` maps each protected leaf (`LEAVES`) to the reader that enforces it (`READERS`, with its `path:line` and layers) and a direction kind (`DIRECTIONS`). `read_layer` reads each config layer strictly (unreadable, not UTF-8 JSON, a repeated key, not an object or a moved link target is `unknown`); `effective_protected` calls the real readers; `compare` returns `unchanged`, `narrowing`, `widening` or `unknown`, and an unknown never reads as unchanged. For `humanOnly.*` and `guards.git.allow` the raw per-layer value is compared too and the wider outcome kept. `judge_change` reads both sides in throwaway roots and never confirms; `judge_drift` reads the real paths against `<machine config dir>/protected-policy/baseline.json` and advances it only on a free result. CLI: `check`, `explain`, `keys`, `baseline --init`.
+- **Inert.** `REPORT_ONLY = True` and nothing imports it; `test_crew_protected.py` fails if any other plugin source mentions it. R-32b (harness-only: refusal, hook wiring) and R-32c (the other readers and crew's writers) switch it on after R-23's `widen-policy` receipt.
+- **Tests.** `test_crew_protected.py`: must-block and must-allow tables, a differential against each enforcing reader called by name, the coverage union, isolation, the CLI, a BOM-prefixed layer read the same as the enforcing readers, and 21 weakened copies of the module that each must turn a named case red with an `AssertionError`; `test_worktree_config.py` lists `judge_change`'s throwaway-root copy of the repo layer as the one `.crew/config.json` path the module builds, never a read of the real config.
 
 ### Added — crew 1.3.179: `crew_actions.py`, the Actions schema per kind, report-only (R-30)
 

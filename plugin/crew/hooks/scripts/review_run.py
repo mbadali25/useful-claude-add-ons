@@ -6,7 +6,9 @@ hangs, or takes this process down with it has still spent its round.
 `test_review_ledger.py` kills this process from inside a fake reviewer and
 asserts the round is on the ledger.
 
-PROVIDERS.
+PROVIDERS. Each one's command, output parser, limit text, probe kind and
+events file is one row of `review_providers.REGISTRY` (R-10); `command_for`,
+`LAUNCHED`, `PROVIDERS` and `RETRY_KEPT` are read from it.
   codex    `codex exec --json --sandbox read-only`, stdin closed (a real run
            hung here waiting on stdin). The final message and the turn's
            success are read from the JSON event stream; a failed turn is
@@ -51,11 +53,19 @@ PROVIDERS.
 A provider binary that is not on PATH is refused BEFORE reservation: nothing
 was launched, so nothing is spent.
 
-`--probe` (codex only) makes one minimal real call and reserves nothing: exit
-0 ok, 5 limited (a usage/rate/quota limit, `review_limit.limit_line`), 6
-failed, 7 unknown (timed out). /crew:review runs it before step 2a. Being on
-PATH is not being able to review: a logged-out or rate-limited Codex resolves
-on PATH and fails at the first call (T-0088).
+`--probe` makes one minimal real call for a `standalone` row (codex, copilot)
+and reserves nothing: exit 0 ok, 5 limited (a usage/rate/quota limit the
+row's `limit` names; Codex's are `review_limit.limit_line`, Copilot has none),
+6 failed, 7 unknown (timed out). /crew:review runs it for Codex before step
+2a; Copilot's is for an operator who asks (`--model` is required, as for its
+run). Being on PATH is not being able to review: a logged-out or rate-limited
+Codex resolves on PATH and fails at the first call (T-0088). A recorded limit
+marker answers `limited` only for the provider that recorded it (a marker
+with no `provider` is Codex's). For kimi, which probes inside its own launch,
+`--probe` makes NO call: it prints `PROBE=deferred` and exits 0, and its
+`next:` is the Kimi run, so one attempt never probes Kimi twice. claude is a
+usage error. The family guard answers first for every provider, `deferred`
+included, and no probe outcome is an input to it.
 
 STANDARDS SELF-CHECK (T-0085). Also before reservation, and AFTER `preflight`
 and `prereview_gate` (questions 1-4 below), for every provider
@@ -259,6 +269,7 @@ import review_limit
 import review_metrics
 import review_patch
 import review_prompt
+import review_providers
 import review_verdict
 import verify_agents
 import webtest_guard
@@ -285,7 +296,7 @@ INLINE_PROMPT_LIMIT = 24000
 # provider resolved to one of these (an npm-installed codex.cmd or copilot.cmd)
 # is never handed a multi-line prompt inline (T-0087, PR #260's Windows job).
 BATCH_SHIM_SUFFIXES = (".cmd", ".bat")
-LAUNCHED = ("codex", "copilot", "kimi")
+LAUNCHED = review_providers.LAUNCHED
 KIMI_TREE_CHANGED = ("kimi: the working tree changed during the review - a reviewer "
                      "that can write may have fixed instead of reported")
 KIMI_PROBE_CHANGED = "kimi probe: the working tree changed while the probe ran"
@@ -351,10 +362,13 @@ EXIT_PROBE_LIMITED, EXIT_PROBE_FAILED, EXIT_PROBE_UNKNOWN = 5, 6, 7
 # The in-process retry of a refunded tool round (L-0514): constants, never config.
 RETRY_LIMIT = 1
 RETRY_BACKOFF_SECONDS = 30
-RETRY_KEPT = ("out.txt", "stderr.txt", "codex-events.jsonl")
+RETRY_KEPT = ("out.txt", "stderr.txt") + review_providers.EVENTS_FILES
 RETRY_OPTIONS = ("review: options: rerun /crew:review (a round that was not refunded spends a "
                  "budget round), switch provider (qa.order), or replan")
 PROBE_OK, PROBE_LIMITED, PROBE_FAILED, PROBE_UNKNOWN = "ok", "limited", "failed", "unknown"
+# R-10: a provider that probes inside its own launch (kimi) answers --probe with
+# this and makes no call; never `ok`.
+PROBE_DEFERRED = "deferred"
 VERIFY_GATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "verify-gate.sh")
 
 
@@ -833,19 +847,8 @@ def _round_available(root, ticket):
 
 
 def command_for(provider, exe, root, prompt, model, effort, scratch=None):
-    if provider == "kimi":
-        return [exe, "-p", prompt, "-m", model, "--output-format", "stream-json",
-                *kimi_probe.read_only_flags(scratch)]
-    if provider == "codex":
-        cmd = [exe, "exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check",
-               "-C", root]
-        if model:
-            cmd += ["--model", model]
-        if effort:
-            cmd += ["-c", f"model_reasoning_effort={effort}"]
-        return cmd + [prompt]
-    return [exe, "-p", prompt, "--model", model, "--deny-tool", "write",
-            "--deny-tool", "shell", "-s"]
+    """The argv for `provider`, from its `review_providers` row (R-10)."""
+    return review_providers.ROWS[provider].command(exe, root, prompt, model, effort, scratch)
 
 
 def launch(cmd, root, timeout, env=None, started=None):
@@ -1964,22 +1967,21 @@ def run(args):
 
 def _launch_round(args, exe, prompt, number):
     """Launch round `number` and record it. (exit code, timed out, usage-limit line)."""
+    row = review_providers.ROWS[args.provider]
     cmd = command_for(args.provider, exe, args.root, prompt, args.model, args.effort)
     stdout, stderr, code, timed_out = launch(cmd, args.root, args.timeout)
     extra = []
     limit = None
-    if args.provider == "codex":
-        _write_atomic(os.path.join(args.scratch, "codex-events.jsonl"), stdout)
-        message_text, error = review_verdict.codex_final_message(stdout)
-        output = message_text or ""
-        if error and not timed_out:
-            extra.append(f"codex: {error}")
-        # Only a FAILED call is judged: a 429 Codex retried and got past leaves
-        # `error` events in a round that still delivered (T-0088).
-        if timed_out or code != 0 or not output.strip():
-            limit = review_limit.limit_line(error or "", stderr)
-    else:
-        output = stdout
+    if row.events_file:
+        _write_atomic(os.path.join(args.scratch, row.events_file), stdout)
+    message_text, error = row.final(stdout)
+    output = message_text or ""
+    if error and not timed_out:
+        extra.append(f"{row.name}: {error}")
+    # Only a FAILED call is judged: a 429 Codex retried and got past leaves
+    # `error` events in a round that still delivered (T-0088).
+    if timed_out or code != 0 or not output.strip():
+        limit = row.limit(error, stderr)
     _write_atomic(os.path.join(args.scratch, "out.txt"), output)
     _write_atomic(os.path.join(args.scratch, "stderr.txt"), stderr)
     status = finish(args, number, output, code, timed_out, extra)
@@ -1988,13 +1990,13 @@ def _launch_round(args, exe, prompt, number):
         # ledger's, and a marker that cannot be written (disk full, a path that
         # is not a directory) must not take it, or exit 3, down with it.
         try:
-            review_limit.record(args.root, args.ticket, number, "codex", args.model, limit)
+            review_limit.record(args.root, args.ticket, number, row.name, args.model, limit)
             then = ("the next round walks to the next cross-family provider, else "
                     "records no reviewer (INCOMPLETE, refunded)")
         except OSError as exc:
-            then = (f"could not record it ({exc}), so the next probe calls Codex live "
+            then = (f"could not record it ({exc}), so the next probe calls {row.display} live "
                     "instead of answering limited from the record")
-        _out(f"review: codex usage limit in round {number}: {limit!r}; {then}")
+        _out(f"review: {row.name} usage limit in round {number}: {limit!r}; {then}")
     return status, timed_out, limit
 
 
@@ -2084,28 +2086,34 @@ def _keep_round_files(args, number):
 
 
 def probe(args):
-    """(outcome, detail). One minimal real Codex call, BEFORE any reservation.
+    """(outcome, detail). One minimal real call of a `standalone` provider
+    (`args.provider`, codex when none is named), BEFORE any reservation.
 
     Four outcomes, never collapsed: `ok` is a delivered message at exit 0 (a
     429 Codex retried and then got past is still ok); `limited` is a failed
-    call whose error or stderr names a limit, or a limit recorded by the round
-    before (`review_limit.recorded`, no call made); `failed` is any other
-    failure, quoted; `unknown` is no answer within the probe's timeout."""
+    call whose error or stderr names a limit (the row's `limit`), or a limit
+    the round before recorded FOR THIS PROVIDER (`review_limit.recorded`, no
+    call made; a marker with no `provider` is Codex's); `failed` is any other
+    failure, quoted; `unknown` is no answer within the probe's timeout. No
+    outcome is a same-family decision: that is `family_guard`'s, which reads
+    none of them."""
+    row = review_providers.row(getattr(args, "provider", None))
     mark = review_limit.recorded(args.root, args.ticket)
-    if mark:
+    if mark and (mark.get("provider") or "codex") == row.name:
         return PROBE_LIMITED, f"recorded in round {mark['round']}: {mark['error']}"
-    exe = review_checks.resolve_executable("codex")
+    exe = review_checks.resolve_executable(row.executable)
     if not exe:
-        return PROBE_FAILED, "codex is not on PATH"
+        return PROBE_FAILED, f"{row.name} is not on PATH"
     timeout = args.probe_timeout
-    cmd = command_for("codex", exe, args.root, PROBE_PROMPT, args.model, args.effort)
+    cmd = command_for(row.name, exe, args.root, PROBE_PROMPT, args.model, args.effort)
     stdout, stderr, code, timed_out = launch(cmd, args.root, timeout)
-    _write_atomic(os.path.join(args.scratch, "probe-events.jsonl"), stdout)
+    _write_atomic(os.path.join(args.scratch, "probe-events.jsonl" if row.events_file
+                               else "probe-out.txt"), stdout)
     _write_atomic(os.path.join(args.scratch, "probe-stderr.txt"), stderr)
-    message, error = review_verdict.codex_final_message(stdout)
+    message, error = row.final(stdout)
     if code == 0 and not timed_out and (message or "").strip():
         return PROBE_OK, message.strip().splitlines()[0][:120]
-    line = review_limit.limit_line(error or "", stderr)
+    line = row.limit(error, stderr)
     if line:
         return PROBE_LIMITED, line
     if timed_out:
@@ -2460,8 +2468,7 @@ class Context:
         self.root_arg, self.ticket, self.scratch = root_arg, ticket, scratch
         self.authors, self.author_source = authors, author_source
         self.effort = qm(report, "codex", "reasoningEffort")
-        self.models = {"codex": qm(report, "codex"), "copilot": qm(report, "copilot"),
-                       "kimi": qm(report, "kimi")}
+        self.models = {name: qm(report, name) for name in LAUNCHED}
         self.eligible = eligible(report)
         row = next((r for r in report.get("qa") or [] if r.get("role") == "review"), {})
         self.pinned = row.get("provider") if row.get("provider") in PROVIDERS else None
@@ -2495,13 +2502,13 @@ class Context:
                             self.models.get(provider, "") if model is None else model,
                             "--effort", self.effort)
 
-    def probe(self):
-        return self.command("--provider", "codex", "--model", self.models["codex"],
+    def probe(self, provider="codex"):
+        return self.command("--provider", provider, "--model", self.models[provider],
                             "--effort", self.effort, "--probe")
 
-    def resolve(self, status):
-        return self.command("--resolve-run", "--provider", "codex", "--model",
-                            self.models["codex"], "--probe-status", status)
+    def resolve(self, status, provider="codex"):
+        return self.command("--resolve-run", "--provider", provider, "--model",
+                            self.models[provider], "--probe-status", status)
 
     def no_reviewer(self):
         return (f"python3 {_quote(_script('review_ledger.py'))} --ticket {_quote(self.ticket)} "
@@ -2519,12 +2526,13 @@ class Context:
     def walk(self, providers, skipped=""):
         """The `next:` text for the first of `providers` that can run."""
         for provider in providers:
-            if provider == "codex":
-                return f"{skipped}probe Codex: {self.probe()}"
-            if provider == "claude":
+            row = review_providers.ROWS.get(provider)
+            if row is not None and row.walk_probes:
+                return f"{skipped}probe {row.display}: {self.probe(provider)}"
+            if row is not None and not row.launched:
                 return f"{skipped}{self.claude()}"
-            if provider == "copilot" and not self.models["copilot"]:
-                skipped += "copilot skipped: qa.copilot.model not set; "
+            if row is not None and row.needs_model and not self.models.get(provider):
+                skipped += f"{provider} skipped: qa.{provider}.model not set; "
                 continue
             return f"{skipped}run {self.launch(provider)}"
         return (f"{skipped}no provider left to run: record it with {self.no_reviewer()} "
@@ -2532,37 +2540,41 @@ class Context:
 
 
 def resolve_run(args):
-    """`--resolve-run`: turn the Codex probe's exit code (`--probe-status`)
-    into FALLBACK / RUN_PROVIDER / RUN_MODEL, as review.md's line 326 did. A
-    probe that found Codex limited or unavailable falls a pinned `review` role
-    back through `crew_state.resolve_role`; nothing is launched."""
+    """`--resolve-run`: turn the probed provider's exit code (`--probe-status`;
+    `--provider`, a `standalone` row, codex when none is named) into FALLBACK
+    / RUN_PROVIDER / RUN_MODEL, as review.md's line 326 did. A probe that found
+    it limited or unavailable falls a pinned `review` role back through
+    `crew_state.resolve_role`, which skips every author family (no
+    `same_family_ok`: a limit confers no same-family authority); nothing is
+    launched."""
     report, problem = load_report(args.scratch)
     if report is None:
         return _unknown(f"the models report ({problem})")
+    probed = review_providers.row(args.provider).name
     context = Context(args.root_arg, args.ticket, args.scratch_arg, report, args.authors or "",
                       args.author_source or "")
     status = args.probe_status
-    qa_model, fallback = args.model or context.models["codex"], ""
-    models = dict(context.models, codex=qa_model)
+    qa_model, fallback = args.model or context.models[probed], ""
+    models = dict(context.models, **{probed: qa_model})
     if status in (5, 6, 7):
         import crew_config  # pylint: disable=import-outside-toplevel
         whole = status in (5, 7)
         config = crew_config.resolve_config(args.root)
         qa = config.setdefault("qa", {})
-        if whole and crew_state.provider_for_model(qa.get("fallback")) == "codex":
+        if whole and crew_state.provider_for_model(qa.get("fallback")) == probed:
             qa.update(fallback=None)
-        gone = ("codex", qa_model or None)
+        gone = (probed, qa_model or None)
         result = crew_state.resolve_role(
             config, "qa", "review", author=(args.authors or "").split(),
-            available=lambda p, m: p != "codex" if whole else (p, m or None) != gone)
+            available=lambda p, m: p != probed if whole else (p, m or None) != gone)
         _err("".join(a + "\n" for a in result["announce"]))
         fallback = ("INCOMPLETE" if result["incomplete"]
                     else result["provider"] + " " + (result["model"] or "")
                     if result["fellBack"] else "")
-        _out(f"FALLBACK={fallback or 'none - no codex pin fell back'}")
+        _out(f"FALLBACK={fallback or f'none - no {probed} pin fell back'}")
     provider = model = ""
     if status == 0:
-        provider, model = "codex", qa_model
+        provider, model = probed, qa_model
     elif fallback.startswith("codex "):
         provider, model = "codex", fallback[len("codex "):]
     elif fallback.startswith("kimi "):
@@ -2580,9 +2592,9 @@ def resolve_run(args):
         _out(f"next: qa.provider pins {context.pinned} and the probe gave exit {status}: that is "
              "an error, not a cue to fall back; quote PROBE_DETAIL and stop")
     else:
-        rest = [p for p in context.eligible if p != "codex"] if status in (5, 6, 7) \
+        rest = [p for p in context.eligible if p != probed] if status in (5, 6, 7) \
             else context.eligible
-        _out("next: " + context.walk(rest, f"codex probe exit {status}: "))
+        _out("next: " + context.walk(rest, f"{probed} probe exit {status}: "))
     return EXIT_CLEAN
 
 
@@ -2792,16 +2804,25 @@ def next_action(mode, code, args):
     if mode == "resolve":
         return NEXT_CODES.get(code, "read the line above")
     if mode == "probe":
+        # The probed row names the line (D14): a refused Kimi probe must not
+        # tell the walker that Codex was refused.
+        row = review_providers.ROWS.get(getattr(args, "provider", None) or "codex") \
+            or review_providers.row("codex")
+        shown = row.display
+        if code == EXIT_CLEAN and row.probe == review_providers.IN_LAUNCH:
+            return (f"{shown} probes inside its own launch (PROBE=deferred, nothing was called): "
+                    "run " + (context.launch(row.name) if context else
+                              f"review_run.py --provider {row.name} with the same other flags"))
         if code == EXIT_CLEAN and context:
-            return "Codex answers: run " + context.launch("codex")
+            return f"{shown} answers: run " + context.launch(row.name)
         if code in (EXIT_PROBE_LIMITED, EXIT_PROBE_FAILED, EXIT_PROBE_UNKNOWN) and context:
-            return ("Codex gave no usable answer: quote PROBE_DETAIL, then run "
-                    + context.resolve(code))
+            return (f"{shown} gave no usable answer: quote PROBE_DETAIL, then run "
+                    + context.resolve(code, row.name))
         if code == EXIT_USAGE:
-            return ("Codex was refused by the family guard or a usage error, nothing was called: "
-                    "walk to the next provider in ELIGIBLE")
-        return (f"no answer about Codex (exit {code}): stop and quote the line above; never read "
-                "it as ok or as limited")
+            return (f"{shown} was refused by the family guard or a usage error, nothing was "
+                    "called: walk to the next provider in ELIGIBLE")
+        return (f"no answer about {shown} (exit {code}): stop and quote the line above; never "
+                "read it as ok or as limited")
     if mode == "reserve" and code == EXIT_CLEAN:
         if "ALREADY_CLEAN=1" in said:
             return "a CLEAN receipt already covers this bundle: do not dispatch; go to step 3"
@@ -2819,7 +2840,7 @@ def next_action(mode, code, args):
 # The providers this runner can launch (`kimi` since L-0527); /crew:review walks
 # ELIGIBLE (filtered to this set, and says so on stderr) instead of relying on
 # argparse's exit 2 to skip a provider it does not name.
-PROVIDERS = ("codex", "copilot", "kimi", "claude")
+PROVIDERS = review_providers.NAMES
 
 
 class _Parser(argparse.ArgumentParser):
@@ -2933,17 +2954,37 @@ def _main(argv, state):  # pylint: disable=too-many-branches,too-many-statements
         if args.prepare:
             return prepare(args)
         if args.resolve_run:
+            # D11: an old caller names no provider, and meant Codex.
+            args.provider = args.provider or "codex"
+            if args.provider not in review_providers.STANDALONE_PROBES:
+                parser.error(f"--resolve-run reads a standalone probe "
+                             f"({', '.join(review_providers.STANDALONE_PROBES)}); "
+                             f"{args.provider} has none to read")
             return resolve_run(args)
         if args.probe:
-            if args.provider != "codex":
-                parser.error("--probe is for the codex provider only")
+            # In this order (R-10 D3): usage, then the family guard, then the
+            # row's probe answer -- `deferred` included, so no answer ever
+            # comes before the guard has spoken.
+            row = review_providers.ROWS[args.provider]
+            if not row.launched:
+                parser.error(f"--probe is for a provider this runner launches "
+                             f"({', '.join(LAUNCHED)}); {args.provider} runs in the session")
             if args.reserve_only or args.round is not None:
                 parser.error("--probe reserves nothing; it takes neither --reserve-only "
                              "nor --round")
+            if row.needs_model and not args.model:
+                _err(f"review-run: {row.name} needs --model (qa.{row.name}.model); an "
+                     f"unpinned {row.display} is the author's family\n")
+                return EXIT_USAGE
             refusal, _ = family_guard(args)
             if refusal:
                 _err(refusal)
                 return EXIT_USAGE
+            if row.probe == review_providers.IN_LAUNCH:
+                _out(f"PROBE={PROBE_DEFERRED}")
+                _out(f"PROBE_DETAIL={row.name} probes inside its own launch, before any round "
+                     "is reserved")
+                return EXIT_CLEAN
             outcome, detail = probe(args)
             _out(f"PROBE={outcome}")
             _out("PROBE_DETAIL=" + " ".join(str(detail).splitlines()))
