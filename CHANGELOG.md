@@ -152,6 +152,12 @@ read entries under any `## [` heading.
 - crew 1.3.159: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); the accepted-value test changed plugin/crew after the number was set, so the branch moved to 1.3.160; the change is recorded under crew 1.3.160
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Added — crew 1.3.196: `crew_oneway.py` reports deletes of branches and worktrees crew does not own (R-34c)
+
+- **Summary.** `crew` 1.3.196 extends the report-only `crew_oneway.py` tripwire with `delete-others-branch` and `delete-others-worktree`: deleting a branch (`git branch -d/-D`, `git push --delete` or `:ref`, `git update-ref -d refs/heads/...`) or removing a worktree that is not in the caller's own list is reported. It still refuses nothing.
+- **What.** The decision reads a caller-supplied context (`cwd`, `own_branches`, `own_worktrees`); `push --prune`/`--mirror`, a missing context, an expansion, a repository crew cannot see, an unreadable git subcommand or a command past the 256-word window is could-not-tell, never clear. The shell `exec` builtin is a head prefix, and the CLI gains `--cwd`, `--own-branch` and `--own-worktree`. Nothing in the plugin imports the module.
+- **Tests.** `test_crew_oneway.py` adds must-block, must-allow, could-not-tell and pinned rows under ntpath and posixpath, crew's own cleanup argv found by `ast`, policy binding for all three names, linear-time rows, and 22 new in-file sabotage mutations.
+
 ### Added — crew 1.3.195: `crew_policy.classify`, the closed serious list, report-only (R-P6)
 
 - **Summary.** `crew` 1.3.195 adds `crew_policy.classify`, which places one action's effects into the closed list of eight serious classes, or reports them as unplaced, and treats an operation it cannot place as serious. Nothing acts on the answer yet.
