@@ -135,7 +135,9 @@ layer passes them. An example therefore also has to come back empty from
 one row per `layer` string: a repo may only veto a `machine-arms` key with
 `false`, an example holds a `humanOnly` key only as `true` because an opt-out
 needs the owner's receipt, and `guards.git.allow` only as `"off"`), stay inside
-declared `values`, and have each `tiers` target resolve, through `crew_tiers`, to
+declared `values` in the shape the key's default has (a list only where the
+default is a list, so `qa.order: "codex"` and `qa.provider: []` fail as the
+runtime's `validate_providers` refuses them), and have each `tiers` target resolve, through `crew_tiers`, to
 the stated tier as the EFFECTIVE tier (a repo `dev` entry the machine does not
 list resolves to `unknown`, so it fails). Each CLI call must exit 0 and print the
 shape it documents (a `--check-global` report missing `findings`, or an

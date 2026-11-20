@@ -19,8 +19,8 @@ when it meets every one of (spec decision 5):
 (c) `--inert --json` is `[]` with the example in its layer, the other empty;
 (d) every leaf maps to a `keys.json` key, and that key's layer class allows
     the value in this layer (`LAYER_CLASS`); confirm-only keys hold `"off"`;
-(e) where `keys.json` declares `values`, the leaf (or each list element) is
-    one of them;
+(e) where `keys.json` declares `values`, the leaf is a list exactly when the
+    key's default is one, and the leaf (or each list element) is one of them;
 (f) a `tiers` map has no layer problem and each target resolves to the tier
     the file states.
 
@@ -45,6 +45,7 @@ import sys
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_config
 import crew_gitallow
 import crew_humanonly
 import crew_keys
@@ -320,7 +321,18 @@ def registry_problems(data, layer, keys, confirm_only=CONFIRM_ONLY):
             out.append(f"(d) {path}: confirm-only; an example may hold only \"off\"")
         values = meta.get("values")
         if values is not None and path == key:
-            items = value if isinstance(value, list) else [value]
+            # The shape comes from the registry, never from the value: a key
+            # whose default is a list takes a list, any other takes one value
+            # (crew_config.validate_providers refuses `qa.order: "codex"` and
+            # `qa.provider: []` alike).
+            defaults = meta.get("default")
+            defaults = defaults.values() if isinstance(defaults, dict) else [defaults]
+            list_shaped = any(isinstance(d, list) for d in defaults)
+            if list_shaped != isinstance(value, list):
+                out.append(f"(e) {path}: {json.dumps(value)} is not "
+                           f"{'a list' if list_shaped else 'a single value'}")
+                continue
+            items = value if list_shaped else [value]
             for item in items:
                 if not any(_same(item, allowed) for allowed in values):
                     out.append(f"(e) {path}: {json.dumps(item)} is not one of "
@@ -634,30 +646,42 @@ def _check(tmp_path, keys, name, data, *checks, layer=None):
     return problems
 
 
+def _has(problems, prefix, *fragments):
+    """A problem from check `prefix` that names every fragment: the mutated key
+    and the kind, so an unrelated diagnostic cannot satisfy the row."""
+    assert any(p.startswith(prefix) and all(f in p for f in fragments) for p in problems), (
+        prefix, fragments, problems)
+
+
 def test_s1_repo_typo_key(tmp_path, keys):
     data = _load_example("repo-production.json")
     data["producton"] = data.pop("production")
-    _check(tmp_path, keys, "repo-x.json", data, "(c)")
+    problems = _check(tmp_path, keys, "repo-x.json", data, "(c)")
+    _has(problems, "(c) --inert: producton.hosts:", "unknown")
+    _has(problems, "(d) producton.hosts:", "maps to no keys.json key")
 
 
 def test_s2_machine_repo_only_key(tmp_path, keys):
     data = _load_example("machine-reviewers-kimi-first.json")
     data["production"] = {"hosts": ["prod-*"]}
     problems = _check(tmp_path, keys, "machine-x.json", data, "(b)")
-    assert _caught(problems, "(c)"), problems
+    _has(problems, "(b) --check-global: [repo-keys]", "production")
+    _has(problems, "(c) --inert: production.hosts:", "global-ignored")
 
 
 def test_s3_machine_typo_key(tmp_path, keys):
     data = _load_example("machine-reviewers-kimi-first.json")
     data["qa"]["ordr"] = data["qa"].pop("order")
     problems = _check(tmp_path, keys, "machine-x.json", data, "(b)")
-    assert _caught(problems, "(c)"), problems
+    _has(problems, "(b) --check-global: [repo-keys]", "qa.ordr")
+    _has(problems, "(c) --inert: qa.ordr:", "global-ignored")
 
 
 def test_s4_repo_nonprod_not_a_list(tmp_path, keys):
     data = _load_example("repo-production.json")
     data["environments"]["nonProd"] = "dev*"
-    _check(tmp_path, keys, "repo-x.json", data, "(b)")
+    problems = _check(tmp_path, keys, "repo-x.json", data, "(b)")
+    _has(problems, "(b) --check:", "environments.nonProd", "is not a list")
 
 
 @pytest.mark.parametrize("name", ["repo-minimal.json", "machine-reviewers-kimi-first.json"])
@@ -671,6 +695,22 @@ def test_s6_bad_list_element(tmp_path, keys):
     data = _load_example("machine-reviewers-codex-first.json")
     data["qa"]["order"] = ["codex", "gpt"]
     _check(tmp_path, keys, "machine-x.json", data, "(e)")
+
+
+@pytest.mark.parametrize("key,value,expected", [
+    ("order", "codex", "(e) qa.order: \"codex\" is not a list"),
+    ("provider", [], "(e) qa.provider: [] is not a single value"),
+    ("provider", ["codex"], "(e) qa.provider: [\"codex\"] is not a single value"),
+])
+def test_s6b_wrong_shape(tmp_path, keys, key, value, expected):
+    """The shape comes from keys.json, not the value: the runtime refuses both
+    (crew_config.validate_providers), so the checker must too."""
+    data = _load_example("machine-reviewers-codex-first.json")
+    data["qa"][key] = value
+    with pytest.raises(crew_config.ProviderError):
+        crew_config.validate_providers(data)
+    problems = _check(tmp_path, keys, "machine-x.json", data, "(e)")
+    assert expected in problems, problems
 
 
 @pytest.mark.parametrize("entries", [
@@ -773,6 +813,28 @@ def test_s11b_flag_of_the_other_script(keys, help_flags, line, flag, script):
 def test_s11c_mixed_line_valid_flags_pass(keys, help_flags):
     line = ("Run `crew_config.py --check --json`, then "
             "`crew_confirm_config.py propose --layer machine --key k`.")
+    assert [p for p in _guide(keys, help_flags, text=line) if p.startswith("line")] == []
+
+
+@pytest.mark.parametrize("line,expected", [
+    ("Run `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_nosuch.py`.",
+     "line 1: no such script ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_nosuch.py"),
+    ("Run `crew_nosuch.py`.", "line 1: no such script crew_nosuch.py"),
+    ("Run `hooks/scripts/crew_nosuch.py`.", "line 1: no such script hooks/scripts/crew_nosuch.py"),
+    ("Run `docs/guides/crew/src/config_reference.py`.",
+     "line 1: docs/guides/crew/src/config_reference.py is not in an installed copy; "
+     "say `repo-only` on its line"),
+])
+def test_s11d_missing_script(keys, help_flags, line, expected):
+    assert expected in _guide(keys, help_flags, text=line)
+
+
+@pytest.mark.parametrize("line", [
+    "Run `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py`.",
+    "Run `crew_tiers.py`.",
+    "Run `docs/guides/crew/src/config_reference.py` (repo-only).",
+])
+def test_s11e_existing_script_passes(keys, help_flags, line):
     assert [p for p in _guide(keys, help_flags, text=line) if p.startswith("line")] == []
 
 

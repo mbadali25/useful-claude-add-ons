@@ -89,12 +89,13 @@ Follow these steps in order. Do not ask the owner anything this guide or `keys.j
    - The run mode (`mode`) arrives with R-M1; do not set it yet.
    - Service accounts (`accounts`) arrive with R-A1; do not set them yet.
    - Production hours (`production.hours`) arrive with R-40; do not set them yet.
-5. Write a repo key with a dry run first, show it to the owner, then apply it with the digest the
-   dry run printed:
+5. Write a repo key with a dry run first, show it to the owner, then apply it with both digests
+   the dry run printed: `digest:` goes to `--expect` and `machine digest:` to `--expect-global`, so
+   the write refuses if either file changed since the dry run:
 
    ```
    python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --set tracker='"jira"' --repo
-   python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --set tracker='"jira"' --repo --apply --expect DIGEST
+   python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --set tracker='"jira"' --repo --apply --expect DIGEST --expect-global MACHINE_DIGEST
    ```
 
 6. Write a machine key only through `/crew:config`, or as a `--set ... --global` dry run that you
@@ -137,9 +138,11 @@ no confirmation; `CONFIG.md` says how.
 
 ## 5. Worked examples
 
-Each file is complete for its layer and passes the checks in CI. A `repo-` file is a repo file; a
-`machine-` file is a machine file. To use one, copy it into a layer that has no file yet, or apply
-its keys one at a time with `--set` as in section 3.
+Each file is a partial config: it holds only the keys it shows, every other key stays at its
+default, and it passes the checks in CI. A `repo-` file is a repo file; a `machine-` file is a
+machine file. To use one, copy it into a layer that has no file yet, or apply its keys one at a time
+with `--set` as in section 3. `schema` is the exception: the repo writer refuses it, and
+`/crew:init` sets it.
 
 - [`examples/repo-minimal.json`](examples/repo-minimal.json): the smallest repo file, the schema
   version and a tracker.
@@ -150,7 +153,8 @@ its keys one at a time with `--set` as in section 3.
 - [`examples/machine-reviewers-codex-first.json`](examples/machine-reviewers-codex-first.json):
   Codex first, Claude last, and the Codex review model pinned.
 - [`examples/machine-tiers.json`](examples/machine-tiers.json): a tier map with one dev, one qa
-  and one prod target. The names are placeholders.
+  and one prod target. The names are placeholders. Tiers are report-only until R-01 lands, and a
+  target the map does not list resolves to `unknown`.
 
 More examples arrive with the keys they need (R-M1, R-A1, R-40).
 
