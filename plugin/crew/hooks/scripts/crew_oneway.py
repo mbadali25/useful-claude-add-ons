@@ -247,9 +247,10 @@ SHAPES = tuple(row + (TF_STATE,) for row in _TF_SHAPES) + (
 # --- the head --------------------------------------------------------------------------------
 
 # A superset of the R-33 tripwire's list (pinned by the test), plus the
-# compound-command words a raw segment can start with.
+# compound-command words a raw segment can start with, and the shell builtin
+# `exec`, which runs the command after it in place of the shell (R-34c).
 HEAD_PREFIXES = frozenset(("env", "sudo", "command", "time", "then", "do", "else", "!",
-                           "if", "elif", "while", "until"))
+                           "if", "elif", "while", "until", "exec"))
 _ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=", re.S)
 
 # --- state-file writes (R-34b) ---------------------------------------------------------------
@@ -646,9 +647,21 @@ def _judge_words(words, start=0, ctx=None):
     return _judge_from(scan, start)
 
 
-def _head(words, start):
-    """(index, head) of the command at `start`, prefixes stripped, or None."""
-    index = start
+def _prefix_ends(words):
+    """`ends[i]`: the first index at or after `i` that is not a head prefix
+    or a `NAME=VALUE` word, so every start strips its prefixes in constant
+    time (`exec exec ... git`, an `exec` start at each word, stays linear)."""
+    ends = list(range(len(words) + 1))
+    for i in range(len(words) - 1, -1, -1):
+        if words[i] in HEAD_PREFIXES or _ASSIGN_RE.match(words[i]):
+            ends[i] = ends[i + 1]
+    return ends
+
+
+def _head(words, start, ends=None):
+    """(index, head) of the command at `start`, prefixes stripped, or None.
+    `ends` is `_prefix_ends(words)` when the caller holds it."""
+    index = start if ends is None else ends[start]
     while index < len(words) and (words[index] in HEAD_PREFIXES or _ASSIGN_RE.match(words[index])):
         index += 1
     if index >= len(words):
@@ -656,15 +669,15 @@ def _head(words, start):
     return index, _head_name(words[index])
 
 
-def _tf_head(words, start):
+def _tf_head(words, start, ends=None):
     """(index, head) of the terraform head of the command at `start`, or None."""
-    found = _head(words, start)
+    found = _head(words, start, ends)
     return found if found is not None and found[1] in TF_HEADS else None
 
 
 def _judge_from(scan, start):
     if start not in scan.memo:
-        found = _tf_head(scan.words, start)
+        found = _tf_head(scan.words, start, scan.state_words().prefix_end)
         scan.memo[start] = (_state_head(scan.state_words(), start) if found is None
                             else _judge_tf(scan, found[1], found[0] + 1))
     return scan.memo[start]
@@ -730,6 +743,14 @@ class _StateWords:  # pylint: disable=too-few-public-methods
         count = len(words)
         self.words = words
         self.ctx = ctx if ctx is not None else NO_CONTEXT
+        self.prefix_end = _prefix_ends(words)
+        # the first index at or after `i` assigning GIT_DIR, GIT_WORK_TREE
+        # or GIT_NAMESPACE (C5), so a start reads its assignments at once.
+        self.repo_assign = [count] * (count + 1)
+        for i in range(count - 1, -1, -1):
+            sets_repo = (_ASSIGN_RE.match(words[i]) is not None
+                         and words[i].split("=", 1)[0] in _REPO_VARS)
+            self.repo_assign[i] = i if sets_repo else self.repo_assign[i + 1]
         self.kind =[_state_kind(word) for word in words]
         self.whole = [_state_path(word) for word in words]
         self.next_state = [count] * (count + 1)
@@ -883,15 +904,22 @@ GIT_WINDOW = 256
 DELETE_SUBS = {"branch": BRANCH, "push": BRANCH, "update-ref": BRANCH, "worktree": WORKTREE}
 _REPO_VARS = frozenset(("GIT_DIR", "GIT_WORK_TREE", "GIT_NAMESPACE"))
 _TARGET_UNSEEN = ("$", "`", "%", "*", "?", "[")
-# C10: push options that take the next word when written without `=`.
+# C10: push options that take the next word when written without `=`. git
+# also takes any unambiguous prefix of a long option (`--receiv`), so a
+# prefix is read against git push's other long options too.
 _PUSH_VALUE_OPTS = frozenset(("-o", "--push-option", "--receive-pack", "--exec", "--repo",
                               "--recurse-submodules"))
+_PUSH_LONG_FLAGS = ("--all", "--branches", "--mirror", "--delete", "--tags", "--dry-run",
+                    "--porcelain", "--force", "--force-with-lease", "--force-if-includes",
+                    "--thin", "--set-upstream", "--progress", "--prune", "--verify",
+                    "--follow-tags", "--signed", "--atomic", "--ipv4", "--ipv6", "--quiet",
+                    "--verbose", "--no-")
 
 
 def _own_list(value):
     """A tuple of the own names or paths, or None when `value` is not a
-    list of non-empty strings (absent, C1)."""
-    if isinstance(value, list) and all(isinstance(item, str) and item for item in value):
+    list of strings (absent, C1)."""
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
         return tuple(value)
     return None
 
@@ -933,8 +961,9 @@ def _short(word, stop):
 
 
 def _repo_unseen(globals_, dirs, assigned):
-    """C5: whether crew cannot tell which repository git acts on."""
-    if dirs is crew_gitallow.UNSEEN or assigned & _REPO_VARS:
+    """C5: whether crew cannot tell which repository git acts on;
+    `assigned` is whether the segment's leading words set a `_REPO_VARS`."""
+    if dirs is crew_gitallow.UNSEEN or assigned:
         return True
     if any(word.split("=", 1)[0] == "--namespace" for word in globals_):
         return True
@@ -977,6 +1006,21 @@ def _options(rest):
     return out
 
 
+def _push_takes_value(word, cut):
+    """Whether push option `word` (`cut`: its bundle read up to `o`) takes
+    the next word: `-o` last in its bundle (`-fo x`; `-ofoo` holds its own
+    value), or a long value option or an unambiguous prefix of one."""
+    if cut != word:
+        return cut + "o" == word
+    if word in _PUSH_VALUE_OPTS:
+        return True
+    if not word.startswith("--") or "=" in word or len(word) < 3:
+        return False
+    if any(flag.startswith(word) for flag in _PUSH_LONG_FLAGS):
+        return False
+    return any(opt.startswith(word) for opt in _PUSH_VALUE_OPTS)
+
+
 def _branch_targets(rest):
     """git branch: the delete targets as (index, name), or None when this is
     not a branch delete (no delete option, or `-r`/`--remotes`)."""
@@ -1007,7 +1051,7 @@ def _push_targets(rest):
             cut = _short(word, "o")
             deleting = deleting or hit(cut, "-d") or hit(cut, "--delete")
             pruning = pruning or hit(word, "--prune") or hit(word, "--mirror")
-            if word in _PUSH_VALUE_OPTS or (cut != word and word.endswith("o")):
+            if _push_takes_value(word, cut):
                 index += 1  # its value is the next word
         index += 1
     targets = []
@@ -1035,8 +1079,8 @@ def _update_ref_target(rest):
         else:
             cut = _short(word, "m")
             deleting = deleting or crew_gitallow._option_hit(cut, "-d")
-            if cut != word and word.endswith("m"):
-                index += 1
+            if cut != word and cut + "m" == word:
+                index += 1  # `-m` last in its bundle: the reason is the next word
         index += 1
     return deleting, ref
 
@@ -1059,6 +1103,8 @@ def _branch_delete(targets, where, eff, ctx, repo_unseen):
     [] a delete with no readable target. Any hit wins."""
     if targets is None:
         return _CLEAR
+    if repo_unseen:
+        return (COULD_NOT_TELL, ("git-repo-unseen", BRANCH), where)
     named = []
     for index, target in targets:
         if target.startswith("refs/tags/"):
@@ -1069,8 +1115,6 @@ def _branch_delete(targets, where, eff, ctx, repo_unseen):
         named = [(where, None)]
     if not named:
         return _CLEAR
-    if repo_unseen:
-        return (COULD_NOT_TELL, ("git-repo-unseen", BRANCH), where)
     readings = []
     own_inside = _inside(eff, ctx.own_worktrees)
     for offset, name in named:
@@ -1099,7 +1143,7 @@ def _worktree_remove(rest, where, eff, ctx, repo_unseen):
         return (COULD_NOT_TELL, "worktree-target-unseen", where)
     at = where + 1 + found[0]
     path = rest[1 + found[0]]
-    if any(mark in path for mark in _TARGET_UNSEEN) or path.startswith("~"):
+    if not path or any(mark in path for mark in _TARGET_UNSEEN) or path.startswith("~"):
         return (COULD_NOT_TELL, "worktree-target-unseen", at)
     if eff is None or ctx.own_worktrees is None:
         return (COULD_NOT_TELL, "worktree-owner-unseen", at)
@@ -1125,8 +1169,7 @@ def _git_delete(info, start, head):
     ctx = info.ctx
     globals_ = args[:split]
     dirs = crew_gitallow.target_dirs(globals_)
-    assigned = {word.split("=", 1)[0] for word in info.words[start:head] if _ASSIGN_RE.match(word)}
-    repo_unseen = _repo_unseen(globals_, dirs, assigned)
+    repo_unseen = _repo_unseen(globals_, dirs, info.repo_assign[start] < head)
     eff = None if repo_unseen else _effective(ctx.cwd, dirs)
     where = sub_at + 1
     rest = info.words[where:where + GIT_WINDOW]
@@ -1138,12 +1181,16 @@ def _git_delete(info, start, head):
         targets, deleting, pruning = _push_targets(rest)
         reading = _branch_delete(targets if deleting or targets else None, where, eff, ctx,
                                  repo_unseen)
-        if pruning:
+        if pruning and repo_unseen:
+            reading = (COULD_NOT_TELL, ("git-repo-unseen", BRANCH), where)
+        elif pruning:
             reading = _first_worst([reading, (COULD_NOT_TELL, "push-prune", sub_at)])
     else:
         deleting, ref = _update_ref_target(rest)
         if not deleting:
             reading = _CLEAR
+        elif repo_unseen:
+            reading = (COULD_NOT_TELL, ("git-repo-unseen", BRANCH), where)
         elif ref is None or _unseen(ref[1]):
             reading = (COULD_NOT_TELL, "branch-target-unseen", where)
         elif ref[1].startswith("refs/heads/"):
@@ -1157,18 +1204,16 @@ def _git_delete(info, start, head):
 
 def _git(info, start, head):
     """C3: the delete reading first, then the R-34b state reading, the first
-    worst kept. A subcommand crew cannot read names no operation, so a
-    state reading as bad as it goes first and keeps its operation."""
+    worst kept. A subcommand crew cannot read is `git-sub-unseen` with no
+    operation (C13), even beside a state word."""
     deleted, stated = _git_delete(info, start, head), _git_state(info, head)
-    if deleted[1] == "git-sub-unseen":
-        return _first_worst([stated, deleted])
     return _first_worst([deleted, stated])
 
 
 def _state_head(info, start):
     """(verdict, rule, word index) of a command at `start` whose head is not
     terraform's: clear unless a state word stands after the head."""
-    found = _head(info.words, start)
+    found = _head(info.words, start, info.prefix_end)
     if found is None:
         return _CLEAR
     index, head = found

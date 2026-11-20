@@ -576,12 +576,13 @@ def test_a_long_command_is_judged_in_linear_time(command, verdict):
 
 
 # R-34c: every git start reads at most GIT_WINDOW words after its subcommand
-# (C14), so a chain of git deletes stays linear. (The spec's row put the shell
-# builtin `exec` before each `git`; `exec` is not a head prefix -- wrappers
-# are R-34d -- so that row is clear today and the chain is written with
-# terragrunt's `exec --` instead.)
+# (C14), so a chain of git deletes stays linear. The first row is the spec's:
+# the shell builtin `exec` before each `git` (a head prefix), an `exec` start
+# at every `git`; the third strips a long run of prefixes at every start.
 GIT_LONG_COMMANDS = (
+    ("terragrunt exec -- " + "exec git branch -D a " * LONG, "hit"),
     ("terragrunt " + "exec -- git branch -D a " * LONG, "hit"),
+    ("terragrunt exec -- " + "exec " * LONG + "git branch -D a", "hit"),
     ("git branch -D " + "worktree-R-34 " * LONG, "could-not-tell"),
     ("git worktree remove " + "-f " * LONG + "/w/r35", "could-not-tell"),
 )
@@ -686,6 +687,9 @@ GIT_BLOCK = (
     ("bash", "git push -d origin feature-x", BR, DEL, "OWN"),
     ("bash", "git push origin feature-x --delete", BR, DEL, "OWN"),
     ("bash", "git push -o ci.skip --delete origin feature-x", BR, DEL, "OWN"),
+    # an attached `-o` value is not followed by one (review round 1).
+    ("bash", "git push -ofoo origin :feature-x", BR, DEL, "OWN"),
+    ("bash", "git push -fo ci.skip origin :feature-x", BR, DEL, "OWN"),
     ("bash", "git push origin :feature-x", BR, DEL, "OWN"),
     ("bash", "git push origin +:feature-x", BR, DEL, "OWN"),
     ("bash", "git push origin --delete refs/heads/feature-x", BR, DEL, "OWN"),
@@ -693,11 +697,13 @@ GIT_BLOCK = (
     # git reads update-ref's options anywhere before `--`.
     ("bash", "git update-ref refs/heads/feature-x -d", BR, DEL, "OWN"),
     ("bash", "git update-ref -m why -d refs/heads/feature-x", BR, DEL, "OWN"),
+    ("bash", "git update-ref -mwhy -d refs/heads/feature-x", BR, DEL, "OWN"),
     ("bash", "git fetch && git branch -D feature-x", BR, DEL, "OWN"),
     ("bash", "for b in a b; do git branch -D feature-x; done", BR, DEL, "OWN"),
     ("bash", "if true; then git branch -D feature-x; fi", BR, DEL, "OWN"),
     ("bash", "! git branch -D feature-x", BR, DEL, "OWN"),
     ("bash", "command git branch -D feature-x", BR, DEL, "OWN"),
+    ("bash", "exec git branch -D feature-x", BR, DEL, "OWN"),
     ("bash", "git branch -D feature-x > out.txt", BR, DEL, "OWN"),
     ("bash", "terragrunt exec -- git branch -D feature-x", BR, DEL, "OWN"),
     ("powershell", "git.exe branch -D feature-x", BR, DEL, "OWN"),
@@ -741,6 +747,11 @@ GIT_CNT = (
     ("bash", "env GIT_WORK_TREE=/o git worktree remove .", WT, "git-repo-unseen", "OWN"),
     ("bash", 'git -C "$D" branch -D worktree-R-34', BR, "git-repo-unseen", "OWN"),
     ("bash", "git -C %D% branch -D feature-x", BR, "git-repo-unseen", "OWN"),
+    # C5 beats the tag rule, the --prune row and an unreadable ref (review round 1).
+    ("bash", "git --namespace=n push --delete origin refs/tags/v1", BR, "git-repo-unseen",
+     "OWN"),
+    ("bash", "git --namespace=n push --prune origin", BR, "git-repo-unseen", "OWN"),
+    ("bash", 'git --namespace=n update-ref -d "$R"', BR, "git-repo-unseen", "OWN"),
     # no directory to resolve a worktree path against.
     ("bash", "git worktree remove /w/r35", WT, "worktree-owner-unseen", "NO_CWD"),
     ("bash", "git -C ../r35 worktree remove .", WT, "worktree-owner-unseen", "NO_CWD"),
@@ -748,11 +759,13 @@ GIT_CNT = (
     ("bash", "git branch -D", BR, "branch-target-unseen", "OWN"),
     ("bash", "git push --delete origin", BR, "branch-target-unseen", "OWN"),
     ("bash", "git worktree remove", WT, "worktree-target-unseen", "OWN"),
+    # an empty path would resolve to the cwd (review round 1).
+    ("bash", 'git worktree remove ""', WT, "worktree-target-unseen", "OWN"),
     ("bash", "git push --prune origin", BR, "push-prune", "OWN"),
     ("bash", "git push --mirror origin", BR, "push-prune", "OWN"),
     ("bash", "git $SUB -D x", None, "git-sub-unseen", "OWN"),
-    # C3: a state reading as bad as git-sub-unseen keeps its operation.
-    ("bash", "git $SUB terraform.tfstate", OP, "tfstate-git-unseen", "OWN"),
+    # C3/C13: git-sub-unseen, no operation, even beside a state word.
+    ("bash", "git $SUB terraform.tfstate", None, "git-sub-unseen", "OWN"),
     ("bash", "git branch -D " + "worktree-R-34 " * 300, BR, "git-window-exceeded", "OWN"),
     ("bash", "git worktree remove " + "-f " * 300 + "/w/r34", WT, "git-window-exceeded", "OWN"),
 )
@@ -773,6 +786,8 @@ GIT_ALLOW = (
     ("bash", "git update-ref -d refs/tags/v1", "OWN"),
     ("bash", "git update-ref -d feature-x", "OWN"),
     ("bash", "git push -ostuffd origin feature-x", "OWN"),
+    ("bash", "git push --receiv git-receive-pack origin --delete feat/r-34-x", "OWN"),
+    ("bash", "git push --push-opt ci.skip origin --delete feat/r-34-x", "OWN"),
     ("bash", "git branch -uorigin/dev", "OWN"),
     ("bash", "git branch feature-y", "OWN"),
     ("bash", "git branch -m old new", "OWN"),
@@ -798,7 +813,6 @@ GIT_FALSE_NEGATIVES = (
     "env -C /other git branch -D worktree-R-34",  # R-34d
     "cd ../r35 && git worktree remove .",  # R-34d
     "export GIT_DIR=/o/.git; git branch -D worktree-R-34",  # R-34d
-    "exec git branch -D feature-x",  # R-34d: the shell builtin is not a head prefix
     "gh api -X DELETE repos/o/r/git/refs/heads/feature-x",  # R-34e
     "gh pr merge 12 --delete-branch",  # R-34e
     "git update-ref --stdin",  # follow-up
@@ -900,7 +914,8 @@ def test_every_terraform_could_not_tell_row_stays_with_context(command, rule):
     (None, (None, None, None)),
     ("x", (None, None, None)),
     ({"cwd": "", "own_branches": "a", "own_worktrees": ("a",)}, (None, None, None)),
-    ({"cwd": 3, "own_branches": ["a", 1], "own_worktrees": ["a", ""]}, (None, None, None)),
+    ({"cwd": 3, "own_branches": ["a", 1], "own_worktrees": ["a", ""]}, (None, None, ("a", ""))),
+    ({"cwd": "/w", "own_branches": [""], "own_worktrees": None}, ("/w", ("",), None)),
     ({"cwd": "/w", "own_branches": [], "own_worktrees": ["/w"]}, ("/w", (), ("/w",))),
 ])
 def test_the_context_is_read_once_and_junk_is_absent(given, expected):
@@ -937,8 +952,9 @@ def _cleanup_calls(path):
     return found
 
 
+@ON_BOTH
 @pytest.mark.parametrize("name", ["crew_wave.py", "crew_worktrees.py"])
-def test_crews_own_cleanup_reads_as_a_delete_of_anothers(name):
+def test_crews_own_cleanup_reads_as_a_delete_of_anothers(paths, name):
     calls = _cleanup_calls(os.path.join(SCRIPTS, name))
     shapes = {call[:2] for call in calls}
     assert shapes == {("worktree", "remove"), ("branch", "-d")}, calls
@@ -947,7 +963,7 @@ def test_crews_own_cleanup_reads_as_a_delete_of_anothers(name):
         assert call[2:] == (None,), call  # the target is the one non-constant argument
         command = " ".join(("git",) + call[:2] + (fill[call[:2]],))
         op = WT if call[0] == "worktree" else BR
-        assert_hit(crew_oneway, command, op=op, ctx=own())
+        assert_hit(crew_oneway, command, op=op, ctx=own(paths))
 
 
 # --- payloads --------------------------------------------------------------------------------
@@ -2089,6 +2105,23 @@ def case_block_git_rm_with_context(mod):
     assert_hit(mod, "git rm terraform.tfstate", "tfstate-git-remove", ctx=own())
 
 
+def case_block_push_attached_o_value(mod):
+    assert_hit(mod, "git push -ofoo origin :feature-x", DEL, op=BR, ctx=own())
+
+
+def case_cnt_namespace_tag_delete(mod):
+    assert_cnt(mod, "git --namespace=n push --delete origin refs/tags/v1", "git-repo-unseen",
+               op=BR, ctx=own())
+
+
+def case_cnt_worktree_empty_path(mod):
+    assert_cnt(mod, 'git worktree remove ""', "worktree-target-unseen", op=WT, ctx=own())
+
+
+def case_block_exec_builtin(mod):
+    assert_hit(mod, "exec git branch -D feature-x", DEL, op=BR, ctx=own())
+
+
 MUTATIONS = (
     ("1 rm added to the state read set",
      'STATE_READ = frozenset(("list", "show", "pull", "identities"))',
@@ -2124,7 +2157,7 @@ MUTATIONS = (
      "    if commands is None:\n        return []", ("case_block_raw_chain",)),
     ("29 only assignments, env and sudo stripped",
      'HEAD_PREFIXES = frozenset(("env", "sudo", "command", "time", "then", "do", "else", "!",\n'
-     '                           "if", "elif", "while", "until"))',
+     '                           "if", "elif", "while", "until", "exec"))',
      'HEAD_PREFIXES = frozenset(("env", "sudo"))', ("case_block_prefix_then", "case_block_prefix_do",
                                                   "case_block_prefix_bang",
                                                   "case_block_prefix_command")),
@@ -2427,13 +2460,26 @@ MUTATIONS = (
      '        if target.startswith("refs/tags/"):\n            continue\n', "",
      ("case_allow_push_delete_tag",)),
     ("C-prune the --prune/--mirror row dropped",
-     "        if pruning:\n", "        if False:\n", ("case_cnt_push_prune",)),
+     "        elif pruning:\n", "        elif False:\n", ("case_cnt_push_prune",)),
     ("C-ns the --namespace repo check dropped",
      '    if any(word.split("=", 1)[0] == "--namespace" for word in globals_):\n'
      "        return True\n", "", ("case_cnt_namespace",)),
     ("C-pct the % and ~ -C repo check dropped",
      '    return any(_unseen(value) or value.startswith("~") for value in dirs)\n',
      "    return False\n", ("case_cnt_percent_dash_c",)),
+    # R-34c review round 1.
+    ("C-o an attached -o value read as taking the next word",
+     '        return cut + "o" == word\n', '        return word.endswith("o")\n',
+     ("case_block_push_attached_o_value",)),
+    ("C-tags-ns the unknown repository judged after the tag rule",
+     "    if repo_unseen:\n"
+     '        return (COULD_NOT_TELL, ("git-repo-unseen", BRANCH), where)\n'
+     "    named = []\n", "    named = []\n", ("case_cnt_namespace_tag_delete",)),
+    ("C-empty an empty worktree path resolved to the cwd",
+     "    if not path or any(", "    if any(", ("case_cnt_worktree_empty_path",)),
+    ("C-exec the shell builtin exec not a head prefix",
+     '"if", "elif", "while", "until", "exec"))', '"if", "elif", "while", "until"))',
+     ("case_block_exec_builtin",)),
 )
 
 
