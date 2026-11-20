@@ -13,15 +13,22 @@ generator failing to import is in this list on purpose: a check that could not
 run compared nothing, and must never read as current.
 
 CONFIG.md is generated WHOLE (L-0725): a one-byte edit anywhere in it, a deleted
-file and a changed default are all stale. So are the four R-C2 files in
-`plugin/crew/docs/configuration/` (the two blanks, `keys.json` and
-`template.annotated.md`), and a `crew_keys.BLANK_EXCLUDED` that breaks the
-blank rules (R1, R2, a blank reason, an exclusion outside the layer) stops the
-generator with exit 2.
+file and a changed default are all stale. Since R-C4 it is the key INDEX (a
+header, then one line per key), and the prose and family tables it held are in
+`plugin/crew/docs/configuration/reference.md`, generated whole too: a one-byte
+edit, a hand edit in a table row and a deleted file are stale there, and a row
+deleted from the index or a one-byte edit in its header is stale here. The
+index names `docs/configuration/guide.md` only when that file exists, so a
+pointer hand-added while it is absent (dangling) and a `guide.md` created while
+the index lacks the pointer (the second lander's duty) are both stale. So are
+the four R-C2 files in `plugin/crew/docs/configuration/` (the two blanks,
+`keys.json` and `template.annotated.md`), and a `crew_keys.BLANK_EXCLUDED` that
+breaks the blank rules (R1, R2, a blank reason, an exclusion outside the layer)
+stops the generator with exit 2.
 
-Must-allow: an unchanged copy, a CRLF checkout, and a machine-global config in
-HOME (the generator reads no config file, so the output is the same on every
-machine).
+Must-allow: an unchanged copy, a CRLF checkout of all seven outputs, and a
+machine-global config in HOME (the generator reads no config file, so the
+output is the same on every machine).
 
 Run: python3 scripts/_test/config-reference.py
 """
@@ -45,7 +52,10 @@ CONFIG_MD = os.path.join("plugin", "crew", "CONFIG.md")
 SCRIPTS = os.path.join("plugin", "crew", "hooks", "scripts")
 CONF_DIR = os.path.join("plugin", "crew", "docs", "configuration")
 CONF_FILES = tuple(os.path.join(CONF_DIR, name) for name in (
-    "config.blank.json", "global.blank.json", "keys.json", "template.annotated.md"))
+    "config.blank.json", "global.blank.json", "keys.json", "template.annotated.md",
+    "reference.md"))
+REFERENCE_MD = os.path.join(CONF_DIR, "reference.md")
+GUIDE_MD = os.path.join(CONF_DIR, "guide.md")
 # `crew_config` takes four default blocks from `crew_upgrade`, so the defaults
 # are not all in SCRIPTS.
 UPGRADE = os.path.join("plugin", "crew", "skills", "crew-graph", "scripts")
@@ -63,7 +73,7 @@ CHECKER = load_checker()
 
 
 def build(tmp):
-    """The generator, its six outputs and crew's scripts, copied into `tmp`."""
+    """The generator, its seven outputs and crew's scripts, copied into `tmp`."""
     for rel in (GEN, REFERENCE, CONFIG_MD) + CONF_FILES:
         os.makedirs(os.path.join(tmp, os.path.dirname(rel)), exist_ok=True)
         shutil.copy2(os.path.join(REPO, rel), os.path.join(tmp, rel))
@@ -130,11 +140,49 @@ def _default_changed(tmp):
 
 
 def _table_hand_edit(tmp):
-    edit(tmp, CONFIG_MD, "| `pm.maxDispatches` | both |", "| `pm.maxDispatches` | repo |")
+    """R-C4: the family tables moved to reference.md."""
+    edit(tmp, REFERENCE_MD, "| `pm.maxDispatches` | both |", "| `pm.maxDispatches` | repo |")
 
 
 def _preamble_one_byte(tmp):
-    edit(tmp, CONFIG_MD, "## The two layers", "## The two layers.")
+    """R-C4: the preamble sections moved to reference.md."""
+    edit(tmp, REFERENCE_MD, "## The two layers", "## The two layers.")
+
+
+def _reference_md_deleted(tmp):
+    os.remove(os.path.join(tmp, REFERENCE_MD))
+
+
+def _index_row_deleted(tmp):
+    path = os.path.join(tmp, CONFIG_MD)
+    with open(path, encoding="utf-8", newline="") as fh:
+        lines = fh.read().split("\n")
+    rows = [line for line in lines if line.startswith("| `pm.maxDispatches` |")]
+    assert len(rows) == 1, rows
+    lines.remove(rows[0])
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        fh.write("\n".join(lines))
+
+
+def _index_header_one_byte(tmp):
+    edit(tmp, CONFIG_MD, "# crew configuration key index", "# crew configuration key index.")
+
+
+_GUIDE_POINTER = "- `docs/configuration/guide.md`: how to configure crew, with examples.\n"
+
+
+def _guide_pointer_dangling(tmp):
+    """The `guide.md` pointer hand-added to the index while `guide.md` is absent."""
+    assert not os.path.exists(os.path.join(tmp, GUIDE_MD))
+    edit(tmp, CONFIG_MD, "- `docs/configuration/keys.json`:",
+         _GUIDE_POINTER + "- `docs/configuration/keys.json`:")
+
+
+def _guide_created_index_unchanged(tmp):
+    """`guide.md` arrives (R-C3) and the index is not regenerated: the second
+    lander's duty, which `--check` must not let pass silently."""
+    with open(os.path.join(tmp, GUIDE_MD), "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("# crew configuration guide\n")
 
 
 def _last_byte(tmp):
@@ -229,9 +277,22 @@ MUST_BLOCK = [
      "stale: docs/guides/crew/src/configuration-reference.md", "configuration-reference.md"),
     ("a default changed in crew_state.py", _default_changed, 1,
      "stale: plugin/crew/CONFIG.md", "CONFIG.md"),
-    ("a hand edit inside a CONFIG.md table row", _table_hand_edit, 1,
+    ("a hand edit inside a reference.md table row", _table_hand_edit, 1,
+     "stale: plugin/crew/docs/configuration/reference.md", "reference.md"),
+    ("a one-byte edit in reference.md's preamble", _preamble_one_byte, 1,
+     "stale: plugin/crew/docs/configuration/reference.md", "reference.md"),
+    ("reference.md edited by one byte",
+     _conf_one_byte("reference.md", "## Counts by family", "## Counts by family."), 1,
+     "stale: plugin/crew/docs/configuration/reference.md", "reference.md"),
+    ("reference.md deleted", _reference_md_deleted, 1,
+     "stale: plugin/crew/docs/configuration/reference.md", "reference.md"),
+    ("a row deleted from the CONFIG.md index", _index_row_deleted, 1,
      "stale: plugin/crew/CONFIG.md", "CONFIG.md"),
-    ("a one-byte edit in CONFIG.md's preamble", _preamble_one_byte, 1,
+    ("a one-byte edit in the CONFIG.md index header", _index_header_one_byte, 1,
+     "stale: plugin/crew/CONFIG.md", "CONFIG.md"),
+    ("a guide.md pointer hand-added to the index while guide.md is absent",
+     _guide_pointer_dangling, 1, "stale: plugin/crew/CONFIG.md", "CONFIG.md"),
+    ("guide.md created while the index lacks its pointer", _guide_created_index_unchanged, 1,
      "stale: plugin/crew/CONFIG.md", "CONFIG.md"),
     ("one byte appended to CONFIG.md", _last_byte, 1,
      "stale: plugin/crew/CONFIG.md", "CONFIG.md"),

@@ -198,6 +198,7 @@ _KIMI_SUITE = ("test_kimi_probe.py", "test_kimi_stream.py", "test_kimi_docs.py",
     ("plugin/crew/hooks/scripts/crew_state.py", ("test_provider_table.py",)),
     ("plugin/crew/skills/crew-setup/SKILL.md", ("test_crew_config.py",)),
     ("plugin/crew/CONFIG.md", ("test_crew_config.py",)),
+    ("plugin/crew/docs/configuration/reference.md", ("test_crew_config.py",)),
     ("plugin/crew/templates/config.template.json", ("test_crew_config.py",)),
 ])
 def test_every_kimi_file_reaches_a_rule_that_runs_its_tests(path, needs):

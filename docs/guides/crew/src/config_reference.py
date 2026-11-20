@@ -1,17 +1,24 @@
 #!/usr/bin/env python3
 """Generate crew's configuration reference from the code (T-0048, L-0725).
 
-Writes six files, all whole, from `crew_config.default_config()` /
+Writes seven files, all whole, from `crew_config.default_config()` /
 `default_global_config()` (the defaults and the key set), the ratchet tables in
 `crew_guards` / `crew_config` (the layer), the guard profile table
 (`crew_guards.PROFILE_MAP`) and `crew_keys.KEY_META` (the values, summaries,
 families and arrival versions):
 
 - `docs/guides/crew/src/configuration-reference.md`, the guide's reference;
-- `plugin/crew/CONFIG.md`, the settings reference that ships with the plugin.
-  Since L-0725 it is generated whole: nothing in it is hand-written, so a
-  one-byte edit anywhere makes `--check` fail. The reasoning behind the keys
-  lives in `docs/crew/config-rationale.md`.
+- `plugin/crew/CONFIG.md`, the key INDEX that ships with the plugin (R-C4): a
+  short header naming where things are, then one line per key (Key | Layer |
+  Default | Family | Summary), so it costs exactly one line per key and stays
+  under 600 lines (`test_crew_config.py`). It names
+  `docs/configuration/guide.md` only when that file exists.
+- `plugin/crew/docs/configuration/reference.md` (R-C4), what CONFIG.md held
+  before: the layer rules, the long prose sections and one table per family
+  with the allowed values and the arrival version. Since L-0725 both are
+  generated whole: nothing in them is hand-written, so a one-byte edit
+  anywhere makes `--check` fail. The reasoning behind the keys lives in
+  `docs/crew/config-rationale.md`.
 - `plugin/crew/docs/configuration/` (R-C2): `config.blank.json` and
   `global.blank.json`, one copy-safe blank per layer (every key at its default
   minus `crew_keys.BLANK_EXCLUDED`, so copying one into an empty layer changes
@@ -23,7 +30,7 @@ It never reads a config FILE -- no `read_global_config`, no `load_config` --
 so the output is the same on every machine, whatever `~/.claude/crew/` holds.
 
 Usage:
-    config_reference.py --write   # regenerate all six
+    config_reference.py --write   # regenerate all seven
     config_reference.py --check   # exit 1 naming each stale file, 2 on any error
 
 `--check` is what `scripts/check-marketplace.py` runs. An error is exit 2 with
@@ -51,6 +58,8 @@ REPO_BLANK = os.path.join(CONF_DIR, "config.blank.json")
 GLOBAL_BLANK = os.path.join(CONF_DIR, "global.blank.json")
 KEYS_JSON = os.path.join(CONF_DIR, "keys.json")
 ANNOTATED = os.path.join(CONF_DIR, "template.annotated.md")
+REFERENCE_MD = os.path.join(CONF_DIR, "reference.md")
+GUIDE_MD = os.path.join(CONF_DIR, "guide.md")
 COMMAND = "python3 docs/guides/crew/src/config_reference.py --write"
 RATIONALE = "docs/crew/config-rationale.md"
 
@@ -752,11 +761,13 @@ def render_reference(model=None):
     return "\n".join(out).rstrip("\n") + "\n"
 
 
-CONFIG_PREAMBLE = """\
+REFERENCE_PREAMBLE = """\
 # crew configuration reference
 
 Generated from the code by `{command}`. Do not edit by hand: `python3 scripts/check-marketplace.py` fails when this file is stale.
-The reasoning behind the keys is in `{rationale}`.
+`plugin/crew/CONFIG.md` is the key index, one line per key; this file holds the
+layer rules, the sections below and, per family, every key's allowed values and
+arrival version. The reasoning behind the keys is in `{rationale}`.
 
 {total} keys: {machine} settable in the machine-global file, {repo_only} repo-only.
 
@@ -865,8 +876,9 @@ def _profile_table(model):
     return "\n".join(rows)
 
 
-def render_config_md(model=None):
-    """The whole of `plugin/crew/CONFIG.md`."""
+def render_reference_md(model=None):
+    """The whole of `plugin/crew/docs/configuration/reference.md` (R-C4): what
+    CONFIG.md held before it became an index, plus a `Since` column."""
     model = model or Model()
     keys = model.keys
     total, machine, repo_only = model.counts()
@@ -876,7 +888,7 @@ def render_config_md(model=None):
     family_table = "\n".join(
         ["| Family | Keys |", "|---|---|"]
         + [f"| `{family}` | {len(by_family[family])} |" for family in keys.FAMILIES])
-    out = [CONFIG_PREAMBLE.format(
+    out = [REFERENCE_PREAMBLE.format(
         command=COMMAND, rationale=RATIONALE, total=total, machine=machine,
         repo_only=repo_only, profile_table=_profile_table(model),
         human_only=HUMAN_ONLY_SECTION + "\n" + RUN_APPROVAL_SECTION,
@@ -886,12 +898,53 @@ def render_config_md(model=None):
         if not members:
             continue
         out += [f"## `{family}` keys ({len(members)})", "",
-                "| Key | Layer | Default | Values | Summary |", "|---|---|---|---|---|"]
+                "| Key | Layer | Default | Values | Since | Summary |",
+                "|---|---|---|---|---|---|"]
         for key in members:
+            row = keys.KEY_META[key]
             out.append("| " + " | ".join(_cell(c) for c in (
                 f"`{key}`", keys.layer_of(key), model.default(key),
-                model.values(key), keys.KEY_META[key]["summary"])) + " |")
+                model.values(key), _since(row["since"]), row["summary"])) + " |")
         out.append("")
+    return "\n".join(out).rstrip("\n") + "\n"
+
+
+INDEX_HEAD = """\
+# crew configuration key index
+
+Generated from the code by `{command}`. Do not edit by hand: `python3 scripts/check-marketplace.py` fails when this file is stale.
+
+{total} keys: {machine} settable in the machine-global file, {repo_only} repo-only.
+
+One line per key below. Everything else is in `docs/configuration/` beside this file:
+
+- `docs/configuration/reference.md`: the two layers and their exceptions, the human-only opt-out, the run approval, git commands, guard profiles, verify-gate trust, migrating and removed keys, and one table per family with each key's allowed values and arrival version.
+{guide}- `docs/configuration/keys.json`: the same per-key facts, for tools.
+- `docs/configuration/config.blank.json` and `docs/configuration/global.blank.json`: copy-safe blanks, one per layer.
+- `docs/configuration/template.annotated.md`: both blanks with each key's facts beside it.
+- The reasoning behind the keys: `{rationale}`.
+"""
+
+INDEX_GUIDE_LINE = "- `docs/configuration/guide.md`: how to configure crew, with examples.\n"
+
+
+def render_config_md(model=None, *, guide_exists):
+    """The whole of `plugin/crew/CONFIG.md`, the key index (R-C4): a short
+    header, then one table with one line per key. The `guide.md` pointer is
+    emitted only when `guide_exists` is true, so the index never names a file
+    that is not there."""
+    model = model or Model()
+    keys = model.keys
+    total, machine, repo_only = model.counts()
+    out = [INDEX_HEAD.format(
+        command=COMMAND, rationale=RATIONALE, total=total, machine=machine,
+        repo_only=repo_only, guide=INDEX_GUIDE_LINE if guide_exists else ""),
+        "| Key | Layer | Default | Family | Summary |", "|---|---|---|---|---|"]
+    for key in model.leaves:
+        row = keys.KEY_META[key]
+        out.append("| " + " | ".join(_cell(c) for c in (
+            f"`{key}`", keys.layer_of(key), model.default(key),
+            f"`{row['family']}`", row["summary"])) + " |")
     return "\n".join(out).rstrip("\n") + "\n"
 
 
@@ -986,7 +1039,8 @@ The repo blank is not the `/crew:init` template
 (`templates/config.template.json`): that one also spells the two-layer keys at
 their defaults, so it holds your machine values down. `keys.json` holds the
 same facts for every key, for tools. The reasons behind the rules are in
-`{rationale}`; every key's full description is in `plugin/crew/CONFIG.md`.
+`{rationale}`; every key's full description is in `reference.md`, beside this
+file (`plugin/crew/CONFIG.md` is the one-line-per-key index).
 """
 
 
@@ -1037,9 +1091,11 @@ def render_annotated(model=None):
 
 
 def expected():
-    """`{path: full expected text}` for all six files."""
+    """`{path: full expected text}` for all seven files."""
     model = Model()
-    return {REFERENCE: render_reference(model), CONFIG_MD: render_config_md(model),
+    return {REFERENCE: render_reference(model),
+            CONFIG_MD: render_config_md(model, guide_exists=os.path.exists(GUIDE_MD)),
+            REFERENCE_MD: render_reference_md(model),
             REPO_BLANK: render_repo_blank(model), GLOBAL_BLANK: render_global_blank(model),
             KEYS_JSON: render_keys_json(model), ANNOTATED: render_annotated(model)}
 
