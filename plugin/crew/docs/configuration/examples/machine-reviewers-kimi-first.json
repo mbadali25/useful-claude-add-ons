@@ -1,0 +1,6 @@
+{
+  "qa": {
+    "provider": "auto",
+    "order": ["kimi", "codex", "copilot", "claude"]
+  }
+}

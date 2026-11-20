@@ -123,6 +123,24 @@ against every reader of the two files: `explain_config`, `resolve_guard`,
 per key in the other layer. The limit: a reader added later that opens a config
 file directly is not in that list, and must be added to the probe by hand.
 
+### The worked examples hold only keys that exist (R-C3)
+
+`plugin/crew/docs/configuration/guide.md` and `examples/*.json` are hand-written
+and held by `plugin/crew/tests/test_config_examples.py`. `crew_config.py --check`
+reads only the `environments` block and `--check-global` reports a partial file
+as missing keys, and both exit 0, so a typo, a bad value or a key in the wrong
+layer passes them. An example therefore also has to come back empty from
+`--inert --json`, map every leaf to a `keys.json` key (an object only under an
+`open-table` key), hold a value its layer class allows (one table in the suite,
+one row per `layer` string: a repo may only veto a `machine-arms` key with
+`false`, an example holds a `humanOnly` key only as `true` because an opt-out
+needs the owner's receipt, and `guards.git.allow` only as `"off"`), stay inside
+declared `values`, and resolve its `tiers` through `crew_tiers`. Examples name
+only keys that exist: a planned key would read as unknown. The guide may name a
+planned key only from the suite's `NOT_YET` list and on a line naming its ticket,
+and an entry that lands fails the suite until it is removed and the example
+written.
+
 
 ### In a linked worktree
 

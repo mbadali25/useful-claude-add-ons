@@ -1,0 +1,10 @@
+{
+  "schema": 8,
+  "production": {
+    "hosts": ["prod-*.example.com", "db-prod-*.example.com"],
+    "databases": ["*-prod", "*_production"]
+  },
+  "environments": {
+    "nonProd": ["dev", "dev-*", "staging-*"]
+  }
+}
