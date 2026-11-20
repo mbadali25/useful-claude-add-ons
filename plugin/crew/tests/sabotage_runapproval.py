@@ -267,6 +267,7 @@ RUNAPPROVAL_MUTATIONS = (
 # its label. Rows S1-S26 of the spec's earlier revisions are withdrawn or restated here.
 
 _BLOCK = _T + "test_with_a_class_on_a_shape_no_excuse_recognises_is_still_refused[{}]"
+_ALLOW = _T + "test_with_a_class_on_a_recorded_everyday_command_is_allowed[{}]"
 _CWD = _T + "test_with_a_class_on_a_relative_glob_is_placed_from_the_directory_it_runs_in[{}]"
 _HOME = _T + "test_with_a_class_on_a_rooted_or_joined_word_built_from_the_home_is_refused[{}]"
 _LINK = _T + "test_with_a_class_on_a_home_reached_through_a_link_is_read_in_both_forms"
@@ -464,8 +465,8 @@ _R20_ROWS = (
                                  "msg-launder-ps", "msg-launder-editmsg", "msg-launder-sed-pytest",
                                  "msg-launder-sed-doctest")]),
     ("S61 the message rows accept any flag",
-     '        operands = _fit(words[len(key.split()):], spec, tool == "PowerShell")\n',
-     '        operands = [w for w in words[len(key.split()):] if not w.value.startswith("-")]\n',
+     '        operands = _fit(words[first:], spec, tool == "PowerShell")\n',
+     '        operands = [w for w in words[first:] if not w.value.startswith("-")]\n',
      [_BLOCK.format("msg-tag-sign")]),
     ("S62 cp and mv are Copy-Item / Move-Item on every PowerShell",
      '    if ps and head in ("cp", "mv") and not _ps_cp_is_alias():\n',
@@ -508,6 +509,16 @@ _R20_ROWS = (
      "            return False  # only the destination may name the crew dir\n", "",
      [_BLOCK.format(i) for i in ("cp-crew-source-relative", "cp-crew-source-nested",
                                  "ps-crew-source-relative")]),
+    ("S72 PowerShell quote spans close only on ASCII quotes (review round 2)",
+     "            if ps and any(quote in body for quote in _PS_QUOTES):\n"
+     "                raise _NotPlain  # PowerShell closes a quote on any of these, not only the ASCII one\n",
+     "",
+     [_BLOCK.format(i) for i in ("msg-ps-typographic-single", "msg-ps-typographic-double",
+                                 "msg-ps-typographic-low")]),
+    ("S73 D4 (b) does not consume a non-message flag's value word (review round 2)",
+     "        width = _flag_width(args, k, spec) or 1\n",
+     "        width = (_flag_width(args, k, spec) or 1) if word.value in flags else 1\n",
+     [_ALLOW.format(i) for i in ("msg-label-double-dash", "msg-ps-label-double-dash")]),
 )
 
 def _case(target):

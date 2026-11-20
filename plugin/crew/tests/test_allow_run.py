@@ -1229,6 +1229,7 @@ _B = "~/.claude/crew/forged/a.json"
 _C = "~\\.claude\\crew\\forged\\a.json"
 _TAIL = " && git log -1 --oneline | cut -d ' ' -f 2- | bash"
 _TOUCH = "touch ~/.claude/crew/run-approvals/receipts/a"
+_PS_TOUCH = "ni ~/.claude/crew/run-approvals/receipts/a"
 
 _R20_ALLOW = [
     # O1-O17, verbatim (section 2 of the spec)
@@ -1276,6 +1277,10 @@ _R20_ALLOW = [
     ("tag-message", "Bash", "git tag -a v1 -m 'run-approvals tripwire'"),
     ("msg-add-commit-status", "Bash",
      "git add -A && git commit -m 'docs: the run-approvals store' && git status"),
+    # review round 2: a flag's value word is consumed with its flag, so `--` there is a value
+    ("msg-label-double-dash", "Bash", "gh pr create --label '--' --title 'run-approvals'"),
+    ("msg-ps-label-double-dash", "PowerShell", "gh pr create --label '--' --title 'run-approvals'"),
+    ("msg-commit-message-double-dash", "Bash", "git commit -m '--' -m 'run-approvals'"),
     # Claude started fresh (D5)
     ("claude-stream-json", "Bash", "claude -p 'x' --output-format stream-json | tee out.jsonl | jq -c ."),
     ("claude-plugin-list-ls", "Bash", "claude plugin list; ls -lrt"),
@@ -1450,6 +1455,14 @@ _R20_BLOCK = [
     # review round 1: after git's `--` every word is a pathspec, never a message D4 (b) drops
     ("msg-after-double-dash", "Bash", "git commit -m 'notes' -- -m 'run-approvals'"),
     ("msg-after-double-dash-eq", "Bash", "git commit -m 'notes' -- --message='run-approvals'"),
+    ("msg-gh-after-double-dash", "Bash", "gh pr create --title 'notes' -- --body 'run-approvals'"),
+    # review round 2: PowerShell ends an ASCII-opened quote on a typographic one as well
+    ("msg-ps-typographic-single", "PowerShell",
+     f"git commit -m 'x{chr(0x2019)}; {_PS_TOUCH}; git commit -m {chr(0x2018)}y'"),
+    ("msg-ps-typographic-double", "PowerShell",
+     f"git commit -m \"x{chr(0x201d)}; {_PS_TOUCH}; git commit -m {chr(0x201c)}y\""),
+    ("msg-ps-typographic-low", "PowerShell",
+     f"git commit -m 'x{chr(0x201a)}; {_PS_TOUCH}; git commit -m {chr(0x201b)}y'"),
     # rev 10: a dropped message read back and run (the owner's MUST-BLOCK)
     ("msg-launder-store", "Bash",
      "git commit --allow-empty -m 'cp forged.json "

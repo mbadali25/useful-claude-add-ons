@@ -902,6 +902,9 @@ class _NotPlain(Exception):
 
 _PLAIN_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./:=,@+-*?[]")
 _ENDS_WORD = " \t\n;&|"
+# PowerShell's single quotes (U+2018 U+2019 U+201A U+201B) and double quotes (U+201C
+# U+201D U+201E): any of them ends a span an ASCII quote opened.
+_PS_QUOTES = "‘’‚‛“”„"
 _PIPES = ("&&", "||", "|")
 _NAME_EQ_RE = re.compile(r"--[A-Za-z0-9][A-Za-z0-9_-]*=", re.ASCII)
 _VARIABLE_RE = re.compile(r"\$(?:env:)?[A-Za-z_][A-Za-z0-9_]*|\$\{[A-Za-z_][A-Za-z0-9_]*\}", re.ASCII)
@@ -1001,6 +1004,8 @@ def _scan_word(text, i, ps, loose):
             if close < 0:
                 raise _NotPlain
             body = text[i + 1:close]
+            if ps and any(quote in body for quote in _PS_QUOTES):
+                raise _NotPlain  # PowerShell closes a quote on any of these, not only the ASCII one
             if char == '"':
                 bare = _VARIABLE_RE.sub("", body) if loose else body
                 if "$" in bare or "`" in bare or (not ps and "\\" in body):
@@ -1418,7 +1423,7 @@ def _message_args(cmd, tool):
     if name == "git" and sub[:1] == ["commit"]:
         if _git_row(words, tool == "PowerShell") != "git commit":
             return None
-        key = None
+        key, spec, first = None, _GIT_ROWS["commit"][0], 2  # `sub` is words[1:3]: no `--no-pager` here
     elif name == "git" and sub[:1] == ["tag"]:
         key = "git tag"
     elif name == "gh" and len(sub) == 2:
@@ -1429,25 +1434,31 @@ def _message_args(cmd, tool):
         return None
     if key is not None:
         spec, (least, most) = _MESSAGE_ROWS[key]
-        operands = _fit(words[len(key.split()):], spec, tool == "PowerShell")
+        first = len(key.split())
+        operands = _fit(words[first:], spec, tool == "PowerShell")
         if operands is None or not least <= len(operands) <= most:
             return None
         if most and key != "git tag" and not _DIGITS_RE.fullmatch(operands[0].value):
             return None
-    flags, spans, k = _MESSAGE_FLAGS[name], [], 1
-    while k < len(words):
-        word = words[k]
+    # The spans come from the same walk `_fit` makes over the same closed flag
+    # list: a flag's value word is consumed with its flag, so a value that reads
+    # `--` (`--label '--'`) is a value, and only a bare `--` standing where a
+    # flag may stand ends the flags.
+    args, flags, spans, k = words[first:], _MESSAGE_FLAGS[name], [], 0
+    while k < len(args):
+        word = args[k]
+        if not word.value.startswith("-"):
+            k += 1  # an operand
+            continue
         if word.value == "--":
             break  # every word after `--` is a pathspec or operand, never a message
-        if word.value in flags and k + 1 < len(words):
-            if words[k + 1].quoted:
-                spans.append((words[k + 1].start, words[k + 1].end))
-            k += 2
-            continue
+        width = _flag_width(args, k, spec) or 1
+        if width == 2 and word.value in flags and args[k + 1].quoted:
+            spans.append((args[k + 1].start, args[k + 1].end))
         for prefix in flags:
-            if prefix.endswith("=") and word.quoted and word.value.startswith(prefix):
+            if width == 1 and prefix.endswith("=") and word.quoted and word.value.startswith(prefix):
                 spans.append((word.start + len(prefix), word.end))
-        k += 1
+        k += width
     return spans
 
 
