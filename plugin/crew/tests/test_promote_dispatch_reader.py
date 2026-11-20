@@ -55,6 +55,27 @@ def test_dispatch_read_agrees_with_dispatch_answer(text, kind):
     assert crew_dispatch.dispatch_read(text, "bash")[0] == kind
 
 
+TIERED = {"workflows": {}, "problem": "", "tiered": True}
+
+
+@pytest.mark.parametrize("text,kind", LINES)
+def test_dispatch_read_agrees_with_dispatch_answer_under_tiered(text, kind):
+    """R-35: under `tiered` with no workflow listed, the same reading. An
+    unsure line is could-not-tell, a line sending no dispatch (and `--help`)
+    is unlisted, and a read dispatch is `unknown` with `unlisted=True` -- the
+    machine tier map then decides it."""
+    state, _why, scope = crew_dispatch.dispatch_answer(text, "bash", dict(TIERED))
+    unsure = state == crew_dispatch.ENV_UNKNOWN and (scope or {}).get(
+        "op") == crew_dispatch.OP_LINE_NOT_LITERAL
+    assert unsure == (kind == "unsure")
+    if kind == "none" or "--help" in text:
+        assert state == crew_dispatch.ENV_UNLISTED, (state, scope)
+    elif kind == "read":
+        assert state == crew_dispatch.ENV_UNKNOWN, (state, scope)
+        assert all(s.get("unlisted") is True for _k, _w, s in scope["dispatches"]), scope
+    assert crew_dispatch.dispatch_read(text, "bash")[0] == kind
+
+
 def test_dispatch_read_returns_the_scope_shape():
     kind, _why, scopes = crew_dispatch.dispatch_read(
         "gh api -X POST repos/o/r/actions/workflows/deploy.yml/dispatches "

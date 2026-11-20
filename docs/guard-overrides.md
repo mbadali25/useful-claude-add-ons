@@ -38,9 +38,11 @@ guards.prodServer       none | read | full    — added 2026-09-13, see below
 ```
 
 **Since L-0725 (crew 1.3) these keys are no longer written.** The shipped design above
-used one key per guard. Today a layer sets `guards.profile` (`off | standard | strict`)
-and, where it needs one guard to differ, `guards.overrides.<guard>` with the same tiers
-as the table. The old `guards.<name>` keys are still read as aliases for the override
+used one key per guard. Today a layer sets `guards.profile` (`off | standard | strict |
+balanced`) and, where it needs one guard to differ, `guards.overrides.<guard>` with the
+same tiers as the table, plus `tiered` (between `block` and `ask`) for `terraformApply`
+and `deployWorkflow` since R-35: under it the machine tier map, not the repo's
+`environments` block, decides which deploys run unattended. The old `guards.<name>` keys are still read as aliases for the override
 until `/crew:migrate` rewrites the layer, and the per-guard ratchet runs unchanged on
 the per-layer values. The profile table and the expansion rule are in
 `docs/crew/config-rationale.md`, "guards - the configurable guardrails". The sections

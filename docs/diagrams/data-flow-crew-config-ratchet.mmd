@@ -60,7 +60,7 @@
 %%     anchor drew at a smaller size. The tuple SHAPES still disagree
 %%     ((function, function, dict) write-side vs (tuple, function, function)
 %%     read-side), confirmed by `type()` on each element, not asserted.
-%% Note X1: <b>guards.profile</b> (off | standard | strict) is read in EACH layer separately: crew_guards.layer_guard_state :638 looks up the
+%% Note X1: <b>guards.profile</b> (off | standard | strict | balanced) is read in EACH layer separately: crew_guards.layer_guard_state :638 looks up the
 %%    layer's profile in PROFILE_MAP :240. off is today's GUARD_DEFAULTS, so a layer that sets nothing resolves as it always did.
 %%    The profile itself is never ratcheted.
 %% Note X2: <b>guards.overrides.&lt;guard&gt;</b> in the same layer replaces the profile's value for that one guard, validated against
@@ -114,7 +114,7 @@ flowchart TB
 
     subgraph Expand["FIRST, each layer expands its own profile and overrides into one value per guard"]
         direction TB
-        X1["<b>guards.profile</b><br/>off | standard | strict<br/>PROFILE_MAP, per layer"]
+        X1["<b>guards.profile</b><br/>off | standard | strict | balanced<br/>PROFILE_MAP, per layer"]
         X2["<b>guards.overrides.&lt;guard&gt;</b><br/>replaces the profile's value<br/>for that one guard"]
         X3["legacy <b>guards.&lt;name&gt;</b> still read<br/>until /crew:migrate;<br/>the narrower of the two wins"]
         X4["malformed profile or override<br/>= the guard's FLOOR,<br/>never off"]

@@ -3039,6 +3039,92 @@ def _approval_is_live(marker):
     return abs(age) <= crew_state.GUARD_APPROVAL_TTL
 
 
+def _deploy_tiered(root):
+    """True when the EFFECTIVE `guards.deployWorkflow` is `tiered` (R-35), so
+    every dispatch is judged. A read that raises is True: the line is judged,
+    and `guard_decision` meets the same failure on its own road -- never a
+    dispatch passed unjudged."""
+    try:
+        return crew_config.resolve_guard(root, DEPLOY_RULE)["effective"] == "tiered"
+    except Exception:  # pylint: disable=broad-exception-caught
+        return True
+
+
+def _tf_tier_names(scope, cwd, state, sidecar):
+    """`(names, why)`: every workspace name a terraform line's signals give
+    (the workspace, TF_VAR_environment / `-var environment`, the saved plan's
+    workspace and environment), or None and what crew could not tell. The
+    signals `_tf_environment` reads, without its nonProd classification."""
+    if scope.get("fed"):
+        return None, "fed-arguments"
+    if scope["op"] in ("run-apply", "run-destroy") or scope["head"] == "terragrunt":
+        return None, "terragrunt"
+    if scope["op"] in ("ws-new", "ws-create", "ws-delete"):
+        signals = [("name", scope.get("name") if _literal(scope.get("name")) else None, "")]
+    else:
+        signals = [_tf_workspace_signal(scope, cwd, state), _tf_var_signal(scope)]
+        if sidecar is not None:
+            bound = sidecar.get("workspace")
+            signals.append(("plan", bound if _literal(bound) else None, ""))
+            if sidecar.get("environment") is not None:
+                signals.append(("plan env", sidecar["environment"], ""))
+    signals = [s for s in signals if s is not None]
+    if any(value is None for _source, value, _why in signals):
+        return None, "unreadable"
+    return sorted({value for _source, value, _why in signals}), None
+
+
+def _tier_of(root, names, why):
+    """`(tier, target, reason)` for a terraform line's workspace names under
+    `tiered`: each `workspace:<name>` looked up through `crew_tiers.resolve`
+    (lazily imported); names whose tiers differ are `unknown`. A root that is
+    not a non-empty string is `unknown` and the map is not read."""
+    targets = [f"workspace:{n}" for n in names or ()]
+    if why is not None or not targets:
+        return "unknown", targets[0] if targets else "workspace:-", why or "no-signal"
+    if not isinstance(root, str) or not root:
+        return "unknown", targets[0], "no-root"
+    try:
+        import crew_tiers  # pylint: disable=import-outside-toplevel
+        field = crew_tiers.FIELD
+        found = [(crew_tiers.resolve(t, root), t) for t in targets]
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        return "unknown", targets[0], f"lookup-failed ({type(exc).__name__})"
+    tiers = [(r[field] if r[field] in ("dev", "qa", "prod") else "unknown", t, r["reason"])
+             for r, t in found]
+    if len({x[0] for x in tiers}) > 1:
+        return "unknown", ",".join(targets), "signals-disagree"
+    return tiers[0]
+
+
+def _tiered_terraform(base, finding, destroy, sidecar, envs, root, marker):
+    """`_terraform_verdict`'s row under `guards.terraformApply: tiered`
+    (R-35, D6). Never unattended in this ticket: crew has no cost estimate,
+    and the policy table classes an apply without one as money. Every row
+    asks (and `evaluate` denies it with nobody attending); the tier is read
+    and logged. The repo's `environments.nonProd` and `prodUnattended` are not
+    read here."""
+    lead = f"{base}: under guards.terraformApply `tiered`,"
+    if str(destroy[0]) != "no":
+        return "ask", (f"{lead} the line may remove resources ({destroy[0]}: "
+                       f"{destroy[1]}), so it needs an approval"), \
+            "destroy:ask", marker
+    names, why = _tf_tier_names(finding.scope, envs.get("cwd"),
+                                envs.get("ctx") or {}, sidecar)
+    tier, target, reason = _tier_of(root, names, why)
+    if tier in ("dev", "qa"):
+        return "ask", (f"{lead} the machine tier map lists `{target}` as "
+                       f"{tier}, but crew has no cost estimate, so an apply "
+                       "is never run unattended"), \
+            f"tier:{tier}:{target}:cost-unknown", marker
+    if tier == "prod":
+        return "ask", f"{lead} the machine tier map lists `{target}` as prod", \
+            f"tier:prod:{target}", marker
+    return "ask", (f"{lead} the tier of `{target}` is unknown ({reason}); an "
+                   "apply is never run unattended under `tiered`"), \
+        f"tier:unknown:{target}:{reason}", marker
+
+
 def unattended(data, environ=None):
     """True when nobody is there to answer an `ask`.
 
@@ -3120,6 +3206,9 @@ def _terraform_verdict(root, finding, out, envs):
                            f"destroy {destroy}: {destroy_why}"), \
                 "destroy:ask", marker
         return "allow", f"{base}: {out['reason']}", policy, marker
+    if policy == "tiered":
+        return _tiered_terraform(base, finding, (destroy, destroy_why),
+                                 sidecar, envs, root, marker)
     head = f"{base}: guards.terraformApply is `ask`"
     if destroy != "no":
         return "ask", (f"{head}, and this is a destroy (destroy {destroy}: "
@@ -3214,6 +3303,7 @@ def evaluate(root, tool_name, command, data=None, mode="block"):
     """
     shell = "powershell" if tool_name == "PowerShell" else "bash"
     envs = crew_preprod.arm(dict(environments_config(root), command=command))
+    envs["tiered"], envs["root"] = _deploy_tiered(root), root  # R-35: the flag, and the root's one road to deploy_verdict
     ctx = {"cd": False, "switch": False, "engaged": envs["engaged"], "dispatch": dict(envs)}
     findings = scan(shell, command, ctx=ctx)
     cwd = (data or {}).get("cwd")

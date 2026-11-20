@@ -93,6 +93,19 @@ INSTALLABLE = {
 GUARD_POLICIES = ("block", "ask", "allow")
 GUARD_POLICY_DEFAULT = "block"
 
+# R-35: the two guards that can reach an environment -- `terraformApply` and
+# `deployWorkflow` -- have one more value, `tiered`, between `block` and `ask`.
+# Under it the MACHINE tier map (`crew_tiers.resolve`) decides: a deploy whose
+# target the machine lists as dev or qa runs unattended and is logged, and
+# everything else asks (a terraform apply always asks: no cost estimate).
+# Below `ask` because a repo's `environments.nonProd` can no longer allow
+# anything on its own. A NEW tuple, not a member of `GUARD_POLICIES`: the
+# other five policy guards keep three values, and `tiered` there is malformed
+# (the floor). Ordered least to most permissive; read only through
+# `tiered_policy_rank`.
+TIERED_POLICIES = ("block", "tiered", "ask", "allow")
+TIERED_GUARD_NAMES = ("terraformApply", "deployWorkflow")
+
 # The guards. This tuple is the ORDER the keys are declared in, so
 # `default_config()` and `default_global_config()` cannot drift into different
 # orderings of the same block. What each governs is prose and lives with the
@@ -235,7 +248,10 @@ GUARD_DEFAULTS = dict(
 # resolves as it always did; `standard` is the owner's repo layer; `strict`
 # turns every switchable guard on. Written as a table, not derived, so a
 # change to one cell is a visible diff (the test holds its own copy).
-GUARD_PROFILES = ("off", "standard", "strict")
+# `balanced` (R-35) is `standard` with `terraformApply` and `deployWorkflow`
+# at `tiered`: in force only when BOTH layers say it, and every move to it
+# is a widening the owner confirms. Nothing ships it as a default.
+GUARD_PROFILES = ("off", "standard", "strict", "balanced")
 
 # What `default_config()` and `default_global_config()` carry for `guards`:
 # the profile at `off` (= `GUARD_DEFAULTS`) and an empty overrides table. The
@@ -261,6 +277,12 @@ PROFILE_MAP = {
         + [("adminMerge", "block"), ("prodDatabase", "none"),
            ("prodServer", "none"), ("roleWrites", "block"),
            ("cloudGuard", "block"), ("envGuard", "block")]),
+    "balanced": dict(
+        [(name, "block") for name in _ALWAYS_BLOCK]
+        + [("adminMerge", "ask"), ("prodDatabase", "none"),
+           ("prodServer", "none"), ("roleWrites", "report"),
+           ("cloudGuard", "block"), ("envGuard", "off"),
+           ("terraformApply", "tiered"), ("deployWorkflow", "tiered")]),
 }
 
 # What counts as production, and it is a REPO-ONLY block on purpose.
@@ -495,6 +517,24 @@ def guard_policy_rank(value):
     return GUARD_POLICIES.index(normalise_guard_policy(value))
 
 
+def normalise_tiered_policy(value):
+    """`value` as one of `TIERED_POLICIES`, else `block` (R-35).
+
+    `normalise_guard_policy`'s rule over the four-value vocabulary of
+    `terraformApply` and `deployWorkflow`: an unknown buys nothing."""
+    if isinstance(value, str):
+        cleaned = value.strip().lower()
+        if cleaned in TIERED_POLICIES:
+            return cleaned
+    return GUARD_POLICY_DEFAULT
+
+
+def tiered_policy_rank(value):
+    """`value`'s position in `TIERED_POLICIES`. Higher is more permissive;
+    an unknown ranks 0. The one function permitted to know that order."""
+    return TIERED_POLICIES.index(normalise_tiered_policy(value))
+
+
 def normalise_prod_level(value):
     """`value` as a known production-access level, else `none`.
 
@@ -577,6 +617,8 @@ def guard_tiers(name):
     if name in ROLE_WRITE_GUARD_NAMES or name in CLOUD_GUARD_NAMES \
             or name in ENV_GUARD_NAMES:
         return (ROLE_WRITE_POLICIES, normalise_role_writes, role_writes_rank)
+    if name in TIERED_GUARD_NAMES:
+        return (TIERED_POLICIES, normalise_tiered_policy, tiered_policy_rank)
     return (GUARD_POLICIES, normalise_guard_policy, guard_policy_rank)
 
 

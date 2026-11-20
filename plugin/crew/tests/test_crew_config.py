@@ -1751,7 +1751,7 @@ def test_deploy_workflow_has_its_own_allow_note():
     generic "run WITHOUT asking" note would describe a wider grant than the
     guard makes."""
     notes = crew_config._RATCHETED["guards.deployWorkflow"][2]  # pylint: disable=protected-access
-    assert set(notes) == set(crew_state.GUARD_POLICIES)
+    assert set(notes) == set(crew_state.guard_tiers("deployWorkflow")[0])  # R-35: + `tiered`
     assert "nonProd" in notes["allow"] and "prodUnattended" in notes["allow"]
 
 

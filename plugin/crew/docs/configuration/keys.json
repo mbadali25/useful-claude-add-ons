@@ -1426,12 +1426,13 @@
       "values": [
         "off",
         "standard",
-        "strict"
+        "strict",
+        "balanced"
       ],
       "valuesByOs": null,
       "type": null,
       "source": null,
-      "summary": "One word for the twelve guards: `off` (today's defaults), `standard` or `strict`. Expands per layer; each guard's ratchet then runs on the expanded values.",
+      "summary": "One word for the twelve guards: `off` (today's defaults), `standard`, `strict` or `balanced` (`standard` with `terraformApply` and `deployWorkflow` at `tiered`: the machine tier map decides). Expands per layer; each guard's ratchet then runs on the expanded values.",
       "since": "1.2.62",
       "blank": {
         "repo": "excluded: a repo value, even at the default, overrides or narrows the machine file's value; set it in the repo file only to differ from your machine",

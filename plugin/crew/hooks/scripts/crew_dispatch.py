@@ -1044,8 +1044,14 @@ def dispatch_answer(text, shell, envs, fed=(), helpers=None):
     dispatch of a listed workflow, else the most severe dispatch's state and
     scope, `scope["dispatches"]` holding every classified one. `fed` is
     `cloud_guard.scan`'s `(via, placeholders)` for a text the lexer already
-    unwrapped from `xargs`/`parallel`."""
-    if not dispatch_engaged(envs):
+    unwrapped from `xargs`/`parallel`.
+
+    Under `guards.deployWorkflow: tiered` (`envs["tiered"]`, R-35) every
+    dispatch is judged: the line is read even with no workflow listed, and a
+    dispatch of an unlisted workflow is `unknown` with `unlisted=True` in its
+    scope, so the machine tier map decides it in `deploy_verdict`."""
+    tiered = bool(envs.get("tiered"))
+    if not tiered and not dispatch_engaged(envs):
         return ENV_UNLISTED, "environments.workflows lists no workflow", None
     helpers = helpers or _gate_helpers()
     found = dispatch_trigger(text, helpers, shell, fed)
@@ -1084,6 +1090,10 @@ def dispatch_answer(text, shell, envs, fed=(), helpers=None):
         if klass is not None:
             answers.append((klass[0], klass[2], dict(
                 scope, value=klass[1], key=klass[3])))
+        elif tiered:
+            answers.append((ENV_UNKNOWN, "environments.workflows does not "
+                            "list this workflow", dict(
+                                scope, value=None, key=None, unlisted=True)))
     if not answers:
         return ENV_UNLISTED, "no dispatch on the line names a listed workflow", \
             None
@@ -1139,6 +1149,80 @@ def dispatch_marker_key(text, scope):
          "dispatches": judged}, sort_keys=True)
 
 
+def _tier_target(klass, scope, envs):
+    """`(target, why)` for one dispatch under `tiered` (R-35, D4c): the
+    `crew_tiers` target, or None and why there is none. The environment value
+    has one source, the line itself: `workflow:<wf>@<v>` only when the repo
+    maps the workflow to `input:<name>` and the line gave one literal value;
+    otherwise only bare `workflow:<wf>` (a fixed repo name is the repo's
+    claim, never the line's, so it never selects an `@` entry)."""
+    wf = scope.get("workflow")
+    shown = f"workflow:{wf if wf is not None else '-'}"
+    if wf is None or not _workflow_literal(wf) or scope.get("extra"):
+        return shown, "no-target"
+    if scope.get("unlisted"):
+        return f"workflow:{wf}", None
+    if klass not in (ENV_NONPROD, ENV_PROD):
+        return f"workflow:{wf}", "unreadable"
+    source = (envs.get("workflows") or {}).get(scope.get("key"))
+    value = scope.get("value")
+    if isinstance(source, str) and source.startswith("input:"):
+        if not isinstance(value, str) or not value:
+            return f"workflow:{wf}", "unreadable"
+        return f"workflow:{wf}@{value}", None
+    return f"workflow:{wf}", None
+
+
+def _dispatch_tier(klass, scope, envs):
+    """`(tier, target, reason)` for one dispatch, from the machine tier map
+    through `crew_tiers.resolve` only. A root that is not a non-empty string
+    is `unknown` (`no-root`) and the map is not read: `resolve(target, None)`
+    reads no repo file, which would skip the repo's narrowing."""
+    target, why = _tier_target(klass, scope, envs)
+    if why is not None:
+        return "unknown", target, why
+    root = envs.get("root")
+    if not isinstance(root, str) or not root:
+        return "unknown", target, "no-root"
+    try:
+        import crew_tiers  # pylint: disable=import-outside-toplevel
+        found = crew_tiers.resolve(target, root)
+        tier, reason = found[crew_tiers.FIELD], found["reason"]
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        return "unknown", target, f"lookup-failed ({type(exc).__name__})"
+    if tier not in ("dev", "qa", "prod"):
+        return "unknown", target, reason or "unknown"
+    return tier, target, reason
+
+
+_TIER_ORDER = ("dev", "qa", "prod", "unknown")
+
+
+def _tiered_verdict(base, scope, envs, marker):
+    """`deploy_verdict`'s row under `guards.deployWorkflow: tiered` (R-35,
+    D5), past the live marker and the could-not-tell line: every dispatch on
+    the line dev or qa by the machine tier map -> allow, logged
+    `tier:<t>:<target>;account:unchecked`; otherwise ask, naming the
+    strictest. The repo's `environments.nonProd` and `prodUnattended` are not
+    read here. Accounts are not verified yet (R-AB)."""
+    rows = [_dispatch_tier(k, s, envs) for k, _w, s in
+            scope.get("dispatches") or [(scope["state"], "", scope)]]
+    tier, target, reason = max(rows, key=lambda r: _TIER_ORDER.index(r[0]))
+    lead = f"{base}: under guards.deployWorkflow `tiered`,"
+    if tier in ("dev", "qa"):
+        return "allow", (f"{lead} the machine tier map lists `{target}` as "
+                         f"{tier} (account not checked)"), \
+            f"tier:{tier}:{target};account:unchecked", marker
+    if tier == "prod":
+        return "ask", (f"{lead} the machine tier map lists `{target}` as "
+                       "prod, which is never deployed unattended"), \
+            f"tier:prod:{target}", marker
+    return "ask", (f"{lead} the tier of `{target}` is unknown ({reason}) -- "
+                   "crew allows a deploy unattended only when the machine "
+                   "tier map lists its target as dev or qa"), \
+        f"tier:unknown:{target}:{reason}", marker
+
+
 def deploy_verdict(what, scope, out, envs, live):
     """`(decision, reason, policy, marker)` for a dispatch: T-0005's table
     with `guards.deployWorkflow` as the base policy, except that `allow`
@@ -1177,6 +1261,8 @@ def deploy_verdict(what, scope, out, envs, live):
                        f"once with {marker}, or spell it with plain words "
                        "and `-f` fields to have it judged"), \
             "could-not-tell", marker
+    if policy == "tiered":
+        return _tiered_verdict(base, scope, envs, marker)
     head = f"{base}: guards.deployWorkflow is `{policy}`"
     if klass == ENV_NONPROD:
         return "allow", f"{head}; environment `{value}` is nonProd", \

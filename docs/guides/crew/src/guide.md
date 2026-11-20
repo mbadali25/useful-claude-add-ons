@@ -241,14 +241,43 @@ What is on by default, and what is not:
 
 You choose a posture with one setting, `guards.profile`: `off` (the default),
 `standard` (cloud guard `block`, role-write guard `report`, `adminMerge`
-`ask`) or `strict` (the cloud, environment and role-write guards all `block`).
-To move one guard away from the profile, set `guards.overrides.<guard>`, for
-example `guards.overrides.roleWrites: report`. The twelve per-guard keys
-(`guards.cloudGuard` and the rest) are no longer written; an old one still
-counts until `/crew:migrate` rewrites the layer. Each layer expands its own
-profile and overrides, and the narrower layer wins per guard.
+`ask`), `strict` (the cloud, environment and role-write guards all `block`)
+or `balanced` (`standard`, with `terraformApply` and `deployWorkflow` at
+`tiered`). To move one guard away from the profile, set
+`guards.overrides.<guard>`, for example `guards.overrides.roleWrites: report`.
+The twelve per-guard keys (`guards.cloudGuard` and the rest) are no longer
+written; an old one still counts until `/crew:migrate` rewrites the layer.
+Each layer expands its own profile and overrides, and the narrower layer wins
+per guard.
 - **On by default:** the Stop verify gate (`verifyGate: true`) blocks when a
   verify rule fails.
+
+`balanced` is for dev and QA deploys. Under `tiered` the MACHINE file's tier
+map (`tiers`) decides, never the repo's `environments` block: a workflow
+dispatch runs with nobody asked, and a `.crew/guard.log` row records
+`tier:<dev|qa>:<target>;account:unchecked` (accounts are not verified yet),
+only when the machine lists its target as `dev` or `qa` and the repo's own
+`tiers` does not narrow it. Production, a target the machine does not list,
+and anything crew cannot read are asked about, and refused when nobody is
+attending. A terraform apply under `tiered` is never run unattended: crew has
+no cost estimate, so it asks and logs the tier it read.
+
+- **Which target.** A dispatch's target is `workflow:<file>` as the line names
+  it (`deploy.yml` and `.github/workflows/deploy.yml` are different targets).
+  When `environments.workflows` maps the workflow to `input:<name>` and the
+  line gives that input one literal value, the target is
+  `workflow:<file>@<value>` and only that; a bare `workflow:<file>` is not
+  consulted. A fixed repo mapping never selects an `@` entry. List a bare
+  `workflow:<file>` only for a workflow that cannot reach production from any
+  repository this machine dispatches to: an entry is keyed by workflow name,
+  not by repository, so it also covers `gh workflow run <file> -R other/repo`.
+- **Both layers, and the owner.** `balanced` is in force only when the
+  machine file AND the repo file both say it; either alone leaves the two
+  guards at `block`. Moving to it, from `off` or from `standard`, widens
+  `terraformApply` and `deployWorkflow` (and `adminMerge` from `off`), so the
+  write needs your confirmation in each layer and an agent's write of it is
+  refused. A config that already said `balanced` before this version read as
+  malformed (every guard `block`) and now reads as `balanced`.
 
 **The scope guard** (`scope.mode`) runs before each Write, Edit, MultiEdit and
 NotebookEdit. It refuses an edit when the active ticket has no current

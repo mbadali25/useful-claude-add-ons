@@ -1916,6 +1916,8 @@ def guard_decision(root, name, command, path=None, record=False,
                 f"guards.{name} is `ask`: an approval is good for "
                 f"{crew_state.GUARD_APPROVAL_TTL // 60} minutes, so it cannot "
                 f"become a standing grant nobody revisits")
+    elif policy == "tiered":
+        decision, reason = _tiered_decision(name, marker)
     else:
         decision, reason = "block", f"guards.{name} is `block`"
 
@@ -1931,6 +1933,24 @@ def guard_decision(root, name, command, path=None, record=False,
     _maybe_log(root, record, decision, name, policy, target, command,
                record_command)
     return out
+
+
+def _tiered_decision(name, marker):
+    """`(decision, reason)` for policy `tiered` (R-35). It has no tier to go
+    on here, so it answers as `ask` does, naming the policy: the dev/qa allow
+    is made only by `crew_dispatch.deploy_verdict`, which reads the machine
+    tier map. A caller that reads this alone never sees an unattended allow."""
+    live = _approval_is_live(marker)
+    if live:
+        return "allow", f"approved for this command: {marker}"
+    window = crew_state.GUARD_APPROVAL_TTL // 60
+    if _approval_age(marker) is not None:
+        return "ask", (f"guards.{name} is `tiered`: the approval at {marker} "
+                       f"is outside the {window}-minute window")
+    return "ask", (f"guards.{name} is `tiered`: crew allows this only for a "
+                   "target the machine tier map lists as dev or qa; anything "
+                   "else needs an approval of this exact command, good for "
+                   f"{window} minutes")
 
 
 def layered_state(root):
@@ -3180,10 +3200,13 @@ _RATCHETED = {
 # The four guards, from `crew_state.GUARDS` rather than written out again, so a
 # fifth guard added there cannot arrive here with no widening note -- which
 # would be a `KeyError` on the one line that exists to warn about a grant.
+# Rank and normaliser through `guard_tiers` (R-35): `terraformApply` and
+# `deployWorkflow` have a fourth value, `tiered`, and the table must rank it
+# where the ratchet does.
 _RATCHETED.update({
     f"guards.{_name}": (
-        crew_state.guard_policy_rank,
-        crew_state.normalise_guard_policy,
+        crew_state.guard_tiers(_name)[2],
+        crew_state.guard_tiers(_name)[1],
         crew_guard_notes.guard_widening_notes(_name, _ACTIONS[_name]),
     )
     for _name in crew_state.GUARD_NAMES
@@ -3198,6 +3221,16 @@ _RATCHETED["guards.deployWorkflow"][2]["allow"] = (
     "is attending -- for production unless environments.prodUnattended is "
     "true in both config layers, and for an environment crew cannot "
     "identify, whatever this key says."
+)
+# `tiered` (R-35): the machine tier map decides, and the generic action text
+# ("listed in environments.workflows") is wrong under it, so it is spelled out.
+_RATCHETED["guards.deployWorkflow"][2]["tiered"] = (
+    "crew will run a `gh workflow run` or `gh api .../dispatches` WITHOUT "
+    "asking only when the machine tier map lists its target as dev or qa, and "
+    f"write a row to `{crew_state.GUARD_LOG_PATH}`. It still asks -- and "
+    "refuses when nobody is attending -- for production, for a target the "
+    "machine does not list, and for anything it cannot read, whatever the "
+    "repo's environments block says."
 )
 # The two production guards, whose vocabulary is `none`/`read`/`full` rather
 # than `block`/`ask`/`allow`. They ratchet by the same table and warn on the

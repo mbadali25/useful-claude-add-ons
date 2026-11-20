@@ -35,6 +35,12 @@ TABLE = {
                "adminMerge": "block", "prodDatabase": "none",
                "prodServer": "none", "envGuard": "block",
                **{g: "block" for g in _SIX}},
+    # R-35: `standard` with the two environment guards at `tiered`.
+    "balanced": {"cloudGuard": "block", "roleWrites": "report",
+                 "adminMerge": "ask", "prodDatabase": "none",
+                 "prodServer": "none", "envGuard": "off",
+                 **{g: "block" for g in _SIX},
+                 "terraformApply": "tiered", "deployWorkflow": "tiered"},
 }
 
 
@@ -72,11 +78,11 @@ def test_guard_names_are_the_twelve():
     assert set(TABLE["off"]) == set(NAMES)
 
 
-def test_profiles_are_off_standard_strict():
-    assert crew_guards.GUARD_PROFILES == ("off", "standard", "strict")
+def test_profiles_are_off_standard_strict_balanced():
+    assert crew_guards.GUARD_PROFILES == ("off", "standard", "strict", "balanced")
 
 
-@pytest.mark.parametrize("profile", ["off", "standard", "strict"])
+@pytest.mark.parametrize("profile", ["off", "standard", "strict", "balanced"])
 @pytest.mark.parametrize("name", NAMES)
 def test_profile_table(tmp_path, profile, name):
     row = _resolve(tmp_path, name, repo=_g(profile=profile))

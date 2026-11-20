@@ -793,7 +793,7 @@ production guards), never as `off`. The per-guard keys of earlier versions
 (`guards.<guard>`) are still READ as aliases for `guards.overrides.<guard>`
 until `/crew:migrate` rewrites them, and are never written. For `envGuard` an
 explicit `null` (`"guards": {{"envGuard": null}}`) is malformed and reads as `block`; only an
-absent key is `off`. The other guards still read a legacy `null` as absent.
+absent key is `off`. The other guards still read a legacy `null` as absent. `balanced` (opt-in, never a default) sets `terraformApply` and `deployWorkflow` to `tiered`, a value between `block` and `ask`: a workflow dispatch runs unattended, logged with `account:unchecked`, only when the MACHINE file's `tiers` lists its target (`workflow:<file>`, or `workflow:<file>@<value>` when `environments.workflows` maps it to `input:<name>`) as dev or qa; anything else asks, and a terraform apply always asks. It is in force only when BOTH layers say it, and every move to it (from `off` or `standard`) is a widening the owner confirms in each layer.
 
 {profile_table}
 

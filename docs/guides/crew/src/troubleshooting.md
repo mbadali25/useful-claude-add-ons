@@ -1323,7 +1323,7 @@ but returns immediately without judging anything; "off" for `verifyGate` means t
 | Key | Lives in | Values | What "off"/floor means |
 |---|---|---|---|
 | `autopilot.mode` | repo only | `off`/`plan` | `off` (the default): `/crew:autopilot` runs no phase; only the exact string `plan` arms it |
-| `guards.profile` | both layers (expands per layer) | `off`/`standard`/`strict` | `off` (the default): the cloud, environment and role-write guards are off and the others sit at their narrowest tier. Set one guard away from the profile with `guards.overrides.<guard>`; the narrower layer wins per guard |
+| `guards.profile` | both layers (expands per layer) | `off`/`standard`/`strict`/`balanced` | `off` (the default): the cloud, environment and role-write guards are off and the others sit at their narrowest tier. Set one guard away from the profile with `guards.overrides.<guard>`; the narrower layer wins per guard. `balanced` in only one layer leaves `terraformApply` and `deployWorkflow` at `block`: a dev/QA dispatch is allowed only when both layers say `balanced` and the machine `tiers` lists its target as dev or qa |
 | `guards.overrides.cloudGuard` | both layers, ratchets | `block`/`report`/`off` | `off`: the hook reads this key and exits |
 | `guards.overrides.envGuard` | both layers, ratchets | `block`/`report`/`off` | `off`: the hook reads this key and exits |
 | `guards.overrides.roleWrites` | both layers, ratchets | `block`/`report`/`off` | `off`: every Write/Edit is allowed unconditionally |

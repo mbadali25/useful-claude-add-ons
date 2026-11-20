@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """crew's tier map (R-05): which tier is a target in - dev, qa, prod or unknown?
 
-REPORT-ONLY. Nothing that decides anything imports this module: no guard, hook,
-launcher, autopilot or promote path. `crew_config.explain_config` imports it
-inside that one function (so the SessionStart path through `resolve_config`
-never loads it) to show the `tiers` row, and its own CLI prints the answer.
-R-01, R-35, R-A1 and R-36 read it later, and they read it from `resolve` only,
-never from a merged `tiers` value (D10).
+Two deciding consumers since R-35, both only under the opt-in guard value
+`tiered` (profile `balanced`): `crew_dispatch._dispatch_tier` (a workflow
+dispatch's tier) and `cloud_guard._tier_of` (a terraform workspace's tier,
+logged; an apply still asks). Each imports this module lazily inside that one
+function, so the `block`/`ask`/`allow` paths never load it, and each reads it
+through `resolve` only. Nothing else that decides imports it: no other guard,
+hook, launcher, autopilot or promote path (test_crew_tiers.py T-I1).
+`crew_config.explain_config` imports it inside that one function (so the
+SessionStart path through `resolve_config` never loads it) to show the `tiers`
+row, and its own CLI prints the answer. R-01, R-A1 and R-36 read it later, from
+`resolve` only, never from a merged `tiers` value (D10).
 
 The rule (docs/plans/crew-revamp-2026-11-18.md 4.3, 4.14; R-05 spec D1-D11):
 

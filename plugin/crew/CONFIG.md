@@ -361,22 +361,22 @@ production guards), never as `off`. The per-guard keys of earlier versions
 (`guards.<guard>`) are still READ as aliases for `guards.overrides.<guard>`
 until `/crew:migrate` rewrites them, and are never written. For `envGuard` an
 explicit `null` (`"guards": {"envGuard": null}`) is malformed and reads as `block`; only an
-absent key is `off`. The other guards still read a legacy `null` as absent.
+absent key is `off`. The other guards still read a legacy `null` as absent. `balanced` (opt-in, never a default) sets `terraformApply` and `deployWorkflow` to `tiered`, a value between `block` and `ask`: a workflow dispatch runs unattended, logged with `account:unchecked`, only when the MACHINE file's `tiers` lists its target (`workflow:<file>`, or `workflow:<file>@<value>` when `environments.workflows` maps it to `input:<name>`) as dev or qa; anything else asks, and a terraform apply always asks. It is in force only when BOTH layers say it, and every move to it (from `off` or `standard`) is a widening the owner confirms in each layer.
 
-| Guard | `off` | `standard` | `strict` |
-|---|---|---|---|
-| `terraformApply` | `block` | `block` | `block` |
-| `forcePush` | `block` | `block` | `block` |
-| `adminMerge` | `block` | `ask` | `block` |
-| `mergeGate` | `block` | `block` | `block` |
-| `cloudDestructive` | `block` | `block` | `block` |
-| `sqlDestructive` | `block` | `block` | `block` |
-| `deployWorkflow` | `block` | `block` | `block` |
-| `prodDatabase` | `none` | `none` | `none` |
-| `prodServer` | `none` | `none` | `none` |
-| `roleWrites` | `off` | `report` | `block` |
-| `cloudGuard` | `off` | `block` | `block` |
-| `envGuard` | `off` | `off` | `block` |
+| Guard | `off` | `standard` | `strict` | `balanced` |
+|---|---|---|---|---|
+| `terraformApply` | `block` | `block` | `block` | `tiered` |
+| `forcePush` | `block` | `block` | `block` | `block` |
+| `adminMerge` | `block` | `ask` | `block` | `ask` |
+| `mergeGate` | `block` | `block` | `block` | `block` |
+| `cloudDestructive` | `block` | `block` | `block` | `block` |
+| `sqlDestructive` | `block` | `block` | `block` | `block` |
+| `deployWorkflow` | `block` | `block` | `block` | `tiered` |
+| `prodDatabase` | `none` | `none` | `none` | `none` |
+| `prodServer` | `none` | `none` | `none` | `none` |
+| `roleWrites` | `off` | `report` | `block` | `report` |
+| `cloudGuard` | `off` | `block` | `block` | `block` |
+| `envGuard` | `off` | `off` | `block` | `off` |
 
 ## Verify gate trust (a store, not a config key)
 
@@ -504,7 +504,7 @@ SessionStart notice).
 
 | Key | Layer | Default | Values | Summary |
 |---|---|---|---|---|
-| `guards.profile` | both, ratchet | `"off"` | `off` \| `standard` \| `strict` | One word for the twelve guards: `off` (today's defaults), `standard` or `strict`. Expands per layer; each guard's ratchet then runs on the expanded values. |
+| `guards.profile` | both, ratchet | `"off"` | `off` \| `standard` \| `strict` \| `balanced` | One word for the twelve guards: `off` (today's defaults), `standard`, `strict` or `balanced` (`standard` with `terraformApply` and `deployWorkflow` at `tiered`: the machine tier map decides). Expands per layer; each guard's ratchet then runs on the expanded values. |
 | `guards.overrides` | both, ratchet | `{}` | object of guard name to tier (checked in `hooks/scripts/crew_guards.py`) | `guards.overrides.<guard>`: one guard's tier, replacing the profile's value for it. Each entry is checked against that guard's own tiers; a bad one reads as the floor. |
 | `guards.git.allow` | both | `null` | null, `"off"`, `"all"` or a list of git subcommand names (coerced in `hooks/scripts/crew_gitallow.py`) | The owner's switch that stops crew's command guards blocking or asking on git commands: `"all"` lets a line of only plain git commands past the force-push rule and the promote gate (unless a declared deploy is itself a git command); a list of subcommands (`["commit", "push"]`) lets only those through, with every option they take (listing `push` lets `push --force` through). null or `"off"` changes nothing. Machine file only, and only after `/crew:confirm-config` twice (`crew_confirm_config.py propose --key guards.git.allow --value ...`); a value written any other way, or any later change to the machine file outside crew's config writer, reads as off, and a repo `"off"` or unreadable repo file vetoes it. FAIL-CLOSED ALLOWLIST: a line is exempt only when it is ONE command, exactly `git` with plain literal words (no `$`, backtick, glob, brace, leading `~`, parenthesis, PowerShell expression or `%NAME%`; no separator, redirection, heredoc, continuation or comment, so a chain is judged as before); a git command carrying `-c`, a command to run (`rebase --exec`, `push --receive-pack`, `submodule foreach`, ...) or a `git config` write is never exempt. |
 

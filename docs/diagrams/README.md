@@ -243,7 +243,7 @@ flowchart TB
 
     subgraph Expand["FIRST, each layer expands its own profile and overrides into one value per guard"]
         direction TB
-        X1["<b>guards.profile</b><br/>off | standard | strict<br/>PROFILE_MAP, per layer"]
+        X1["<b>guards.profile</b><br/>off | standard | strict | balanced<br/>PROFILE_MAP, per layer"]
         X2["<b>guards.overrides.&lt;guard&gt;</b><br/>replaces the profile's value<br/>for that one guard"]
         X3["legacy <b>guards.&lt;name&gt;</b> still read<br/>until /crew:migrate;<br/>the narrower of the two wins"]
         X4["malformed profile or override<br/>= the guard's FLOOR,<br/>never off"]
@@ -278,7 +278,7 @@ flowchart TB
 
 | Box | Details |
 |---|---|
-| `X1` | guards.profile (off / standard / strict) is read in EACH layer separately: crew_guards.layer_guard_state :638 looks up the layer's profile in PROFILE_MAP :240. off is today's GUARD_DEFAULTS, so a layer that sets nothing resolves as it always did. The profile itself is never ratcheted. |
+| `X1` | guards.profile (off / standard / strict / balanced) is read in EACH layer separately: crew_guards.layer_guard_state :638 looks up the layer's profile in PROFILE_MAP :240. off is today's GUARD_DEFAULTS, so a layer that sets nothing resolves as it always did. The profile itself is never ratcheted. |
 | `X2` | guards.overrides.&lt;guard&gt; in the same layer replaces the profile's value for that one guard, validated against that guard's own tiers. An override can never widen past a malformed profile or past a legacy key still present. |
 | `X3` | The twelve legacy guards.&lt;name&gt; keys are still READ as aliases until /crew:migrate rewrites the layer, and never written. When a legacy key and a profile or override both speak, the NARROWER of the two wins and the conflict is reported. |
 | `X4` | A malformed profile, or an overrides value that is not an object or not one of the guard's tiers, gives that guard's FLOOR (block, or none for prodDatabase and prodServer). The floor is never off: could-not-tell must not read as opted-out. |
@@ -420,7 +420,7 @@ flowchart TB
 | `S1` | 81 global-settable leaves, across twenty blocks: autopilot (T-0050: mode, maxPhases, deploy, approval, questions - personal, the stricter layer wins), qa, dev, worktree, secondOpinion, memory, notify, pm, context.autoClear, docs, bitbucket, github, install, guards (all TEN), change, resume (T-0006: machine opt-in, repo may only veto; T-0013: typeDelaySeconds, readyTimeoutSeconds), environments (prodUnattended only, T-0005), route (T-0023: route.enabled, repo beats machine - read by crew_route.settings through resolve_config), shellRoute (T-0040: mode + distro, both layers), git (T-0066: forbiddenTrailers, both layers, combined by UNION in crew_trailers.forbidden, not precedence) |
 | `S2` | 60 repo-only leaves (set difference, executed), environments.nonProd (T-0005), tickets.baseBranch (T-0061), autopilot.maxAutoReplans (T-0074), autopilot.sleep.* (T-0053) and autopilot.ship/knownFailures/ciTimeoutMinutes (T-0011) among them. Whole blocks absent from the global template (autopilot is partly global since T-0050): cloud, emergency, graph, jira, obsidian, platform, production, roles, schema, scope, sdp, tickets, tier, tracker, verifyGate - cloud and scope are NEW repo-only blocks since the previous anchor (cloud identity pins, the T3 scope guard); autopilot is NEW at 07ca3972 (T-0004, mode + maxPhases, docs/crew/config-rationale.md; deploy added by T-0072, approval + questions by T-0010, ship + knownFailures + ciTimeoutMinutes by T-0011) |
 | `S3` | Counts are executed, not read by eye. 141 repo-template / 81 global / 60 repo-only on batch-7-build after merging T-0011 (133 / 75 / 58 on T-0066 after merging main e9364a70, 132 / 74 / 58 on main after T-0013, 131 / 73 / 58 on T-0066 after main c9263465, 130 / 72 / 58 on T-0061 after main 34d9f267, 129 / 72 / 57 on T-0040-land's merge of main 844bfc36, 127 / 70 / 57 on its merge of 6a8c60b1, 125 / 70 / 55 on T-0040's branch, 125 / 68 / 57 at d7c7c75c, T-0010-solo's merge of 6387ab49, 123 / 68 / 55 on T-0072's merge of main, 124 / 68 / 56 at c817782f on T-0010-solo, 122 / 68 / 54 on T-0023's merge of main, 121 / 67 / 54 on the T-0005 landing merge, 120 / 67 / 53 at T-0023's eba11657, 119 / 66 / 53 at 07ca3972, 118 / 66 / 52 at fc54def6, 117 / 66 / 51 at 6d35ef8c, 116 / 65 / 51 at 6c497a14); .crew/codemap/crew.md agrees and gives the re-measure command. |
-| `S4` | Guards are two keys in both layers. guards.profile (off, standard, strict) and guards.overrides are in both default templates; the twelve per-guard guards.&lt;name&gt; keys are no longer written and are read only as aliases until /crew:migrate rewrites the layer. |
+| `S4` | Guards are two keys in both layers. guards.profile (off, standard, strict, balanced) and guards.overrides are in both default templates; the twelve per-guard guards.&lt;name&gt; keys are no longer written and are read only as aliases until /crew:migrate rewrites the layer. |
 
 - **Source:** `data-flow-crew-config-split.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_state.py`

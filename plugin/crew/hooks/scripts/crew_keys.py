@@ -420,7 +420,9 @@ KEY_META = {
     # --- install and guards (ratcheted: the tiers live in crew_guards)
     "install.policy": _rat("Whether crew may install a missing prerequisite.", "0.19.18"),
     "guards.profile": _row("One word for the twelve guards: `off` (today's defaults), "
-                           "`standard` or `strict`. Expands per layer; each guard's "
+                           "`standard`, `strict` or `balanced` (`standard` with "
+                           "`terraformApply` and `deployWorkflow` at `tiered`: the machine "
+                           "tier map decides). Expands per layer; each guard's "
                            "ratchet then runs on the expanded values.", "tuple",
                            crew_guards.GUARD_PROFILES, "1.2.62"),
     "guards.overrides": _row("`guards.overrides.<guard>`: one guard's tier, replacing "

@@ -40,14 +40,28 @@ GUARD_ACTIONS = {
 
 
 def guard_widening_notes(name, what):
-    """The `! widens to` note for one guard, total over `GUARD_POLICIES`.
+    """The `! widens to` note for one guard, total over `guard_tiers(name)`.
 
     Total on purpose, `block` included: the CLI does `notes[granted]`, and a
     missing key there is a `KeyError` at the point of use rather than a warning
     that silently describes the wrong tier. That is the failure mode that
     produced `_INSTALL_WIDENING_NOTES`' own totality, and softening it here
-    would reintroduce it for four keys at once.
+    would reintroduce it for four keys at once. `terraformApply` and
+    `deployWorkflow` have a fourth tier, `tiered` (R-35); the deploy guard's
+    text for it is set in `crew_config`, beside its `allow` override.
     """
+    notes = _policy_notes(what)
+    if "tiered" in crew_state.guard_tiers(name)[0]:
+        notes["tiered"] = (
+            f"crew will ask before {what}, whatever the target, and refuses "
+            "when nobody is attending. The machine tier map is read and "
+            "logged, but an apply is never run unattended under `tiered`."
+        )
+    return notes
+
+
+def _policy_notes(what):
+    """The `block`/`ask`/`allow` notes every policy guard shares."""
     return {
         "block": (
             f"crew refuses {what}. This is the narrowest policy and nothing "

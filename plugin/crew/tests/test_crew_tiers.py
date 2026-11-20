@@ -833,6 +833,8 @@ def _t_i1():
         for node, stack in _tiers_imports(tree):
             if _rel(path) == _T_I1_EXPLAIN and stack == ("explain_config",):
                 continue
+            if stack in _T_I1_CONSUMERS.get(_rel(path), ()):
+                continue
             bad.append(f"{path.relative_to(REPO)}:{node.lineno} in {stack or 'module'}")
     texts = []
     for pattern in ("plugin/**/hooks.json", "plugin/**/*.sh", "plugin/**/*.ps1",
@@ -886,6 +888,12 @@ def test_t_i1_the_one_import_is_inside_explain_config():
 # `plugin/crew-autopilot/crew_config.py` is scanned like any other file.
 _T_I1_MODULE = "plugin/crew/hooks/scripts/crew_tiers.py"
 _T_I1_EXPLAIN = "plugin/crew/hooks/scripts/crew_config.py"
+# R-35: crew_tiers' first deciding consumers, each through `resolve` only and
+# imported lazily inside the one function that reads a tier under `tiered`.
+_T_I1_CONSUMERS = {
+    "plugin/crew/hooks/scripts/cloud_guard.py": (("_tier_of",),),
+    "plugin/crew/hooks/scripts/crew_dispatch.py": (("_dispatch_tier",),),
+}
 _T_I2_ALLOWED = ("plugin/crew/hooks/scripts/crew_tiers.py",
                  "plugin/crew/hooks/scripts/crew_config.py",
                  "plugin/crew/hooks/scripts/crew_keys.py",

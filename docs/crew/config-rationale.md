@@ -986,21 +986,24 @@ The twelve are `terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudD
 
 A layer states its guards with two keys:
 
-- `guards.profile`: `off`, `standard` or `strict`. One word expands to a value for every guard.
+- `guards.profile`: `off`, `standard`, `strict` or `balanced`. One word expands to a value for every guard.
 - `guards.overrides.<guard>`: one guard's own tier, validated against that guard's vocabulary, for the cases the profile does not fit.
 
 The profile table is `crew_guards.PROFILE_MAP`:
 
-| guard | `off` (the default) | `standard` | `strict` |
-|---|---|---|---|
-| `cloudGuard` | off | block | block |
-| `roleWrites` | off | report | block |
-| `terraformApply`, `forcePush`, `mergeGate`, `cloudDestructive`, `sqlDestructive`, `deployWorkflow` | block | block | block |
-| `adminMerge` | block | ask | block |
-| `prodDatabase`, `prodServer` | none | none | none |
-| `envGuard` | off | off | block |
+| guard | `off` (the default) | `standard` | `strict` | `balanced` |
+|---|---|---|---|---|
+| `cloudGuard` | off | block | block | block |
+| `roleWrites` | off | report | block | report |
+| `forcePush`, `mergeGate`, `cloudDestructive`, `sqlDestructive` | block | block | block | block |
+| `terraformApply`, `deployWorkflow` | block | block | block | tiered |
+| `adminMerge` | block | ask | block | ask |
+| `prodDatabase`, `prodServer` | none | none | none | none |
+| `envGuard` | off | off | block | off |
 
 `off` is exactly the old `GUARD_DEFAULTS`, so a repo that sets nothing resolves as it always did. It switches the three optional hooks (`cloudGuard`, `roleWrites`, `envGuard`) off and leaves every other guard at its narrowest tier. `standard` is the posture the owner's repo layer held before the change. `strict` turns all three hooks fully on and refuses `adminMerge`. The production levels are `none` in every profile on purpose: how much of production a machine may reach is never something a one-word profile grants.
+
+`balanced` (R-35) is `standard` with `terraformApply` and `deployWorkflow` at `tiered`, a fourth value those two guards alone have (`crew_guards.TIERED_POLICIES`: `block` < `tiered` < `ask` < `allow`; on any other guard `tiered` is malformed and reads as the floor). It sits below `ask` because under it a repo's `environments.nonProd` and `prodUnattended` allow nothing: the tier comes from `crew_tiers.resolve` only, so the machine file is the authority and a repo can only narrow. A dispatch whose every target the machine lists as dev or qa is allowed and logged (`tier:<t>:<target>;account:unchecked`; accounts are not verified until R-AB); production, unlisted, conflicting, unreadable and no-root targets ask, and `ask` is a refusal when nobody attends. A terraform apply under `tiered` always asks: the policy table (R-01) classes an apply with no cost estimate as money, and the guard has no estimator. Under `tiered` every dispatch is judged, including one of a workflow `environments.workflows` does not list (`crew_dispatch.dispatch_answer` keeps it as `unknown` with `unlisted=True`). Nothing ships `balanced` as a default and the migration never chooses it; because the ratchet reads an absent layer as the floor it takes effect only when both layers say it, and moving to it from `off` or `standard` widens the two guards (and `adminMerge` from `off`), which R-32's comparator refuses without the owner.
 
 ### How one layer expands
 

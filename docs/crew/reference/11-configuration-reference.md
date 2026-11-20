@@ -21,6 +21,7 @@ Every setting, with its type, default and layer, is in the generated [`plugin/cr
 ### Common setups
 
 - Turn the guards on: set `guards.profile` to `standard` (cloud guard blocking, role writes reported) or `strict` in the machine file. Narrow one guard with `guards.overrides.<guard>`. A repo can only narrow further.
+- Let dev and QA deploys run unattended: set `guards.profile` to `balanced` in BOTH the machine file and the repo file (each write needs your confirmation; it is a widening), and list each dev or QA target in the machine file's `tiers` as `workflow:<file>` (or `workflow:<file>@<value>` when `environments.workflows` maps the workflow to `input:<name>`). Production, unlisted targets and every terraform apply still ask.
 - Try the cloud guard without refusing anything: `guards.overrides.cloudGuard` set to `report`, then read `.crew/guard.log`.
 - Declare what is production: `production.databases` and `production.hosts` in the repo file (the guard matches nothing until you do).
 - Arm autopilot: `autopilot.mode` set to `plan`, plus `scope.allowCliApproval` true in the repo.
@@ -175,7 +176,8 @@ input) or a fixed environment name.
 ```
 
 A `gh workflow run <wf>` whose `<wf>` matches a key is a `guards.overrides.deployWorkflow`
-finding, and so is the REST call it makes, `gh api` with method POST (`-X
+finding (under `tiered`, every dispatch is, listed or not, and the machine tier map
+decides it - see "Common setups"), and so is the REST call it makes, `gh api` with method POST (`-X
 POST`, `--method POST`, `-XPOST`, or fields/`--input` with no method) on
 `repos/<o>/<r>/actions/workflows/<wf>/dispatches` — both go through one
 classifier. The input comes from `-f`/`-F`/`--raw-field`/`--field` (`<name>=v`
