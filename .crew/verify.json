@@ -856,7 +856,10 @@
         "plugin/crew/tests/test_config_blanks.py",
         "plugin/crew/tests/test_config_examples.py",
         "plugin/crew/hooks/scripts/crew_humanonly.py",
-        "plugin/crew/hooks/scripts/crew_autocycle.py"
+        "plugin/crew/hooks/scripts/crew_autocycle.py",
+        "plugin/crew/hooks/scripts/crew_confirm_config.py",
+        "plugin/crew/hooks/scripts/crew_gitallow.py",
+        "plugin/crew/hooks/scripts/crew_tiers.py"
       ],
       "seconds": 127,
       "run": [

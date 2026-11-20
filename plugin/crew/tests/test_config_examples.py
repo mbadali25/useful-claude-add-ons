@@ -115,12 +115,12 @@ EXAMPLE_REF = re.compile(r"examples/([\w.-]+\.json)")
 
 
 def load_keys():
-    with open(KEYS_JSON, encoding="utf-8") as fh:
+    with open(KEYS_JSON, encoding="utf-8", errors="strict") as fh:
         return json.load(fh)["keys"]
 
 
 def read_guide():
-    with open(GUIDE, encoding="utf-8") as fh:
+    with open(GUIDE, encoding="utf-8", errors="strict") as fh:
         return fh.read()
 
 
@@ -192,7 +192,8 @@ def _env(home):
 
 def _run(script, args, home):
     proc = subprocess.run([sys.executable, script, *args], capture_output=True,
-                          text=True, env=_env(home), check=False, timeout=120)
+                          text=True, encoding="utf-8", errors="replace",
+                          env=_env(home), check=False, timeout=120)
     return proc.returncode, proc.stdout, proc.stderr
 
 
@@ -375,13 +376,32 @@ def _no_duplicates(pairs):
     return seen
 
 
+def _no_constant(name):
+    """`parse_constant` that refuses `NaN`, `Infinity` and `-Infinity`: Python
+    accepts them, but they are not JSON (RFC 8259), so an example holding one
+    is not a file another JSON reader can load."""
+    raise ValueError(f"{name} is not JSON")
+
+
+def provider_problems(data):
+    """`crew_config.validate_providers` on the example: the runtime refuses a
+    provider name the registry's `values` cannot see, such as a role pin
+    under the `qa.roles` open table."""
+    try:
+        crew_config.validate_providers(data)
+    except crew_config.ProviderError as exc:
+        return [f"(e) providers: {exc}"]
+    return []
+
+
 def example_problems(path, layer, tmp, keys, confirm_only=CONFIRM_ONLY):
     """Every problem with the example file at `path` read as `layer`."""
     if layer is None:
         return [f"{os.path.basename(path)}: not named repo-*.json or machine-*.json"]
     try:
-        with open(path, encoding="utf-8") as fh:
-            data = json.load(fh, object_pairs_hook=_no_duplicates)
+        with open(path, encoding="utf-8", errors="strict", newline="") as fh:
+            data = json.load(fh, object_pairs_hook=_no_duplicates,
+                             parse_constant=_no_constant)
     except ValueError as exc:
         return [f"(a) not JSON: {exc}"]
     if not isinstance(data, dict):
@@ -389,6 +409,7 @@ def example_problems(path, layer, tmp, keys, confirm_only=CONFIRM_ONLY):
     os.makedirs(tmp, exist_ok=True)
     return (cli_problems(data, layer, os.path.join(tmp, "cli"))
             + registry_problems(data, layer, keys, confirm_only)
+            + provider_problems(data)
             + tiers_problems(data, layer, os.path.join(tmp, "tiers")))
 
 
@@ -631,7 +652,7 @@ def _mutated(tmp_path, name, data):
 
 
 def _load_example(name):
-    with open(os.path.join(EXAMPLES, name), encoding="utf-8") as fh:
+    with open(os.path.join(EXAMPLES, name), encoding="utf-8", errors="strict") as fh:
         return json.load(fh)
 
 
@@ -734,9 +755,34 @@ def test_s8_repo_machine_only_key(tmp_path, keys, data):
     '{"schema": 8,',
     '{"schema": 8, "tracker": "files", "tracker": "jira"}',
     '{"schema": 8, "production": {"hosts": ["a"], "hosts": ["b"]}}',
+    '{"schema": NaN}',
+    '{"schema": 8, "qa": {"codex": {"timeout": Infinity}}}',
+    '{"schema": -Infinity}',
 ])
 def test_s9_not_an_object(tmp_path, keys, text):
     _check(tmp_path, keys, "repo-x.json", text, "(a)")
+
+
+@pytest.mark.parametrize("pins", [
+    {"review": {"provider": "gpt"}},
+    {"review": "codex"},
+])
+def test_s28_bad_role_pin(tmp_path, keys, pins):
+    """A pin under the `qa.roles` open table passes (d) and (e), which never
+    look inside an open table; the runtime refuses it, so the checker must."""
+    data = _load_example("machine-reviewers-codex-first.json")
+    data["qa"]["roles"] = pins
+    with pytest.raises(crew_config.ProviderError):
+        crew_config.validate_providers(data)
+    problems = _check(tmp_path, keys, "machine-x.json", data, "(e) providers:")
+    _has(problems, "(e) providers:", "qa.roles.review")
+
+
+def test_s28_valid_role_pin_passes(tmp_path, keys):
+    """The must-allow twin of S28."""
+    data = _load_example("machine-reviewers-codex-first.json")
+    data["qa"]["roles"] = {"review": {"provider": "codex"}}
+    assert provider_problems(data) == []
 
 
 _GOOD_GLOBAL = json.dumps({"path": "m", "exists": True, "readable": True, "findings": []})
