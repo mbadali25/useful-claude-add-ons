@@ -217,6 +217,15 @@ def test_a_tie_keeps_the_earlier_reading():
     assert rules(result) == ["tf-state-unseen"]
 
 
+@pytest.mark.parametrize("repeat", [1, 100, 300, 2000])
+def test_a_long_exec_chain_gives_a_verdict(repeat):
+    assert_hit(crew_oneway, "terragrunt exec -- " * repeat + "terraform state rm x",
+               "tf-state-write")
+    assert_clear(crew_oneway, "terragrunt exec -- " * repeat + "terraform state list")
+    assert_cnt(crew_oneway, "terragrunt exec --unknown-flag " * repeat + "terraform plan",
+               "tg-exec-unseen")
+
+
 def test_one_finding_per_segment():
     result = run(crew_oneway, "terragrunt --unknown-flag state rm x")
     assert len(result["findings"]) == 1
@@ -243,7 +252,7 @@ def test_context_is_accepted_and_ignored():
 
 # --- payloads --------------------------------------------------------------------------------
 
-@pytest.mark.parametrize("tool", ["Read", "Write", "Edit", "Glob", None])
+@pytest.mark.parametrize("tool", ["Read", "Write", "Edit", "Glob", None, [], {}, 3, "bash"])
 def test_a_payload_that_is_not_a_command(tool):
     payload = {"tool_name": tool, "tool_input": {"command": "terraform state rm x"}}
     assert crew_oneway.judge_payload(payload)["verdict"] == "not-a-command"
@@ -260,11 +269,16 @@ def test_payloads_that_are_commands():
         assert got["verdict"] == "could-not-tell"
         assert rules(got) == ["unreadable-input"]
         assert got["operations"] == []
+        assert got["findings"] == [UNREADABLE]
+
+
+UNREADABLE = {"verdict": "could-not-tell", "rule": "unreadable-input", "operation": None,
+              "pass": None, "command": None, "word": None}
 
 
 def test_an_unknown_shell_is_could_not_tell():
     got = run(crew_oneway, "terraform state rm x", shell="zsh")
-    assert got["verdict"] == "could-not-tell" and rules(got) == ["unreadable-input"]
+    assert got["verdict"] == "could-not-tell" and got["findings"] == [UNREADABLE]
 
 
 # --- skip_options (A12) ----------------------------------------------------------------------
@@ -367,6 +381,7 @@ PLAIN_PINS = (
     ("powershell", "terraform.exe state rm x", [["terraform.exe", "state", "rm", "x"]]),
     ("bash", "cd infra && terraform state rm x", None),
     ("bash", "if true; then terraform state rm x; fi", None),
+    ("bash", "for d in a; do terraform state rm x; done", None),
     ("bash", "! terraform state rm x", None),
     ("bash", "terraform state $SUB x", None),
     ("bash", "terraform state list > out.txt", None),
@@ -375,6 +390,8 @@ PLAIN_PINS = (
     ("bash", "terraform state list &> out.txt", None),
     ("powershell", "terraform state list > out.txt", None),
     ("powershell", "terraform state list 2>&1", None),
+    ("powershell", "terraform state list >| out.txt", None),
+    ("powershell", "terraform state list &> out.txt", None),
 )
 
 
@@ -460,9 +477,8 @@ def test_no_finding_carries_a_word_of_the_command():
 def _plugin_files():
     for root, dirs, files in os.walk(PLUGIN):
         dirs[:] = [d for d in dirs if d not in ("node_modules", "__pycache__")]
-        for name in files:
-            if name.endswith((".py", ".sh", ".ps1", ".json", ".md")):
-                yield os.path.join(root, name)
+        for name in files:  # every file: a .cmd or .toml wrapper counts too
+            yield os.path.join(root, name)
 
 
 def test_nothing_in_the_plugin_reaches_the_tripwire_yet():
@@ -471,8 +487,8 @@ def test_nothing_in_the_plugin_reaches_the_tripwire_yet():
     for path in _plugin_files():
         if os.path.normcase(path) in mine:
             continue
-        with open(path, encoding="utf-8", errors="replace") as handle:
-            if "crew_oneway" in handle.read():
+        with open(path, "rb") as handle:
+            if b"crew_oneway" in handle.read():
                 hits.append(os.path.relpath(path, PLUGIN))
     assert hits == [], "report-only until a later ticket wires it"
 
@@ -532,7 +548,7 @@ def test_importing_loads_no_policy_hook_never_or_coord_and_writes_nothing(tmp_pa
 def test_the_cli():
     def cli(*args, stdin=None):
         return subprocess.run([sys.executable, MODULE, *args], input=stdin, capture_output=True,
-                              text=True, check=False, timeout=120)
+                              text=True, encoding="utf-8", check=False, timeout=120)
     done = cli("judge", "--", "terraform state rm x")
     assert done.returncode == 0 and json.loads(done.stdout)["verdict"] == "hit"
     done = cli("judge", "--shell", "powershell", "--", "terraform state list 2>&1")
@@ -557,8 +573,11 @@ def case_block_state_rm(mod):
     assert_hit(mod, "terraform state rm aws_s3_bucket.x", "tf-state-write")
 
 
-def case_block_import_taint(mod):
+def case_block_import(mod):
     assert_hit(mod, "terraform import aws_s3_bucket.x b", "tf-import")
+
+
+def case_block_taint(mod):
     assert_hit(mod, "terraform taint x", "tf-taint")
 
 
@@ -593,19 +612,31 @@ def case_block_raw_chain(mod):
     assert_hit(mod, "cd infra && terraform state rm x", "tf-state-write")
 
 
-def case_block_compound_prefixes(mod):
-    for command in ("if true; then terraform state rm x; fi",
-                    "for d in a; do terraform state rm x; done",
-                    "! terraform state rm x", "command terraform state rm x"):
-        assert_hit(mod, command, "tf-state-write")
+def case_block_prefix_then(mod):
+    assert_hit(mod, "if true; then terraform state rm x; fi", "tf-state-write")
+
+
+def case_block_prefix_do(mod):
+    assert_hit(mod, "for d in a; do terraform state rm x; done", "tf-state-write")
+
+
+def case_block_prefix_bang(mod):
+    assert_hit(mod, "! terraform state rm x", "tf-state-write")
+
+
+def case_block_prefix_command(mod):
+    assert_hit(mod, "command terraform state rm x", "tf-state-write")
 
 
 def case_allow_fd_copy(mod):
     assert_clear(mod, "terraform state list 2>&1")
 
 
-def case_reader_clobber_and_amp(mod):
+def case_reader_clobber(mod):
     assert mod.raw_segments("echo {} >| f") == [seg(["echo"], [(">|", "f")])]
+
+
+def case_reader_amp(mod):
     assert mod.raw_segments("cmd &> f") == [seg(["cmd"], [("&>", "f")])]
 
 
@@ -619,10 +650,19 @@ def case_skip_rows_with_alternates(mod):
             assert mod.skip_options(args, 0) == expected, args
 
 
-def case_block_swallowed_exec(mod):
-    for command in ("terragrunt --unknown-flag exec -- terraform state rm x",
-                    "terragrunt --unknown-flag exec terraform state rm x"):
-        assert_hit(mod, command, "tf-state-write")
+def case_block_swallowed_exec_dashdash(mod):
+    assert_hit(mod, "terragrunt --unknown-flag exec -- terraform state rm x", "tf-state-write")
+
+
+def case_block_swallowed_exec_bare(mod):
+    assert_hit(mod, "terragrunt --unknown-flag exec terraform state rm x", "tf-state-write")
+
+
+def case_long_exec_chain(mod):
+    try:
+        assert_hit(mod, "terragrunt exec -- " * 300 + "terraform state rm x", "tf-state-write")
+    except RecursionError as exc:
+        raise AssertionError("no verdict: RecursionError") from exc
 
 
 def case_block_log_disable_exec(mod):
@@ -658,7 +698,7 @@ MUTATIONS = (
      'STATE_READ = frozenset(("list", "show", "pull", "identities", "rm"))',
      ("case_block_state_rm",)),
     ("2 import and taint dropped", '    "import": "tf-import", "taint": "tf-taint",\n', "",
-     ("case_block_import_taint",)),
+     ("case_block_import", "case_block_taint")),
     ("3 the terragrunt run unwrap skipped",
      "    end, alternates = skip_options(words, at + 1)\n",
      "    end, alternates = at, []\n", ("case_block_run_unwrap",)),
@@ -685,21 +725,26 @@ MUTATIONS = (
     ("29 only assignments, env and sudo stripped",
      'HEAD_PREFIXES = frozenset(("env", "sudo", "command", "time", "then", "do", "else", "!",\n'
      '                           "if", "elif", "while", "until"))',
-     'HEAD_PREFIXES = frozenset(("env", "sudo"))', ("case_block_compound_prefixes",)),
+     'HEAD_PREFIXES = frozenset(("env", "sudo"))', ("case_block_prefix_then", "case_block_prefix_do",
+                                                  "case_block_prefix_bang",
+                                                  "case_block_prefix_command")),
     ("R1 cut at separators before protecting redirections",
      "    for piece in _SEPARATORS_RE.split(_protect(text)):",
      "    for piece in map(_protect, _SEPARATORS_RE.split(text)):",
-     ("case_allow_fd_copy", "case_reader_clobber_and_amp")),
+     ("case_allow_fd_copy", "case_reader_clobber", "case_reader_amp")),
     ("R2 skip_options without alternates", "    return end, alternates\n",
      "    return end, []\n",
      ("case_block_unknown_option_state", "case_skip_rows_with_alternates",
-      "case_block_swallowed_exec", "case_block_log_disable_exec")),
+      "case_block_swallowed_exec_dashdash", "case_block_swallowed_exec_bare",
+      "case_block_log_disable_exec")),
     ("R3 exec dropped from the swallowable unwraps",
      'SWALLOWABLE_UNWRAPS = frozenset(("exec",))', "SWALLOWABLE_UNWRAPS = frozenset()",
-     ("case_block_swallowed_exec", "case_exec_skip_row", "case_ambiguous_literal")),
+     ("case_block_swallowed_exec_dashdash", "case_block_swallowed_exec_bare",
+      "case_exec_skip_row", "case_ambiguous_literal")),
     ("R4 an alternate judged through the table only",
-     "        readings[at] = _reading(words, head, at)\n",
-     "        readings[at] = _table(words, at)\n", ("case_block_swallowed_exec",)),
+     "        readings[at] = _reading(words, head, at, memo)\n",
+     "        readings[at] = _table(words, at)\n",
+     ("case_block_swallowed_exec_dashdash", "case_block_swallowed_exec_bare")),
     ("R5 the no-dash-dash check after exec dropped",
      '        if end > at + 1 and "--" not in words[at + 1:end]:',
      "        if False:",
@@ -707,6 +752,9 @@ MUTATIONS = (
     ("R6 a tie keeps the last reading",
      "        if _RANK[reading[0]] > _RANK[kept[0]]:",
      "        if _RANK[reading[0]] >= _RANK[kept[0]]:", ("case_tie_keeps_earlier",)),
+    ("R7 the exec chain judged by plain recursion",
+     "            memo[later] = _judge_from(words, later, memo)\n",
+     "            pass\n", ("case_long_exec_chain",)),
 )
 
 
@@ -750,7 +798,7 @@ def test_r3_leaves_the_plain_unknown_option_row_a_hit():
 
 def test_r4_leaves_every_skip_options_row_green():
     """What separates R4 from R3: the alternates are found, then judged wrongly."""
-    mutant = _variant("        readings[at] = _reading(words, head, at)\n",
+    mutant = _variant("        readings[at] = _reading(words, head, at, memo)\n",
                       "        readings[at] = _table(words, at)\n")
     for args, expected in SKIP_ROWS:
         assert mutant.skip_options(args, 0) == expected  # pylint: disable=no-member

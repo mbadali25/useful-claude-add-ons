@@ -235,35 +235,51 @@ def _table(words, at):
     return _CLEAR
 
 
-def _unwrap(words, at):
+def _unwrap(words, at, memo):
     """terragrunt's `exec`, `run` or `run-all` at `at`."""
     if words[at] == "exec":
         end, _ = skip_options(words, at + 1)
         readings = []
         if end > at + 1 and "--" not in words[at + 1:end]:
             readings.append((COULD_NOT_TELL, "tg-exec-unseen", at))
-        readings.append(_judge_words(words, end))
+        readings.append(_judge_from(words, end, memo))
         return _first_worst(readings)
     end, alternates = skip_options(words, at + 1)
     return _first_worst([_table(words, start) for start in sorted([end] + alternates)])
 
 
-def _reading(words, head, at):
+def _reading(words, head, at, memo):
     if head == "terragrunt" and at < len(words) and words[at] in UNWRAP_WORDS:
-        return _unwrap(words, at)
+        return _unwrap(words, at, memo)
     return _table(words, at)
 
 
-def _judge_tf(words, head, index):
+def _judge_tf(words, head, index, memo):
     end, alternates = skip_options(words, index)
-    readings = {end: _reading(words, head, end)}
+    readings = {end: _reading(words, head, end, memo)}
     for at in alternates:
-        readings[at] = _reading(words, head, at)
+        readings[at] = _reading(words, head, at, memo)
     return _first_worst([readings[at] for at in sorted(readings)])
 
 
 def _judge_words(words, start=0):
-    """(verdict, rule, word index) of the command that starts at `start`."""
+    """(verdict, rule, word index) of the command that starts at `start`.
+
+    An `exec` unwrap judges the command after it from a later index, so each
+    such index is judged first, latest first, and remembered: a chain of any
+    length (`terragrunt exec -- ` repeated) then needs no deep recursion."""
+    memo = {}
+    starts = {skip_options(words, at + 1)[0] for at in range(start, len(words))
+              if words[at] == "exec"}
+    for later in sorted(starts, reverse=True):
+        if later > start:
+            memo[later] = _judge_from(words, later, memo)
+    return _judge_from(words, start, memo)
+
+
+def _judge_from(words, start, memo):
+    if start in memo:
+        return memo[start]
     index = start
     while index < len(words) and (words[index] in HEAD_PREFIXES or _ASSIGN_RE.match(words[index])):
         index += 1
@@ -272,7 +288,7 @@ def _judge_words(words, start=0):
     head = _head_name(words[index])
     if head not in TF_HEADS:
         return _CLEAR
-    return _judge_tf(words, head, index + 1)
+    return _judge_tf(words, head, index + 1, memo)
 
 
 # --- the two passes --------------------------------------------------------------------------
@@ -339,7 +355,8 @@ def judge(command, shell="bash", context=None):
     operations, findings}."""
     del context  # accepted and ignored by every terraform row (A4)
     if not isinstance(command, str) or shell not in ("bash", "powershell"):
-        return _result([_finding(COULD_NOT_TELL, "unreadable-input", None)])
+        return _result([_finding(COULD_NOT_TELL, "unreadable-input", None,
+                                 **{"pass": None, "command": None, "word": None})])
     return _result(_findings(command, shell))
 
 
@@ -351,7 +368,8 @@ def judge_payload(payload, context=None):
     PowerShell is `not-a-command`; a command payload without a command string
     is `could-not-tell` (`unreadable-input`)."""
     payload = payload if isinstance(payload, dict) else {}
-    shell = _SHELLS.get(payload.get("tool_name"))
+    tool = payload.get("tool_name")
+    shell = _SHELLS.get(tool) if isinstance(tool, str) else None
     if shell is None:
         return {"verdict": NOT_A_COMMAND, "report_only": True, "operations": [],
                 "findings": []}
