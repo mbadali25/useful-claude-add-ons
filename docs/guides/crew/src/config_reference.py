@@ -511,13 +511,13 @@ it at the store. That is four or more of the name's own characters (`run-*`,
 `run-appro[v]als`, `run-approva?s`, `${d}-approvals`), a store child after it
 (`$X/receipts/a.json`), `.claude/crew` before it (`~/.claude/crew/*`, or a
 relative glob run from that directory), or `.claude/crew` named anywhere else
-in the command. Unknown is read as the store, so with a class on this
-over-refuses near it: `rm -rf run-*` in any directory, and a command that
-names `~/.claude/crew` and also holds a variable. Run those yourself. A glob
-or a variable nowhere near the store (`rm -f *.pyc`, `git add
-plugin/crew/*`, `cp $SRC $DST`) is not touched. If the store check itself
-fails while a class is on, the call is refused in every `scope.mode`; only a
-plain read still passes.
+in the command. Unknown is read as the store; only closed, plain shapes are
+excused (a test, lint or `git` command on a hook, a commit message, `rm -rf run-*`
+under a repo or `/tmp`, `cp $SRC ~/.claude/crew/x.bak`, `claude -p x > $OUT`).
+Past those, a variable, redirect, `cd`, `~/` or `sed` beside another command
+refuses. A glob or variable nowhere near the store (`cp $SRC $DST`) is
+untouched. If the store check fails while a class is on, the call is refused
+in every `scope.mode`; only a plain read still passes.
 
 These are tripwires against drift, not a sandbox: the store and the hook
 payload are a file and a process of the same OS user, so a session that sets

@@ -239,8 +239,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.192**: `crew_oneway.py` reports direct terraform state-file writes and file-tool edits (R-34b). `crew` 1.3.192 extends the report-only `crew_oneway.py` tripwire so writing, removing, moving or editing a terraform state file directly (a redirection, `rm`/`mv`/`cp`/`sed -i`, `git rm`, an object-store copy, or a Write/Edit/MultiEdit/NotebookEdit tool call) is reported as `hand-edit-terraform-state`. It still refuses nothing.
-- **crew 1.3.191**: `crew_oneway.py`, a report-only tripwire for hand-edited terraform state (R-34a). `crew` 1.3.191 adds `crew_oneway.py`, which recognises in a command's text the first one-way operation of the revision-3 plan, `hand-edit-terraform-state`: `terraform`, `tofu` or `terragrunt` running a `state` write (anything but `list`, `show`, `pull`, `identities`), `import`, `taint`, `untaint`, `force-unlock` or `refresh`. It refuses nothing yet.
+- **crew 1.3.195**: `crew_policy.classify`, the closed serious list, report-only (R-P6). `crew` 1.3.195 adds `crew_policy.classify`, which places one action's effects into the closed list of eight serious classes, or reports them as unplaced, and treats an operation it cannot place as serious. Nothing acts on the answer yet.
+- **crew 1.3.193**: The run-approval store tripwire stops refusing everyday commands. `crew` 1.3.193 stops the run-approval store tripwire in `crew_runapproval.py` refusing ordinary dev work near the store when a class is on in `approvals.run.classes`: a test, lint, `git add|diff|log` or `sed -i` alone on a hook file, a commit, tag or PR message, `rm -rf run-*` under a repo or `/tmp`, a fresh `claude -p`, and `cp $SRC ~/.claude/crew/<file>` now pass. Must-blocks still refuse.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

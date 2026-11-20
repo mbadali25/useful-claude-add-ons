@@ -138,6 +138,8 @@ read entries under any `## [` heading.
 - crew 1.3.48: re-bump only - interim number on the orphan-reaper branch (pushed, never on main); the change is recorded under crew 1.3.50
 - crew 1.3.91: re-bump only - interim number on the L-0948 branch (commits 42068b070, 893d2df5c; pushed, never on main); the change is recorded under crew 1.3.133
 - crew 1.3.106: re-bump only - interim number on the L-0948 branch (pushed, never on main); main moved to 1.3.96 and the open PRs reached 1.3.132 (#777), so the branch was merged with main and re-bumped above the highest open PR; the change is recorded under crew 1.3.133
+- crew 1.3.194: re-bump only - interim number on the R-P6 serious-classifier branch (PR #809, commit b5aa65aa9, pushed, never on main); merging main 0bb067e6e (R-20 #808) changed plugin/crew after the number was set, so the branch moved to 1.3.195; the change is recorded under crew 1.3.195
+- crew 1.3.193: re-bump only - interim number on the R-P6 serious-classifier branch (commit 6550e9522, pushed before its PR opened, never on main); open PR #808 also held 1.3.193 (since merged to main as 0bb067e6e), so the branch re-bumped above it to 1.3.194; the change is recorded under crew 1.3.195
 - crew 1.3.162: re-bump only - interim number on the stop-budget reader branch (PR #788, commit 4fd68c481, pushed, never on main); main reached 1.3.166 with PR #790 while the branch was open, so it re-bumped to 1.3.167; the change is recorded under crew 1.3.167
 - crew 1.3.160: re-bump only - interim number on the approval-core branch (PR #787, commits b95f23886, edaccc248; pushed, never on main); that push took `CONFIG.md` to 606 lines, over the 600-line budget `test_config_md_states_the_measured_key_counts` holds, so the section was tightened, which is a `plugin/crew` change after the number was set; the change is recorded under crew 1.3.161
 - crew 1.3.148: re-bump only - interim number on the approval-core branch (PR #787, commits 9e88ef910, 9587f7109; pushed, never on main); main reached 1.3.158 (#780) and open PR #788 took 1.3.159, so the branch was merged with main and re-bumped above the highest open PR; the change is recorded under crew 1.3.161
@@ -149,6 +151,18 @@ read entries under any `## [` heading.
 - crew 1.3.160: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); main reached 1.3.161 and open PR #774 holds 1.3.157, so the branch re-bumped to 1.3.162; the change is recorded under crew 1.3.167
 - crew 1.3.159: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); the accepted-value test changed plugin/crew after the number was set, so the branch moved to 1.3.160; the change is recorded under crew 1.3.160
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
+
+### Added — crew 1.3.195: `crew_policy.classify`, the closed serious list, report-only (R-P6)
+
+- **Summary.** `crew` 1.3.195 adds `crew_policy.classify`, which places one action's effects into the closed list of eight serious classes, or reports them as unplaced, and treats an operation it cannot place as serious. Nothing acts on the answer yet.
+- **What.** A monthly cost is compared exactly in USD against a threshold (default 50, serious only when strictly over) in one pinned decimal context. `decide()` unions the effect classes in only when the request carries them, effects never lower an outcome, and the account check runs with and without them; an account outside the closed list is unknown and stops. The `crew_policy.py` CLI gains a `classify` verb and reads every request through one strict reader: any bad or oversized input, or any error while deciding or serialising, exits 2 with nothing on stdout.
+- **Tests.** `test_crew_policy_serious.py` adds must-be-serious, must-allow and must-stop rows, an R-01 parity digest, CLI must-refuse and must-answer rows, and sabotage rows that each go red on a weakened copy.
+
+### Changed — crew 1.3.193: the run-approval store tripwire stops refusing everyday commands (R-20)
+
+- **Summary.** `crew` 1.3.193 stops the run-approval store tripwire in `crew_runapproval.py` refusing ordinary dev work near the store when a class is on in `approvals.run.classes`: a test, lint, `git add|diff|log` or `sed -i` alone on a hook file, a commit, tag or PR message, `rm -rf run-*` under a repo or `/tmp`, a fresh `claude -p`, and `cp $SRC ~/.claude/crew/<file>` now pass. Must-blocks still refuse.
+- **What.** The triggers are unchanged; each closed, plain shape is excused by its own clause (G plain scan, T closed command table, D2-D7 message, hook-name, `claude`, `run-*` and crew-dir rules). Past those shapes a variable, redirect, `cd`, `~/` path, wrapper, `sed` beside another command, `@file` operand or unlisted flag still refuses. Default OFF and inert with no class on: no new key, hook or block.
+- **Tests.** `test_allow_run.py` adds the recorded over-refusals as must-allow rows and the spec's must-blocks; `sabotage_runapproval.py` and `sabotage_platform.py` add sabotage rows S2-S69, one per id. Harness-only PR (T-0087).
 
 ### Added — crew 1.3.192: `crew_oneway.py` reports direct terraform state-file writes and file-tool edits (R-34b)
 

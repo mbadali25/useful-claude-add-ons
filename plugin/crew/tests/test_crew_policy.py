@@ -1098,7 +1098,7 @@ def test_the_module_imports_only_the_standard_library():
             names.update(a.name.split(".")[0] for a in node.names)
         elif isinstance(node, ast.ImportFrom):
             names.add((node.module or "").split(".")[0])
-    assert names <= {"__future__", "json", "sys", "typing"}, names
+    assert names <= {"__future__", "decimal", "json", "sys", "typing"}, names
 
 
 def test_the_module_declares_itself_report_only():
@@ -1191,7 +1191,7 @@ MUTATIONS = (
     ("an emergency for another target waives the review",
      '            and emerg.get("target") == target\n', ''),
     ("an account that does not check out passes when none is required",
-     "        if other in bad:\n", "        if False:\n"),
+     "    if other in bad:\n", "    if False:\n"),
     ("a production deletion drops the stricter classes",
      "    if spec.lane == DESTRUCTIVE:\n        # The stricter classes win",
      '    if spec.lane == DESTRUCTIVE and tier == "prod":\n'
@@ -1215,8 +1215,8 @@ MUTATIONS = (
      "ACCOUNT_CREATION})\n",
      "    needs_admin = spec.admin\n"),
     ("an admin operation may run with a session read or write account",
-     '        if needs_admin:\n            bad += ("read-verified", "write-verified")\n',
-     "        if False:\n            bad += ()\n"),
+     '    if needs_admin:\n        bad += ("read-verified", "write-verified")\n',
+     "    if False:\n        bad += ()\n"),
     ("a classifier verdict pulls in no tier rule",
      "    if spec.tiered or classes:\n", "    if spec.tiered:\n"),
     ("a classifier verdict pulls in no write account",
