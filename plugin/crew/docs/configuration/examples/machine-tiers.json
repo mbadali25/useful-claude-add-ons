@@ -1,0 +1,7 @@
+{
+  "tiers": {
+    "workspace:example-dev": {"tier": "dev"},
+    "account:example-qa": {"tier": "qa"},
+    "database:example-prod": {"tier": "prod"}
+  }
+}

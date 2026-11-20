@@ -854,13 +854,18 @@
         "scripts/_test/crew-guide.py",
         "plugin/crew/docs/configuration/**",
         "plugin/crew/tests/test_config_blanks.py",
+        "plugin/crew/tests/test_config_examples.py",
         "plugin/crew/hooks/scripts/crew_humanonly.py",
-        "plugin/crew/hooks/scripts/crew_autocycle.py"
+        "plugin/crew/hooks/scripts/crew_autocycle.py",
+        "plugin/crew/hooks/scripts/crew_confirm_config.py",
+        "plugin/crew/hooks/scripts/crew_gitallow.py",
+        "plugin/crew/hooks/scripts/crew_tiers.py"
       ],
-      "seconds": 96,
+      "seconds": 151,
       "run": [
         "python3 -m pytest plugin/crew/tests/test_crew_keys.py -q",
         "python3 -m pytest plugin/crew/tests/test_config_blanks.py -q",
+        "python3 -m pytest plugin/crew/tests/test_config_examples.py -q",
         "python3 docs/guides/crew/src/config_reference.py --check",
         "python3 scripts/_test/config-reference.py",
         "python3 docs/guides/crew/src/build.py --check",

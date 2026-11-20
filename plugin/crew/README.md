@@ -129,6 +129,10 @@ for a repository crew 0.20 set up, and status asks for it (`... - run /crew:migr
 this file still holds one: a role 1.0 removed, a schema older than 7, `.work/tickets/<ID>.md` ticket
 files, or a PM journal.
 
+How to fill in both config files, step by step for an owner or an AI model, with worked example
+files checked in CI: [`docs/configuration/guide.md`](docs/configuration/guide.md). The per-key
+reference stays [`CONFIG.md`](CONFIG.md).
+
 Status is written to `.crew/STATUS.md` with honest states — `partial` and
 `blocked` are used, not rounded up to `done`. A status file that overstates
 progress is how the whole system quietly stops meaning anything.

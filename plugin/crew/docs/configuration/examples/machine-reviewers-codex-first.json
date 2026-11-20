@@ -1,0 +1,9 @@
+{
+  "qa": {
+    "provider": "auto",
+    "order": ["codex", "kimi", "claude"],
+    "codex": {
+      "model": "gpt-6.2-sol"
+    }
+  }
+}

@@ -143,6 +143,10 @@ Rules the older paragraphs named, re-checked by id at `bdde58724`:
   `crew_keys.blank_problems()` (rules R1/R2 over `BLANK_EXCLUDED`, a reason per exclusion, blank plus exclusions equal to
   the layer). `crew-keys` maps that directory, `test_config_blanks.py`, `crew_humanonly.py` and `crew_autocycle.py`, and
   runs `test_config_blanks.py`, the probe that a blank in an empty layer changes no effective value.
+  Since R-C3 the same directory also holds the hand-written `guide.md` and `examples/{repo,machine}-*.json`, outside
+  `expected()`; `crew-keys` maps and runs `plugin/crew/tests/test_config_examples.py`, which runs each example through
+  `--check`/`--check-global`, `--inert --json`, the `keys.json` layer classes and `crew_tiers`, and checks the guide's
+  commands, flags, keys and example index (DERIVED, `.crew/verify.json` rule `crew-keys`).
 - `worktree-config-shell` (`:891`, 36 s, `coveredBy` `crew-suite`) maps `_common.sh`, the guard and handoff shell scripts,
   `verify-gate.sh` and `verify_fingerprint.py` to `test_worktree_config_shell.py`; `promote-gate.ps1` is the one `.ps1` it
   still lists (the others were deleted).

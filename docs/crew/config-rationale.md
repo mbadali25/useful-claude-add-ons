@@ -123,6 +123,44 @@ against every reader of the two files: `explain_config`, `resolve_guard`,
 per key in the other layer. The limit: a reader added later that opens a config
 file directly is not in that list, and must be added to the probe by hand.
 
+### The worked examples hold only keys that exist (R-C3)
+
+`plugin/crew/docs/configuration/guide.md` and `examples/*.json` are hand-written
+and held by `plugin/crew/tests/test_config_examples.py`. `crew_config.py --check`
+reads only the `environments` block and `--check-global` reports a partial file
+as missing keys, and both exit 0, so a typo, a bad value or a key in the wrong
+layer passes them. An example therefore also has to come back empty from
+`--inert --json`, map every leaf to a `keys.json` key (an object only under an
+`open-table` key), hold a value its layer class allows (one table in the suite,
+one row per `layer` string: a repo may only veto a `machine-arms` key with
+`false`, an example holds a `humanOnly` key only as `true` because an opt-out
+needs the owner's receipt, and `guards.git.allow` only as `"off"`), stay inside
+declared `values` in the shape the key's default has (a list only where the
+default is a list, so `qa.order: "codex"` and `qa.provider: []` fail as the
+runtime's `validate_providers` refuses them), and have each `tiers` target resolve, through `crew_tiers`, to
+the stated tier as the EFFECTIVE tier (a repo `dev` entry the machine does not
+list resolves to `unknown`, so it fails). Each CLI call must exit 0 and print the
+shape it documents (a `--check-global` report missing `findings`, or an
+`--inert` that is not a list, fails rather than reading as no findings), and a
+repeated JSON key fails at load, before a plain load would drop it. A repo
+`production` block is also read by the guards' own reader
+(`crew_config.production_declaration`): `"hosts": "prod-*"`, a string where a
+list belongs, passes every check above and reads as `malformed` there, so it
+fails the example. A guide flag
+is checked against the help of the script invocation it follows, never the union
+of both scripts on the line; for `crew_confirm_config.py` the word after the
+script must be one of the subcommands its own help lists, and a flag is checked
+against that subcommand's help. A `/crew:` command whose file is the stub of a
+removed command (`description: Removed ...`) fails, because the file exists and
+the command does nothing. A script path is judged by where it lands once `..`
+is resolved: one that leaves the plugin directory for the repository needs the
+`repo-only` label however it is spelt, and one outside the repository fails.
+Examples name
+only keys that exist: a planned key would read as unknown. The guide may name a
+planned key only from the suite's `NOT_YET` list and on a line naming its ticket,
+and an entry that lands fails the suite until it is removed and the example
+written.
+
 
 ### In a linked worktree
 
