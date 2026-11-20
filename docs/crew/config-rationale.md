@@ -135,7 +135,14 @@ layer passes them. An example therefore also has to come back empty from
 one row per `layer` string: a repo may only veto a `machine-arms` key with
 `false`, an example holds a `humanOnly` key only as `true` because an opt-out
 needs the owner's receipt, and `guards.git.allow` only as `"off"`), stay inside
-declared `values`, and resolve its `tiers` through `crew_tiers`. Examples name
+declared `values`, and have each `tiers` target resolve, through `crew_tiers`, to
+the stated tier as the EFFECTIVE tier (a repo `dev` entry the machine does not
+list resolves to `unknown`, so it fails). Each CLI call must exit 0 and print the
+shape it documents (a `--check-global` report missing `findings`, or an
+`--inert` that is not a list, fails rather than reading as no findings), and a
+repeated JSON key fails at load, before a plain load would drop it. A guide flag
+is checked against the help of the script invocation it follows, never the union
+of both scripts on the line. Examples name
 only keys that exist: a planned key would read as unknown. The guide may name a
 planned key only from the suite's `NOT_YET` list and on a line naming its ticket,
 and an entry that lands fails the suite until it is removed and the example

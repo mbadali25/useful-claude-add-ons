@@ -77,7 +77,8 @@ Follow these steps in order. Do not ask the owner anything this guide or `keys.j
 
 3. Ask the owner only these questions, and only for values not already set the way they want:
    - Which tracker holds tickets (`tracker`: `files`, `obsidian`, `jira` or `sdp`), and for Jira
-     the project (`jira.project`) and site (`jira.cloudId`). Repo file.
+     the project (`jira.project`). Repo file. Do not ask for `jira.cloudId`: `/crew:jira-sync`
+     caches it.
    - Which reviewers to try and in what order (`qa.provider`, usually `auto`, and `qa.order`), and
      any model pin (`qa.codex.model`, `qa.kimi.model`). Machine file, unless this one repo differs.
    - Which targets are dev, qa or prod (`tiers`, entries `<kind>:<name>`). Machine file.
@@ -125,7 +126,9 @@ The route, the same for all three:
 1. The model runs `crew_confirm_config.py propose --layer machine --key <key>`, adding
    `--value '"all"'` (or a JSON list) for the git key. For a protected key in an untracked repo
    file, the layer is `repo` with `--root`.
-2. The model relays the two lines `propose` prints to the owner word for word.
+2. The model relays what `propose` prints to the owner word for word. For a `humanOnly` key that
+   is the two indented lines after "Relay the next two lines"; for the git key it is all three
+   lines, the last of which says what the guards stop doing once it applies.
 3. The owner types `/crew:confirm-config <change_id>` twice, in two separate prompts.
 
 The model never confirms, never writes the confirmation store, and never sets these keys any other

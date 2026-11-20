@@ -210,36 +210,64 @@ def _layout(data, layer, tmp):
     return root, global_path
 
 
-def cli_problems(data, layer, tmp):
+def _global_report_problems(report):
+    """Shape problems with a `--check-global --json` report: an object with
+    `exists` and `readable` both `true` and `findings` a list of objects whose
+    `kind` is text. A missing or mistyped field is a problem, never a pass."""
+    if not isinstance(report, dict):
+        return [f"(b) --check-global: report is not an object: {report!r}"]
+    out = []
+    if report.get("exists") is not True or report.get("readable") is not True:
+        out.append(f"(b) --check-global: exists/readable is not true: {report}")
+    findings = report.get("findings")
+    if not isinstance(findings, list):
+        return out + [f"(b) --check-global: findings is not a list: {findings!r}"]
+    for finding in findings:
+        if not isinstance(finding, dict) or not isinstance(finding.get("kind"), str):
+            out.append(f"(b) --check-global: malformed finding {finding!r}")
+        elif finding["kind"] not in CHECK_GLOBAL_INFO:
+            out.append(f"(b) --check-global: [{finding['kind']}] {finding.get('detail')}")
+    return out
+
+
+def cli_problems(data, layer, tmp, run=_run):
+    """(b) and (c). Each call must exit 0 and print the shape it documents;
+    `run` is replaceable so the must-block rows can feed a failed or malformed
+    run without touching the real CLI."""
     root, global_path = _layout(data, layer, tmp)
     base = ["--root", root, "--global-path", global_path]
     out = []
     if layer == "repo":
-        code, stdout, stderr = _run(CREW_CONFIG_PY, base + ["--check"], tmp)
+        code, stdout, stderr = run(CREW_CONFIG_PY, base + ["--check"], tmp)
         if code != 0 or stdout.strip() != "no warnings":
             out.append(f"(b) --check: exit {code}: {stdout.strip()} {stderr.strip()}".strip())
     else:
-        code, stdout, stderr = _run(CREW_CONFIG_PY, base + ["--check-global", "--json"], tmp)
+        code, stdout, stderr = run(CREW_CONFIG_PY, base + ["--check-global", "--json"], tmp)
+        if code != 0:
+            out.append(f"(b) --check-global: exit {code}: {stderr.strip()}")
         try:
             report = json.loads(stdout)
         except ValueError:
             out.append(f"(b) --check-global: not JSON: exit {code}: {stdout} {stderr}")
         else:
-            if not (report.get("exists") and report.get("readable")):
-                out.append(f"(b) --check-global: exists/readable is not true: {report}")
-            for finding in report.get("findings", []):
-                if finding.get("kind") not in CHECK_GLOBAL_INFO:
-                    out.append(f"(b) --check-global: [{finding.get('kind')}] "
-                               f"{finding.get('detail')}")
-    code, stdout, stderr = _run(CREW_CONFIG_PY, base + ["--inert", "--json"], tmp)
+            out.extend(_global_report_problems(report))
+    code, stdout, stderr = run(CREW_CONFIG_PY, base + ["--inert", "--json"], tmp)
+    if code != 0:
+        out.append(f"(c) --inert: exit {code}: {stderr.strip()}")
     try:
         inert = json.loads(stdout)
     except ValueError:
         out.append(f"(c) --inert: not JSON: exit {code}: {stdout} {stderr}")
     else:
-        for entry in inert:
-            out.append(f"(c) --inert: {entry.get('key')}: {entry.get('kind')} "
-                       f"{entry.get('effect', '')}".rstrip())
+        if not isinstance(inert, list):
+            out.append(f"(c) --inert: not a list: {inert!r}")
+        else:
+            for entry in inert:
+                if isinstance(entry, dict):
+                    out.append(f"(c) --inert: {entry.get('key')}: {entry.get('kind')} "
+                               f"{entry.get('effect', '')}".rstrip())
+                else:
+                    out.append(f"(c) --inert: {entry!r}")
     return out
 
 
@@ -314,11 +342,25 @@ def tiers_problems(data, layer, tmp):
     for target, entry in tiers.items():
         stated = entry.get("tier") if isinstance(entry, dict) else None
         result = crew_tiers.resolve_layers(machine, repo, target)
-        got = result["machine"] if layer == "machine" else result["repo"]
-        if got != stated or result["reason"] in ("invalid", "repo-invalid-entry", "conflicting"):
+        # The EFFECTIVE tier (decision 5(f)), not the tier this layer declares:
+        # a repo `dev` entry with no machine entry resolves to `unknown`.
+        if (result["tier"] != stated
+                or result["reason"] in ("invalid", "repo-invalid-entry", "conflicting")):
             out.append(f"(f) {target}: resolves to {result['tier']} ({result['reason']}), "
                        f"the file states {stated!r}")
     return out
+
+
+def _no_duplicates(pairs):
+    """`object_pairs_hook` that refuses a repeated key at any depth: a plain
+    load keeps the last one, so the CLI would check a file other than the one
+    committed."""
+    seen = {}
+    for name, value in pairs:
+        if name in seen:
+            raise ValueError(f"duplicate key {name!r}")
+        seen[name] = value
+    return seen
 
 
 def example_problems(path, layer, tmp, keys, confirm_only=CONFIRM_ONLY):
@@ -327,7 +369,7 @@ def example_problems(path, layer, tmp, keys, confirm_only=CONFIRM_ONLY):
         return [f"{os.path.basename(path)}: not named repo-*.json or machine-*.json"]
     try:
         with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
+            data = json.load(fh, object_pairs_hook=_no_duplicates)
     except ValueError as exc:
         return [f"(a) not JSON: {exc}"]
     if not isinstance(data, dict):
@@ -381,6 +423,24 @@ def _script_problem(name, line):
     return f"no such script {name}"
 
 
+FLAG_SCRIPTS = re.compile(r"(?<![\w-])(crew_confirm_config\.py|crew_config\.py)(?![\w-])")
+
+
+def _flag_owners(line):
+    """`(flag, script)` per flag on a line naming a flag-checked script. A flag
+    belongs to the nearest script named before it (one named after it when
+    none is before), so each invocation is checked against its own help and a
+    line naming both scripts never pools their flags."""
+    marks = [(m.start(), m.group(1)) for m in FLAG_SCRIPTS.finditer(line)]
+    if not marks:
+        return []
+    out = []
+    for found in FLAG.finditer(line):
+        before = [s for at, s in marks if at < found.start()]
+        out.append((found.group(0), before[-1] if before else marks[0][1]))
+    return out
+
+
 def guide_problems(text, keys, not_yet, confirm_only, *, help_flags,
                    planned=PLANNED_FAMILIES, families=crew_keys.FAMILIES,
                    example_names=None):
@@ -396,12 +456,9 @@ def guide_problems(text, keys, not_yet, confirm_only, *, help_flags,
         for cmd in COMMAND.findall(line):
             if not os.path.isfile(os.path.join(COMMANDS, cmd + ".md")):
                 out.append(f"line {number}: /crew:{cmd} is not a command")
-        scripts = [s for s in ("crew_confirm_config.py", "crew_config.py") if _names(s, line)]
-        if scripts:
-            allowed = set().union(*(help_flags[s] for s in scripts))
-            for flag in FLAG.findall(line):
-                if flag not in allowed:
-                    out.append(f"line {number}: {flag} is not a flag of {' or '.join(scripts)}")
+        for flag, script in _flag_owners(line):
+            if flag not in help_flags[script]:
+                out.append(f"line {number}: {flag} is not a flag of {script}")
         for script in SCRIPT.findall(line):
             problem = _script_problem(script, line)
             if problem:
@@ -632,9 +689,58 @@ def test_s8_repo_machine_only_key(tmp_path, keys, data):
     _check(tmp_path, keys, "repo-x.json", dict(data, schema=8), "(d)")
 
 
-@pytest.mark.parametrize("text", ["[]", '{"schema": 8,'])
+@pytest.mark.parametrize("text", [
+    "[]",
+    '{"schema": 8,',
+    '{"schema": 8, "tracker": "files", "tracker": "jira"}',
+    '{"schema": 8, "production": {"hosts": ["a"], "hosts": ["b"]}}',
+])
 def test_s9_not_an_object(tmp_path, keys, text):
     _check(tmp_path, keys, "repo-x.json", text, "(a)")
+
+
+_GOOD_GLOBAL = json.dumps({"path": "m", "exists": True, "readable": True, "findings": []})
+
+
+@pytest.mark.parametrize("layer,flag,result", [
+    ("machine", "--check-global", (1, _GOOD_GLOBAL, "boom")),
+    ("machine", "--check-global", (0, "{}", "")),
+    ("machine", "--check-global", (0, json.dumps({"exists": True, "readable": True}), "")),
+    ("machine", "--check-global", (0, json.dumps(
+        {"exists": True, "readable": True, "findings": {}}), "")),
+    ("machine", "--check-global", (0, json.dumps(
+        {"exists": True, "readable": True, "findings": ["x"]}), "")),
+    ("machine", "--check-global", (0, "[]", "")),
+    ("machine", "--inert", (0, "{}", "")),
+    ("machine", "--inert", (1, "[]", "boom")),
+    ("repo", "--inert", (0, "{}", "")),
+    ("repo", "--inert", (2, "[]", "boom")),
+    ("repo", "--check", (1, "no warnings", "boom")),
+])
+def test_s26_cli_failed_or_malformed(tmp_path, layer, flag, result):
+    """A failed run, a missing or mistyped field, or a non-list `--inert`
+    fails the example; it never passes as `no findings`."""
+    def fake(script, args, home):
+        return result if flag in args else _run(script, args, home)
+    data = _load_example("repo-minimal.json" if layer == "repo"
+                         else "machine-reviewers-kimi-first.json")
+    problems = cli_problems(data, layer, str(tmp_path), run=fake)
+    assert _caught(problems, "(c)" if flag == "--inert" else "(b)"), problems
+
+
+def test_s26_cli_real_runs_pass(tmp_path):
+    """The must-allow twin of S26: the unreplaced runner finds nothing."""
+    for layer, name in (("repo", "repo-minimal.json"),
+                        ("machine", "machine-reviewers-kimi-first.json")):
+        assert cli_problems(_load_example(name), layer, str(tmp_path / layer)) == []
+
+
+def test_s27_repo_tier_without_machine_entry(tmp_path, keys):
+    """Decision 5(f) is the EFFECTIVE tier: a repo `dev` entry the machine does
+    not list resolves to `unknown`, so the example's stated tier is wrong."""
+    data = {"schema": 8, "tiers": {"workspace:example-dev": {"tier": "dev"}}}
+    problems = _check(tmp_path, keys, "repo-x.json", data, "(f)")
+    assert any("unknown" in p for p in _caught(problems, "(f)")), problems
 
 
 def test_s10_no_layer_prefix(tmp_path, keys):
@@ -649,6 +755,25 @@ def test_s10_no_layer_prefix(tmp_path, keys):
 ])
 def test_s11_unknown_flag(keys, help_flags, line):
     assert any("--frobnicate" in p for p in _guide(keys, help_flags, text=line))
+
+
+@pytest.mark.parametrize("line,flag,script", [
+    # Valid for crew_config.py only, placed after the confirm script.
+    ("Run `crew_config.py --check`, then `crew_confirm_config.py propose --check-global`.",
+     "--check-global", "crew_confirm_config.py"),
+    # Valid for crew_confirm_config.py only, placed after crew_config.py.
+    ("Run `crew_confirm_config.py propose --key x`, then `crew_config.py --key x`.",
+     "--key", "crew_config.py"),
+])
+def test_s11b_flag_of_the_other_script(keys, help_flags, line, flag, script):
+    problems = _guide(keys, help_flags, text=line)
+    assert f"line 1: {flag} is not a flag of {script}" in problems, problems
+
+
+def test_s11c_mixed_line_valid_flags_pass(keys, help_flags):
+    line = ("Run `crew_config.py --check --json`, then "
+            "`crew_confirm_config.py propose --layer machine --key k`.")
+    assert [p for p in _guide(keys, help_flags, text=line) if p.startswith("line")] == []
 
 
 def test_s12_unknown_command(keys, help_flags):
