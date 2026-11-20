@@ -150,6 +150,12 @@ read entries under any `## [` heading.
 - crew 1.3.159: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); the accepted-value test changed plugin/crew after the number was set, so the branch moved to 1.3.160; the change is recorded under crew 1.3.160
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Added — crew 1.3.193: `crew_policy.classify`, the closed serious list, report-only (R-P6)
+
+- **Summary.** `crew` 1.3.193 adds `crew_policy.classify`, which places one action's effects into the closed list of eight serious classes, or reports them as unplaced, and treats an operation it cannot place as serious. Nothing acts on the answer yet.
+- **What.** A monthly cost is compared exactly in USD against a threshold (default 50, serious only when strictly over) in one pinned decimal context. `decide()` unions the effect classes in only when the request carries them, effects never lower an outcome, and the account check runs with and without them; an account outside the closed list is unknown and stops. The `crew_policy.py` CLI gains a `classify` verb and reads every request through one strict reader: any bad or oversized input, or any error while deciding or serialising, exits 2 with nothing on stdout.
+- **Tests.** `test_crew_policy_serious.py` adds must-be-serious, must-allow and must-stop rows, an R-01 parity digest, CLI must-refuse and must-answer rows, and sabotage rows that each go red on a weakened copy.
+
 ### Added — crew 1.3.192: `crew_oneway.py` reports direct terraform state-file writes and file-tool edits (R-34b)
 
 - **Summary.** `crew` 1.3.192 extends the report-only `crew_oneway.py` tripwire so writing, removing, moving or editing a terraform state file directly (a redirection, `rm`/`mv`/`cp`/`sed -i`, `git rm`, an object-store copy, or a Write/Edit/MultiEdit/NotebookEdit tool call) is reported as `hand-edit-terraform-state`. It still refuses nothing.
