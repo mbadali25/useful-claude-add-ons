@@ -263,7 +263,8 @@ attending. A terraform apply under `tiered` is never run unattended: crew has
 no cost estimate, so it asks and logs the tier it read.
 
 - **Which target.** A dispatch's target is `workflow:<file>` as the line names
-  it (`deploy.yml` and `.github/workflows/deploy.yml` are different targets).
+  it (`deploy.yml`, and the same file spelled with its `.github/workflows/`
+  directory, are different targets).
   When `environments.workflows` maps the workflow to `input:<name>` and the
   line gives that input one literal value, the target is
   `workflow:<file>@<value>` and only that; a bare `workflow:<file>` is not

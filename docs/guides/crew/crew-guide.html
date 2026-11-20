@@ -327,7 +327,8 @@ attending. A terraform apply under <code>tiered</code> is never run unattended: 
 no cost estimate, so it asks and logs the tier it read.</p>
 <ul>
 <li><strong>Which target.</strong> A dispatch's target is <code>workflow:&lt;file&gt;</code> as the line names
-  it (<code>deploy.yml</code> and <code>.github/workflows/deploy.yml</code> are different targets).
+  it (<code>deploy.yml</code>, and the same file spelled with its <code>.github/workflows/</code>
+  directory, are different targets).
   When <code>environments.workflows</code> maps the workflow to <code>input:&lt;name&gt;</code> and the
   line gives that input one literal value, the target is
   <code>workflow:&lt;file&gt;@&lt;value&gt;</code> and only that; a bare <code>workflow:&lt;file&gt;</code> is not
