@@ -1623,7 +1623,9 @@ def _placed(word, tool, cwd):
 
 def _placed_root(word, tool, cwd):
     """D6 (3): a `find` root, literal segments only, is placed when no store
-    target lies at or under it."""
+    target lies at or under it. A relative root is one of the two forms, so
+    it takes the relative form's cwd test too: a cwd at or under
+    `<home>/.claude` places nothing (`find .` run from inside the store)."""
     if not _PLACED_RE.fullmatch(word) or _HAS_GLOB_RE.search(word):
         return False
     _homes, targets = _store_targets()
@@ -1639,7 +1641,9 @@ def _placed_root(word, tool, cwd):
         segments = _segments(word, tool == "PowerShell")
         if not _segments_ok(segments) or not isinstance(cwd, str) or not os.path.isabs(cwd):
             return False
-        paths = [os.path.join(form, *segments)
+        if not _cwd_clear(cwd):  # the relative form's cwd test holds for a root too
+            return False
+        paths =[os.path.join(form, *segments)
                  for form in (os.path.abspath(cwd), os.path.realpath(cwd))]
     return not any(_under(target, os.path.abspath(path)) for target in targets for path in paths)
 

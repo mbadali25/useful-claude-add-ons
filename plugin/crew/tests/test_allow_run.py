@@ -50,6 +50,7 @@ import context  # noqa: F401  pylint: disable=unused-import
 import approval_hook
 import crew_hook
 import crew_runapproval as ra
+import sabotage_platform
 import scope_guard
 import verify_trust
 from scope_fixtures import FLAVOURS, SCRIPTS, make_repo, prompt, run_hook
@@ -1599,8 +1600,11 @@ def _cwd_payload(repo, command, where):
     (lambda home: home / "src" / "repo", "rm -rf ../../*/*/run-*", 2),
     (None, "rm -rf run-*", 2),
     (lambda home: home / ".claude" / "x", "rm -rf build/run-*", 2),
+    (lambda home: home / ".claude" / "x", "find . -name 'run-*' -delete", 2),
+    (lambda home: home / ".claude" / "crew" / "run-approvals" / "receipts",
+     "find . -name 'run-*' -delete", 2),
 ], ids=["repo-relative", "repo-relative-bare", "cwd-home-find", "cwd-home-rm", "relative-climb",
-        "relative-no-cwd", "cwd-under-claude"])
+        "relative-no-cwd", "cwd-under-claude", "cwd-under-claude-find", "cwd-in-store-find"])
 def test_with_a_class_on_a_relative_glob_is_placed_from_the_directory_it_runs_in(
         repo, capsys, where, command, expected):
     """D6: a relative word is placed elsewhere only under a cwd that is not
@@ -1679,15 +1683,14 @@ def test_with_a_class_on_a_rooted_or_joined_word_built_from_the_home_is_refused(
 def test_with_a_class_on_a_home_reached_through_a_link_is_read_in_both_forms(repo, capsys,
                                                                              monkeypatch, tmp_path):
     """D6 compares against the home as written AND as its real path: HOME
-    points at a link to the real home, the command runs in the real home."""
+    points at a link to the real home, the command runs in the real home.
+    A host that cannot make the link skips, never errors: S44 is then "not
+    exercised here" (`sabotage_platform.CAPABILITY_ONLY`)."""
     turn_on()
     real = _home()
     link = tmp_path / "home-link"
-    if os.name == "nt":
-        import _winapi  # pylint: disable=import-outside-toplevel,import-error
-        _winapi.CreateJunction(str(real), str(link))
-    else:
-        link.symlink_to(real, target_is_directory=True)
+    if not sabotage_platform.link_dir(str(real), str(link)):
+        pytest.skip("not exercised here: this host cannot make a directory link")
     for name in ("HOME", "USERPROFILE"):
         monkeypatch.setenv(name, str(link))
     payload = shell(repo, "find . -name 'run-*' -delete")

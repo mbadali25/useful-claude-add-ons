@@ -407,7 +407,8 @@ _R20_ROWS = (
      '    return not above and not any(_under(form, os.path.join(home, ".claude"))\n'
      "                                 for form in forms for home in homes)\n",
      "    return True\n",
-     [_CWD.format("cwd-home-rm"), _CWD.format("cwd-under-claude")]),
+     [_CWD.format(i) for i in ("cwd-home-rm", "cwd-under-claude", "cwd-under-claude-find",
+                               "cwd-in-store-find")]),
     ("S41 find's roots are not judged, only its pattern word",
      "        roots, patterns = (parts[0] or [_DOT], parts[1]) if parts else ((), set())\n",
      "        roots, patterns = (), set()\n",
@@ -551,6 +552,10 @@ _R20_ROWS = (
      "        width = _flag_width(args, k, spec) or 1\n",
      "        width = (_flag_width(args, k, spec) or 1) if word.value in flags else 1\n",
      [_ALLOW.format(i) for i in ("msg-label-double-dash", "msg-ps-label-double-dash")]),
+    ("S74 a relative find root skips the relative form's cwd test (review round 4)",
+     "        if not _cwd_clear(cwd):  # the relative form's cwd test holds for a root too\n"
+     "            return False\n", "",
+     [_CWD.format(i) for i in ("cwd-under-claude-find", "cwd-in-store-find")]),
 )
 
 def _case(target):

@@ -695,6 +695,53 @@ def test_a_declared_entry_that_skips_on_its_own_platform_fails(
     assert "SABOTAGE SUITE: FAIL (0 platform-only" in printed
 
 
+@pytest.mark.parametrize("able,code,applied", [(False, 0, []), (True, 0, ["test_nothing"])],
+                         ids=["cannot", "can"])
+def test_an_entry_needing_a_capability_runs_only_where_the_host_has_it(
+        tmp_path, monkeypatch, capsys, able, code, applied):
+    """must-allow / must-block (R-20 review round 4). A host whose probe says
+    no never applies the entry and counts it "not exercised"; a host whose
+    probe says yes runs it like any other."""
+    target = _target(tmp_path)
+    monkeypatch.setattr(sabotage, "MUTATIONS", (
+        ("a link label", target, "beta", "gamma", "test_nothing"),))
+    monkeypatch.setitem(sabotage_platform.CAPABILITY_ONLY, "a link label",
+                        (lambda: able, "a host that can link"))
+    ran = []
+
+    def _run(test):
+        ran.append(test)
+        return _caught(test)
+
+    monkeypatch.setattr(sabotage, "run_test", _run)
+
+    assert sabotage.main() == code
+    printed = capsys.readouterr().out
+    assert ("PLATFORM-ONLY, NOT EXERCISED (a host that can link)" in printed) is not able
+    assert (f"({0 if able else 1} platform-only, not exercised on") in printed
+    assert ran == applied
+
+
+def test_every_capability_only_label_names_exactly_one_shipped_mutation():
+    """must-block: a typo'd label would never be asked, so the entry would
+    error instead of reading "not exercised here"."""
+    here = [m[0] for m in sabotage.MUTATIONS]
+    for label in sabotage_platform.CAPABILITY_ONLY:
+        assert here.count(label) == 1, label
+
+
+def test_a_directory_link_that_cannot_be_made_is_reported_not_raised(tmp_path):
+    """must-block: `link_dir` answers False for a link the host refuses (here:
+    the link's parent does not exist), and True with a real link otherwise."""
+    real = tmp_path / "real"
+    real.mkdir()
+    assert sabotage_platform.link_dir(str(real), str(tmp_path / "absent" / "link")) is False
+    if sabotage_platform.can_link_dirs():
+        link = tmp_path / "link"
+        assert sabotage_platform.link_dir(str(real), str(link)) is True
+        assert os.path.realpath(str(link)) == os.path.realpath(str(real))
+
+
 def _labels_with_pwsh(monkeypatch, present):
     """`sabotage.MUTATIONS` labels as a host with or without pwsh builds them.
 
