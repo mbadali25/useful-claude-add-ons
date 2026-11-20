@@ -3105,6 +3105,35 @@ def test_set_cli_takes_absent_for_a_first_machine_write(tmp_path, capsys):
 _CONFIG_MD_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), os.pardir, "CONFIG.md",
 )
+_CONF_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), os.pardir, "docs", "configuration",
+)
+_REFERENCE_MD_PATH = os.path.join(_CONF_DIR, "reference.md")
+_GUIDE_MD_PATH = os.path.join(_CONF_DIR, "guide.md")
+_INDEX_HEADER_MAX = 20  # R-C4: lines before the first key row
+
+
+def _load_config_reference():
+    """`docs/guides/crew/src/config_reference.py`, the generator (R-C4)."""
+    import importlib.util  # pylint: disable=import-outside-toplevel
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, os.pardir,
+                        os.pardir, "docs", "guides", "crew", "src", "config_reference.py")
+    spec = importlib.util.spec_from_file_location("config_reference_r_c4", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _all_leaf_keys():
+    global_leaves = crew_config.leaf_paths(crew_config.default_global_config())
+    return set(crew_config.leaf_paths(crew_config.default_config())) | set(global_leaves)
+
+
+def _index_header_lines(text):
+    """The lines before the first key row of an index."""
+    lines = text.splitlines()
+    first = next(i for i, line in enumerate(lines) if line.startswith("| `"))
+    return lines[:first]
 
 
 def _config_md_row(text, key):
@@ -3129,12 +3158,16 @@ def test_config_md_and_setup_template_state_the_kimi_defaults():
     defaults = crew_config.default_config()
     order = json.dumps(defaults["qa"]["order"]).replace('","', '", "')
 
+    with open(_REFERENCE_MD_PATH, encoding="utf-8") as handle:
+        reference = handle.read()
+
     assert order in _config_md_row(text, "qa.order")
     assert _config_md_default(text, "qa.kimi.model") == "`null`"
     assert _config_md_default(text, "dev.kimi.model") == "`null`"
-    assert "`kimi`" in _config_md_row(text, "qa.provider")
-    assert "`kimi`" in _config_md_row(text, "dev.provider")
-    assert all(f"`{provider}`" in _config_md_row(text, "qa.provider")
+    # R-C4: the allowed values live in reference.md; the index has no Values column.
+    assert "`kimi`" in _config_md_row(reference, "qa.provider")
+    assert "`kimi`" in _config_md_row(reference, "dev.provider")
+    assert all(f"`{provider}`" in _config_md_row(reference, "qa.provider")
                for provider in crew_config.QA_PROVIDERS)
 
 
@@ -3154,3 +3187,60 @@ def test_config_md_states_the_measured_key_counts():
         len(total), len(global_leaves), len(total) - len(global_leaves))
     assert all(f"| `{key}` |" in text for key in total)
     assert len(text.splitlines()) < 600
+
+
+def test_config_md_is_an_index():
+    """R-C4: CONFIG.md is a header plus exactly one line per key, so it costs
+    one line per key and stays under 600 lines as families are added. The
+    family tables and the Values column live in reference.md, which the index
+    names. It always names `guide.md` (R-C3), and `guide.md` must exist, so
+    deleting the guide fails here instead of silently dropping the pointer."""
+    with open(_CONFIG_MD_PATH, encoding="utf-8") as handle:
+        text = handle.read()
+    keys = _all_leaf_keys()
+    lines = text.splitlines()
+    header = _index_header_lines(text)
+
+    for key in keys:
+        assert sum(1 for line in lines if line.startswith(f"| `{key}` |")) == 1, key
+    assert len(header) <= _INDEX_HEADER_MAX, len(header)
+    assert len(lines) == len(header) + len(keys), (len(lines), len(header), len(keys))
+    assert not re.search(r"^## `[^`]+` keys", text, re.MULTILINE)
+    assert "| Key | Layer | Default | Family | Summary |" in header
+    assert not any("Values" in line for line in lines if line.startswith("|"))
+    assert "docs/configuration/reference.md" in "\n".join(header)
+
+    assert "docs/configuration/guide.md" in "\n".join(header)
+    assert os.path.exists(_GUIDE_MD_PATH), _GUIDE_MD_PATH
+    module = _load_config_reference()
+    rendered = module.render_config_md(module.Model())
+    assert "docs/configuration/guide.md" in "\n".join(_index_header_lines(rendered))
+
+
+def test_reference_md_has_every_family_table():
+    """R-C4: reference.md holds what CONFIG.md held before it became an index:
+    the prose sections and one table per family, every key with its values."""
+    with open(_REFERENCE_MD_PATH, encoding="utf-8") as handle:
+        text = handle.read()
+
+    for heading in ("## The two layers", "## The human-only opt-out",
+                    "## The owner-typed run approval", "## Git commands",
+                    "## Guard profiles", "## Verify gate trust",
+                    "## Migrating and removed keys"):
+        assert re.search(rf"^{re.escape(heading)}", text, re.MULTILINE), heading
+    assert "| Key | Layer | Default | Values | Since | Summary |" in text
+    for key in _all_leaf_keys():
+        cells = re.split(r"(?<!\\)\|", _config_md_row(text, key))  # `\|` is in a cell
+        assert len(cells) == 8, (key, cells)
+        assert cells[4].strip(), key  # the Values cell
+        assert cells[5].strip(), key  # the Since cell
+
+    # A generator that stopped writing reference.md would also stop checking
+    # it, so `--check` alone stays green (R-C4 sabotage 4): hold the generator
+    # to producing it, and the committed copy to what it produces.
+    module = _load_config_reference()
+    produced = module.expected()
+    assert os.path.normcase(os.path.abspath(module.REFERENCE_MD)) == os.path.normcase(
+        os.path.abspath(_REFERENCE_MD_PATH))
+    assert module.REFERENCE_MD in produced
+    assert produced[module.REFERENCE_MD] == text.replace("\r\n", "\n")

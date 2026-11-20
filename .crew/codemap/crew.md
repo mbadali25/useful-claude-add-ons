@@ -3813,9 +3813,10 @@ already a JUDGEMENT flagged for scribe.
 Agent role definitions and command bodies are not traced here beyond their
 frontmatter and the sections cited above. `crew:reference` and `crew:roster`
 are the tools for the finer grain. Config is covered here only in outline —
-`plugin/crew/CONFIG.md` is the full reference (generated whole from the code by
-`docs/guides/crew/src/config_reference.py`, `render_config_md` `:395`, checked by `--check`) and the
-authority where the two disagree; the reasoning behind the keys is `docs/crew/config-rationale.md`. The other subsystem notes in `.crew/codemap/` cover their own
+`plugin/crew/CONFIG.md` is the key index, one line per key, and
+`plugin/crew/docs/configuration/reference.md` the full reference (R-C4; both generated whole from
+the code by `docs/guides/crew/src/config_reference.py`, `render_config_md` and
+`render_reference_md`, checked by `--check`) and the authority where the two disagree; the reasoning behind the keys is `docs/crew/config-rationale.md`. The other subsystem notes in `.crew/codemap/` cover their own
 areas; `INDEX.md` is the table of contents. The `6c497a14` re-derivation left
 its anchor column to the integrator; T-0015 re-filled that column from
 `grep -m1 '^anchor:'` when it re-anchored every note to `f2bb919b`.

@@ -983,8 +983,10 @@ def test_gate_an_inherited_git_dir_cannot_blank_the_changed_file_scan(tmp_path, 
 
 
 def test_gate_the_documented_function_scrub_boundary_names_its_own_words():
-    """Round 10: the configuration reference states what the scrub does NOT cover."""
-    with open(os.path.join(_ROOT, "CONFIG.md"), encoding="utf-8") as handle:
+    """Round 10: the configuration reference states what the scrub does NOT cover.
+    R-C4: that text moved from CONFIG.md (now the key index) to reference.md."""
+    with open(os.path.join(_ROOT, "docs", "configuration", "reference.md"),
+              encoding="utf-8") as handle:
         text = handle.read()
     assert "BASH_FUNC_compgen%%" in text and "BASH_FUNC_unset%%" in text
     assert "removes every inherited function before anything is called" not in text

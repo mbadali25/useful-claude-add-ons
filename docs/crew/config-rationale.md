@@ -1,6 +1,6 @@
 # crew configuration rationale
 
-This file is the design rationale behind crew's settings: why a key lives in one layer or both, why some keys resolve to the narrower layer, and what each guard and gate does with its value. The list of keys, their values and defaults is the generated `plugin/crew/CONFIG.md`; this file explains the decisions that list cannot.
+This file is the design rationale behind crew's settings: why a key lives in one layer or both, why some keys resolve to the narrower layer, and what each guard and gate does with its value. The key index, one line per key with its layer and default, is the generated `plugin/crew/CONFIG.md`, and each key's allowed values are in the generated `plugin/crew/docs/configuration/reference.md`; this file explains the decisions that list cannot.
 
 Every claim below is a `file::symbol` you can grep for, a config key named beside it, or a value printed by running the function named beside it. Citations name symbols, never line numbers, on purpose: when line numbers were last measured, 11 of 13 were wrong, each landing on real code in the wrong function. A symbol name breaks loudly when it is renamed. Headings are unnumbered, and a reference to another part of this file names its heading.
 

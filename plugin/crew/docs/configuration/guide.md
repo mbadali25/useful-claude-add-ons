@@ -5,7 +5,7 @@ model doing it for them. Hand-written. The generated files beside it hold the fa
 [`keys.json`](keys.json) (default, allowed values, layer, one line, the version it arrived in),
 [`template.annotated.md`](template.annotated.md) (the blank template with that beside each key),
 and the two copy-safe blanks [`config.blank.json`](config.blank.json) and
-[`global.blank.json`](global.blank.json). The full reference is [`CONFIG.md`](../../CONFIG.md).
+[`global.blank.json`](global.blank.json). The full reference is [`reference.md`](reference.md); [`CONFIG.md`](../../CONFIG.md) is the key index.
 
 Every example file named here is checked in CI by `tests/test_config_examples.py`, and so is every
 command, flag and key this guide names. If a line here and a generated file disagree, the
@@ -134,7 +134,7 @@ The route, the same for all three:
 
 The model never confirms, never writes the confirmation store, and never sets these keys any other
 way: a value written without the two confirmations reads as not set. Turning the git key off needs
-no confirmation; `CONFIG.md` says how.
+no confirmation; [`reference.md`](reference.md), "Git commands", says how.
 
 ## 5. Worked examples
 
@@ -161,7 +161,7 @@ More examples arrive with the keys they need (R-M1, R-A1, R-40).
 ## 6. Where each key family is explained
 
 Every key belongs to one family; `keys.json` gives each key's `family`. For each family,
-`CONFIG.md` has the reference table, `keys.json` the per-key facts and `template.annotated.md` the
+[`reference.md`](reference.md) has the reference table, `keys.json` the per-key facts and `template.annotated.md` the
 key in its place in a blank file.
 
 - `core`: the schema version and the few keys every repo has.

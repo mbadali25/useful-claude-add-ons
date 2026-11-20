@@ -8,7 +8,7 @@ checked.
 ## Plugin Markdown total
 
 <!-- claim: crew-markdown-lines -->
-`git ls-files 'plugin/crew/*.md'` currently totals 20,437 lines across 149 files (including this
+`git ls-files 'plugin/crew/*.md'` currently totals 20,574 lines across 150 files (including this
 file). Target: ≤6,000 lines (`docs/review/04-redesign.md`). This number moves every time a tracked
 `plugin/crew/*.md` file is added, removed or resized — including this one — so re-measure rather
 than trusting it; the marker above is what keeps that honest.
@@ -36,6 +36,18 @@ to later tickets (T12-trim in `TODO.md`), not deletions a lane can make unilater
 `check_instructions.py` does not fail the build on this aggregate number for that reason — it is
 tracked here for accuracy (`check_self_claims`), not gated. What IS gated: the 120-line command
 budget (with the allowance file as the only exception, and growth even there is a hard fail).
+
+## Configuration reference
+
+`plugin/crew/CONFIG.md` stays under 600 lines, held by `test_crew_config.py`
+(`test_config_md_states_the_measured_key_counts`) and not by `check_instructions.py`: one owner
+for the cap is enough. Since R-C4 it is a generated key index, a header of at most 20 lines
+(`test_config_md_is_an_index`) and then exactly one line per key, so a new key costs one line and a
+new family costs nothing more. The prose and the per-family tables are in
+`plugin/crew/docs/configuration/reference.md`. The generated files under
+`plugin/crew/docs/configuration/` (`reference.md`, `keys.json`, `template.annotated.md`) carry no
+line cap, on purpose: each holds one row per key, and a cap would force keys out of the reference.
+They still count toward the Markdown total above.
 
 ## Command file budget
 

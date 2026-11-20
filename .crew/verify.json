@@ -249,7 +249,7 @@
 
     { "id": "crew-config", "paths": ["plugin/crew/hooks/scripts/crew_config.py",
                 "plugin/crew/templates/**",
-                "plugin/crew/CONFIG.md",
+                "plugin/crew/CONFIG.md", "plugin/crew/docs/configuration/reference.md", "docs/guides/crew/src/config_reference.py",
                 "plugin/crew/skills/crew-setup/SKILL.md",
                 "plugin/crew/tests/test_crew_config.py",
                 "plugin/crew/tests/test_crew_config_unattended.py",

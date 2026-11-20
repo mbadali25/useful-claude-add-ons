@@ -111,7 +111,7 @@ How it writes, whatever the arguments say:
   veto and is a hand edit by the owner. Never propose one on your own
   initiative, never confirm one, and say plainly that `humanOnly.approve` is acted on
   since 1.3.27 and `humanOnly.promoteMarker` by no hook
-  (`CONFIG.md`, "The human-only opt-out").
+  (`docs/configuration/reference.md`, "The human-only opt-out").
 - **Deleting the repo config** is the menu's delete step only: preview, typed
   repo name, then one rename of the file to `.crew/config.json.bak-<UTC>`
   under the lock, compared with what the preview read (a changed file is put

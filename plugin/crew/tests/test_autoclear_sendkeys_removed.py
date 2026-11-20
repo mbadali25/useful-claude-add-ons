@@ -241,7 +241,7 @@ def test_the_owner_repo_config_loads_with_no_sendkeys_line_and_no_new_line(tmp_p
 # --- the documents do not offer it ------------------------------------------------------
 
 _DOCUMENTS = ["skills/crew-setup/phases.md", "commands/onboard.md", "commands/migrate.md",
-              "skills/crew-context/SKILL.md", "CONFIG.md"]
+              "skills/crew-context/SKILL.md", "CONFIG.md", "docs/configuration/reference.md"]
 
 
 @pytest.mark.parametrize("relative", _DOCUMENTS)

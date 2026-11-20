@@ -2,7 +2,7 @@
 
 ## 11. Configuration reference
 
-Every setting, with its type, default and layer, is in the generated [`plugin/crew/CONFIG.md`](../../../plugin/crew/CONFIG.md). Why a key sits where it does, and how each guard decides, is in [`docs/crew/config-rationale.md`](../config-rationale.md). This page is the index to both.
+Every setting, with its default and layer, is listed one line each in the generated key index [`plugin/crew/CONFIG.md`](../../../plugin/crew/CONFIG.md); its allowed values, the layer rules and the longer sections are in the generated [`plugin/crew/docs/configuration/reference.md`](../../../plugin/crew/docs/configuration/reference.md). Why a key sits where it does, and how each guard decides, is in [`docs/crew/config-rationale.md`](../config-rationale.md). This page is the index to both.
 
 ### How the two files combine
 
