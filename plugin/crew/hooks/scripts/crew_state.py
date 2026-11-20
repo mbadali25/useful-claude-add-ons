@@ -294,7 +294,7 @@ def load_config(root):
         return {}
     try:
         parsed = json.loads(text)
-    except ValueError:
+    except (ValueError, RecursionError):  # RecursionError: a deeply nested file
         return {}
     return parsed if isinstance(parsed, dict) else {}
 
@@ -602,6 +602,12 @@ UNATTENDED_CLOUD_MACHINE_ONLY, UNATTENDED_CLOUD_PROVIDERS = ("unattendedCloud",)
 # would -- crediting it made `/crew:config --show` claim auto-clear was
 # restricted to a repo the hooks do not actually restrict it to.
 AUTOCLEAR_MACHINE_ONLY_KEYS = ("onlyRepos", "onlySessions")
+
+# R-05 `tiers`: the machine-owned tier map, `<kind>:<name>` -> `{"tier": ...}`.
+# Empty: every target is `unknown`. Here (beside `CONTEXT_DEFAULTS`, below) so
+# `crew_upgrade.CONFIG_BLOCKS` can reach it. Read by `crew_tiers.resolve` ONLY,
+# never from a merged config: a repo entry may only narrow (report-only until R-01).
+TIERS_DEFAULTS = {}
 
 # The whole `context` block, defined HERE rather than in
 # `crew_config.default_config()` where it used to live, for one

@@ -105,6 +105,7 @@
   "environments": {
     "prodUnattended": false
   },
+  "tiers": {},
   "change": {
     "requireForProduction": false
   },

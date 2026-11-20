@@ -437,6 +437,21 @@ def _load_legacy(root):
     return cfg, data, None
 
 
+def _tier_repeat(plan, label, raw):
+    """Record a conflict, and return True, when `raw` repeats a key crew_tiers
+    reads (`crew_config_files.tier_map_duplicates`). Migrate plans every write
+    from the PARSED config, and `json.loads` keeps one value of a repeated key,
+    so the write would turn a `conflicting` tier into whichever value survived
+    (R-05 review round 5). Nothing is planned from such a file."""
+    try:
+        why = crew_config_files.tier_map_duplicates(raw.decode("utf-8-sig"))
+    except UnicodeDecodeError:
+        return False
+    if why:
+        plan["conflicts"].append(f"{label} {why}, then preview again")
+    return bool(why)
+
+
 def _holds_legacy_guard_key(cfg):
     """Whether `cfg["guards"]` still carries a per-guard key (`guards.<name>`),
     which the guard rewrite owns even in a file already stamped current."""
@@ -584,6 +599,8 @@ def build_plan(root, accept_dropped=()):
     if cfg is None:
         if _read_bytes(os.path.join(root, ".crew", "crew.json")) is None:
             plan["notes"].append(".crew/config.json absent - no config to migrate")
+    elif _tier_repeat(plan, CONFIG_REL, raw):
+        pass  # neither config.json's rewrite nor crew.json is built from it
     elif upgrade is None or _plan_upgrade(plan, root, cfg, raw, upgrade, accept_dropped):
         if upgrade is not None:
             cfg = plan.pop("upgraded")
@@ -840,6 +857,8 @@ def _plan_global_file(plan, path, raw, accept_dropped):
         return
     if out == cfg:
         plan["notes"].append(f"{path}: already migrated (nothing to change)")
+        return
+    if _tier_repeat(plan, path, raw):
         return
     if os.path.lexists(path + TMP_SUFFIX):
         plan["conflicts"].append(f"{path}{TMP_SUFFIX}: exists - migrate stages through that "

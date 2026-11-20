@@ -95,7 +95,7 @@ second is generated from the code and lists every key.</p>
 <li><code>.crew/config.json</code> - the <strong>repo</strong> file. Facts about one checkout: the
   tracker, the board, scope enforcement, production declarations.</li>
 </ul>
-<p>The repo file wins over the machine file, which wins over crew's defaults. Four
+<p>The repo file wins over the machine file, which wins over crew's defaults. Five
 exceptions, each named in the Layer column below:</p>
 <ul>
 <li>A <strong>repo-only</strong> key in the machine file takes effect nowhere. It is pruned on
@@ -110,6 +110,9 @@ exceptions, each named in the Layer column below:</p>
   stricter of the layers that set it; a layer that says nothing imposes
   nothing. A machine value is your default for every repo, which a repo may
   narrow and never widen.</li>
+<li>The <strong>tier map</strong> (<code>tiers</code>) belongs to the machine file: a repo entry can only
+  make a target stricter, and a target the machine does not list is <code>unknown</code>
+  (see "Tier map" below).</li>
 </ul>
 <p>A <code>null</code> in the repo file over a machine value inherits the machine value. The
 <code>/crew:init</code> template writes every key except the personal ones, so it does not
@@ -494,10 +497,65 @@ you turn a class on (keep <code>audit.log</code> if you want the history). Not m
 a resume against an interactive (not <code>-p</code>) session, and a receipt minted end
 to end by a resumed child. Keep the class off on a machine where that matters
 more than the convenience.</p>
+<h2 id="tier-map-tiers-r-05">Tier Map (<code>Tiers</code>, R-05)</h2>
+<p>One answer to "which tier is this target in: <code>dev</code>, <code>qa</code>, <code>prod</code> or
+<code>unknown</code>?". <strong>Report-only until R-01</strong>: crew computes and shows the answer,
+and nothing acts on it yet. Read it with <code>/crew:config --show</code> (the <code>tiers</code> row,
+one line per target) or <code>python3 plugin/crew/hooks/scripts/crew_tiers.py
+explain &lt;kind&gt;:&lt;name&gt;</code> (<code>list</code> for every target, <code>--json</code> for either;
+<code>list --json</code> names an unreadable layer on stderr).</p>
+<p><strong>The machine file owns the map; a repo can only narrow it.</strong> Strictness runs
+<code>dev</code> &lt; <code>qa</code> &lt; <code>prod</code> &lt; <code>unknown</code>. The tier in force is the stricter of the
+machine value and the repo value. A target the machine file does not list has
+machine value <code>unknown</code>, so a repo entry cannot lift it out of <code>unknown</code>, and
+a repo that says nothing imposes nothing. A repo entry that asks for less than
+the machine (or names a target the machine does not list) is shown as ignored.</p>
+<p><strong>Targets</strong> are <code>&lt;kind&gt;:&lt;name&gt;</code>, kind one of <code>workspace</code>, <code>workflow</code>,
+<code>database</code>, <code>account</code>, <code>host</code>. The kind is read ignoring case, ASCII letters
+only (a look-alike letter makes the key an invalid entry). The name is
+matched exactly: <code>workflow:deploy.yml</code> does not match a listed
+<code>workflow:Deploy.yml</code> (that target is <code>unknown</code>, noted <code>case-mismatch</code>), so a
+case slip always lands on the strictest value. Two keys in one map that differ
+only by case (or repeat exactly) are case twins, and every target in that group
+is <code>unknown</code>. There are no globs: <code>workflow:*</code> names only a target called <code>*</code>.
+An entry is <code>{"tier": "dev" | "qa" | "prod"}</code>; <code>unknown</code> is a result, never a
+setting. <code>application</code> and <code>accounts</code> are accepted and not read until R-A1.</p>
+<p>The machine file, <code>~/.claude/crew/config.json</code>:</p>
+<pre><code class="language-json">{&quot;tiers&quot;: {&quot;workflow:deploy.yml&quot;: {&quot;tier&quot;: &quot;dev&quot;},
+           &quot;host:api.example.com&quot;: {&quot;tier&quot;: &quot;qa&quot;}}}
+</code></pre>
+<p>The repo file, <code>.crew/config.json</code>:</p>
+<pre><code class="language-json">{&quot;tiers&quot;: {&quot;workflow:deploy.yml&quot;: {&quot;tier&quot;: &quot;prod&quot;},
+           &quot;host:api.example.com&quot;: {&quot;tier&quot;: &quot;dev&quot;}}}
+</code></pre>
+<p>Here <code>workflow:deploy.yml</code> is <code>prod</code> (<code>narrowed-by-repo</code>) and
+<code>host:api.example.com</code> stays <code>qa</code> (<code>listed</code>; the repo's <code>dev</code> is ignored).</p>
+<p><strong>Reasons</strong>, checked in this order: <code>machine-unreadable</code> and <code>repo-unreadable</code>
+(a file that exists and is not a JSON object, holds <code>NaN</code> or <code>Infinity</code>, or
+whose <code>tiers</code> is present and not an object, <code>null</code> included; a worktree whose
+<code>.crew/</code> git cannot resolve is <code>repo-unreadable</code>: every target is <code>unknown</code>),
+<code>conflicting</code> (case twins, two keys folding to <code>tiers</code>, or twins of <code>tier</code> in
+an entry), <code>invalid</code> (a bad machine entry), <code>repo-invalid-entry</code> (a bad repo
+entry: <code>unknown</code> even over a machine <code>dev</code>), <code>unlisted</code>, then
+<code>narrowed-by-repo</code> or <code>listed</code>. An absent file, or one with no <code>tiers</code> key, is
+not a problem: no machine file means every target is <code>unlisted</code>.</p>
+<p><strong>Writing it.</strong> <code>tiers</code> is written whole, because a target name may hold <code>.</code>:
+<code>python3 plugin/crew/hooks/scripts/crew_config.py --set
+'tiers={"workflow:deploy.yml":{"tier":"qa"}}' [--repo] --apply</code>. A path under
+it (<code>--set tiers.&lt;target&gt;...</code>) is refused, so is a value that is not an object
+(<code>null</code> included), so is a value that repeats a key, and <code>--unset tiers</code>
+removes the map. An upgrade adds <code>tiers: {}</code> to a file that has none. A file
+whose <code>tiers</code> repeats a key exactly (the key itself, a target, or a field of
+an entry) is not rewritten by any crew writer, upgrade or platform-sync: a
+rewrite would keep one value and erase the conflict. Fix it by hand.</p>
+<p><strong>Consumers read <code>crew_tiers</code> only.</strong> The merged config (<code>resolve_config</code>)
+carries the machine map alone, never the repo's, so it is a lower bound and
+never wider than the machine; it is a display surface. Anything that decides
+by tier (R-01, R-35, R-A1, R-36) calls <code>crew_tiers.resolve</code>.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>
-<p><strong>102 keys</strong>: 63 settable in the machine-global file, 39 repo-only.</p>
+<p><strong>103 keys</strong>: 64 settable in the machine-global file, 39 repo-only.</p>
 <p>Columns:</p>
 <ul>
 <li><strong>Layer</strong>: which file may set the key.</li>
@@ -552,6 +610,14 @@ more than the convenience.</p>
 <td>not validated - read by <code>plugin/crew/hooks/scripts/verify-gate.sh</code> (expects boolean)</td>
 <td>0.11.0 or earlier</td>
 <td>Run the Stop verify gate.</td>
+</tr>
+<tr>
+<td><code>tiers</code></td>
+<td>both, ratchet</td>
+<td><code>{}</code></td>
+<td>object of <code>&lt;kind&gt;:&lt;name&gt;</code> to {tier} (checked in <code>plugin/crew/hooks/scripts/crew_tiers.py</code>)</td>
+<td>1.3.190</td>
+<td>Machine-owned tier per target (<code>&lt;kind&gt;:&lt;name&gt;</code> -&gt; <code>{"tier": "dev"\|"qa"\|"prod"}</code>); dev &lt; qa &lt; prod &lt; unknown, an unlisted target is <code>unknown</code>, and a repo entry may only narrow. Written whole (<code>--set tiers=&lt;map&gt;</code>). Read through <code>crew_tiers</code> only, never the merged value; report-only until R-01.</td>
 </tr>
 </tbody>
 </table>

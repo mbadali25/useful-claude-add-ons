@@ -1671,6 +1671,127 @@ load, so the launcher refuses while it sets `sandbox.excludedCommands`,
 that is a glob or sits at or under a credential store. Move such an entry to a
 settings file the unattended run does not need, or run that tool attended.
 
+### `tiers` — the machine-owned tier map (R-05, report-only)
+
+One answer to "which tier is this target in", read by `crew_tiers.resolve` and
+by nothing that decides anything yet (R-01 arms it). The reasons behind its
+rules:
+
+- **Exact names, no globs.** A tier is a promise about one target. A glob
+  (`workflow:deploy*`) would silently cover a target added later, so `*` is a
+  literal character and each target is named.
+- **Lookup is case-exact, but twins fold.** On a case-insensitive filesystem
+  `Deploy.yml` and `deploy.yml` are one file; on a provider they may be two.
+  Matching names exactly means a case slip finds nothing and lands on
+  `unknown` (noted `case-mismatch`), never on another target's tier. Folding
+  is used only to find two keys that differ by case (or repeat exactly), and a
+  twin group resolves `unknown` (`conflicting`): folding can only ever produce
+  `unknown`, never a tier.
+- **`unknown` ranks strictest.** `dev` < `qa` < `prod` < `unknown`. Whatever
+  crew cannot tell - an unreadable file, a bad entry, a twin, an unlisted
+  target - must be treated as at least as dangerous as production, so every
+  uncertainty collapses to the top of the order and keeps its reason.
+- **The repo only narrows.** The repo file arrives inside a clone written by
+  someone else. If it could lower a tier it could talk crew into treating
+  production as `dev`. Taking the stricter of the two layers, with an
+  unlisted machine target counting as `unknown`, gives both halves of the
+  acceptance rule from one comparison: a repo can tighten what the machine
+  says and can never loosen it or invent a target.
+- **The merged config drops the repo copy.** `resolve_config` merges by
+  precedence, which cannot express "stricter of two". Merging the repo's map
+  would show a widened tier in every view built on it, so
+  `_without_repo_tiers` drops it and the merged `tiers` is the machine map, a
+  lower bound. The tier in force is `crew_tiers`', and consumers read it there
+  (`tests/test_crew_tiers.py` T-I1/T-I2 scan for any other reader).
+- **Written whole.** A target name may hold `.` (`workflow:deploy.yml`,
+  `host:api.example.com`), and every config path is dotted, so a path under
+  `tiers` would split into the wrong levels. `tiers` is an opaque table:
+  `--set tiers=<the whole map>` is one write, a path under it is refused, and
+  `leaf_paths` (the profile, the rebuild, the diff) treats it as one leaf.
+- **Its own reader.** `read_global_config` and `load_config` turn a broken
+  file into `{}`, which here would read as "no map" rather than "could not
+  tell"; `crew_gitallow.strict_pairs` refuses the whole file for one twin
+  anywhere. `crew_tiers._read_layer` reports a broken file as unreadable and
+  consults twins only where they decide a tier.
+- **Unreadable means every way of not knowing** (review round 1). A present
+  `"tiers": null` is unreadable, not "no map": otherwise a repo `null` would
+  hide that layer and a machine `dev` would read `listed`; the writer refuses
+  it too, so `--unset tiers` is the only way to remove the map. `NaN` and
+  `Infinity` are not JSON, so a file holding one is unreadable. A path `open`
+  refuses, and a linked worktree whose main checkout git cannot name
+  (`crew_common.SOURCE_UNKNOWN`), read as unreadable, never as absent, so a
+  narrowing in a file crew could not find is never dropped. Text reports escape
+  every character that is not printable ASCII, so a name holding a newline
+  cannot print as a second result row.
+- **A conflict never hides a row** (review round 2). A file with two keys
+  folding to `tiers` makes every target `conflicting`, and the reports list
+  every target either map names (the parser keeps all twin values, not only
+  the first) with a `<layer>-conflicting` problem line. A repo-only entry
+  whose key is not `<kind>:<name>` is `repo-invalid-entry`, like any other bad
+  repo entry. `--set` refuses `NaN`, `Infinity` and a float that overflows to
+  it, since the writer would store them and the reader rejects the file; and
+  a file nested too deeply to parse reads as `{}` in `read_global_config` and
+  `load_config` (both promise never to raise), so `--explain` still reaches
+  `crew_tiers`, which names the layer unreadable.
+- **A rewrite never erases a conflict** (review round 3). `json.loads` keeps
+  one value of an exactly repeated key, so any writer that parses and
+  re-serialises the file would turn `conflicting` into whichever value
+  survived. The two config writers (through `read_strict(for_write=True)`),
+  upgrade and platform-sync therefore leave a file alone when its `tiers`
+  repeats a key exactly (`crew_config_files.tier_map_duplicates`), and `--set`
+  refuses a value that repeats a key. Case twins are distinct keys, survive a
+  rewrite, and are not refused. No report carries the non-JSON `Infinity`
+  out: the word itself makes a layer unreadable, and a number too large for a
+  float (`1e999`) is kept as its text (round 6 below; round 3 refused the
+  whole layer over it). `list --json` keeps stdout a list and names an
+  unreadable layer on stderr.
+- **Every path gives an answer, and no path splits a name** (review round 4).
+  `resolve` returns `invalid` for a target that is not text (`None`), not an
+  exception. The reader opens without blocking and reads only a regular file,
+  so a FIFO or a directory at a config path is unreadable instead of a hang.
+  Text reports are ASCII (a non-ASCII name is shown escaped; `--json` already
+  was), so they print on a stream that is not UTF-8. The rewrite refusal
+  covers a repeat of any spelling that folds to `tiers` (`Tiers`, `TIERS`),
+  since `crew_tiers` reads that as a conflict too. An upgrade does not seed
+  `tiers: {}` beside a key spelled another way, which would create that
+  conflict itself. `--rebuild` refuses a saved profile that holds a path
+  under `tiers`, the last write path that would have split a name on `.`.
+- **The remaining writers hold the same line** (review round 5). `crew_migrate`
+  plans its writes from the parsed config, so both of its paths (the repo's
+  in-place upgrade plus `crew.json`, and `--global`) now record a conflict and
+  plan nothing from a file that repeats a tier key, instead of writing the
+  one value `json.loads` kept. `--rebuild` makes the whole-map check `--set`
+  makes: a saved profile whose `tiers` is `null` or any other non-object is
+  refused, where it used to replace a valid map with one the reader calls
+  unreadable. A config path that is a symlink leading nowhere (or sits in a
+  directory that is one) is unreadable, not absent; a path with nothing at it
+  is still absent. One existing operation is deliberately withheld on tier
+  data: `crew_platform`'s SessionStart refresh of `platform.os` skips its
+  write, and says so, when the repo file repeats a tier key. It reads
+  `crew_config_files`, never `crew_tiers`, so the report-only rule (D6: nothing
+  that decides imports the resolver) holds; the cost is a stale `platform`
+  block until the file is fixed by hand.
+- **One rule for "the same target", and nothing a file holds can stall or
+  forge a report** (review round 6). The kind is matched on ASCII letters
+  only. `str.lower` turns the Kelvin sign (U+212A) into `k` and the twin fold
+  does not, so `wor<U+212A>flow:X` matched `workflow:X` without being its
+  twin, and the answer followed the order of the keys. A kind that is not
+  ASCII is now no kind: that key is its own invalid entry and never answers
+  for `workflow:X`. A JSON number Python cannot hold (`1e999`, an integer
+  past 4300 digits) is kept as the text the file wrote instead of making the
+  layer unreadable, because D4 says a field nothing reads changes no tier; in
+  a place crew does read, it is an invalid value like any other.
+  `crew_common.read_text`, which every lenient loader reads through, opens
+  without blocking and reads only a regular file, so `crew_config --explain`
+  no longer hangs on a FIFO at a config path before it reaches `crew_tiers`
+  (round 5 left that as known; it was reproduced on Linux, then fixed at the
+  shared reader rather than in one command; it still goes through the
+  built-in `open`, with an `opener`, so a test that stands in for `open` by
+  path keeps working). `tier_map_duplicates` answers on
+  one line of printable ASCII: SessionStart prints its answer, and a newline
+  in a repeated key used to add a line that read as crew's own. Still
+  unreadable, on purpose: a file nested too deeply to parse.
+
 ### The ratchet is one table, not five copies
 
 `install.policy` shipped its ratchet as a bespoke `effective_install_policy`

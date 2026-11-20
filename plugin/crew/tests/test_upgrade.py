@@ -1006,7 +1006,14 @@ def test_global_whole_blocks_mirror_stays_in_parity_with_crew_config():
     for old_schema_cfg in ({"schema": 2}, {"schema": 1}):
         out, _notes = crew_upgrade.upgrade_config(old_schema_cfg)
         out_leaves = set(crew_config.leaf_paths(out))
-        pinned = sorted(out_leaves & global_leaves)
+        # `_WRITTEN_WHEN_EMPTY` (R-05 `tiers`) is seeded on purpose and cannot
+        # freeze the global layer out: `resolve_config` drops the repo copy
+        # whole (`_without_repo_tiers`) and `crew_tiers` reads the machine
+        # file itself. test_crew_tiers.py's
+        # test_an_upgraded_repo_empty_map_hides_no_machine_entry proves it.
+        pinned = sorted((out_leaves & global_leaves)
+                        - set(crew_upgrade._WRITTEN_WHEN_EMPTY))  # pylint: disable=protected-access
+        assert set(crew_upgrade._WRITTEN_WHEN_EMPTY) <= set(out), out  # pylint: disable=protected-access
         assert not pinned, (
             f"upgrade_config({old_schema_cfg!r}) seeded globally-settable "
             f"leaf(es) {pinned} that _GLOBAL_WHOLE_BLOCKS (or the "

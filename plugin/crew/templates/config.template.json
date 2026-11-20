@@ -147,6 +147,7 @@
     "workflows": {},
     "preProduction": {}
   },
+  "tiers": {},
   "change": {
     "requireForProduction": false
   },

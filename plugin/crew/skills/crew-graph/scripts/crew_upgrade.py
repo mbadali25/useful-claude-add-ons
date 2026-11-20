@@ -41,9 +41,11 @@ sys.path.insert(0, os.path.join(
 ))
 import crew_backup  # pylint: disable=wrong-import-position
 import crew_common  # pylint: disable=wrong-import-position
+import crew_config_files  # pylint: disable=wrong-import-position
 import crew_dropped  # pylint: disable=wrong-import-position
 import crew_guards  # pylint: disable=wrong-import-position
 import crew_state  # pylint: disable=wrong-import-position
+import _promote_match  # pylint: disable=wrong-import-position
 
 # Not a second copy of the PM defaults. crew_state owns them because the hook
 # reads config on every session start; if an upgrade wrote defaults the hook
@@ -128,6 +130,9 @@ _ABSENT = object()
 # this set.
 _GLOBAL_WHOLE_BLOCKS = frozenset((
     "pm", "qa", "dev", "install", "change",
+    # R-05: settable whole in the machine file. Its default is `{}`, so there is
+    # no default leaf to prune or to report as pinned; named for the parity test.
+    "tiers",
 ))
 
 
@@ -298,7 +303,28 @@ CONFIG_BLOCKS = (
     # Repo-only for the same reason: the cloud guard's identity pins.
     ("cloud", crew_state.CLOUD_DEFAULTS),
     ("change", CHANGE_BLOCK),
+    # R-05: the tier map. An upgraded file gains `tiers: {}` (spec section 5;
+    # `_WRITTEN_WHEN_EMPTY`), so the key is there to fill; a map it already
+    # holds is kept as written (an empty default merges nothing in). In
+    # `_GLOBAL_WHOLE_BLOCKS` too, which prunes nothing here (no default leaf).
+    ("tiers", crew_state.TIERS_DEFAULTS),
 )
+
+# Blocks an upgrade writes even when they come back empty and the file never
+# mentioned them (the exception to "a block that comes back empty is not
+# written"): the R-05 tier map, whose empty value is the documented default.
+_WRITTEN_WHEN_EMPTY = ("tiers",)
+
+
+def _spelled_otherwise(cfg, key):
+    """True when `cfg` holds a key that folds to `key` but is not `key`
+    (`Tiers`). Seeding `tiers: {}` beside it would make two keys folding to
+    `tiers`, which crew_tiers reads as `conflicting` for every target: the
+    upgrade itself would break the file (review round 4). The file is left as
+    written; crew_tiers reads a lone `Tiers` as no map."""
+    folded = _promote_match.fold(key)
+    return any(isinstance(other, str) and other != key
+               and _promote_match.fold(other) == folded for other in cfg)
 
 # `{block_key: block_default}`, restricted to the whole-block globally
 # settable ones -- the lookup `_pinned_at_default` walks. Built from
@@ -699,7 +725,8 @@ def upgrade_config(cfg, accept_dropped=()):
         # decided: nothing. A block the repo DID write (`supplied` a dict,
         # even `{}`) keeps its key regardless, so a deliberate empty block
         # survives exactly as written.
-        if merged or supplied is not _ABSENT:
+        if merged or supplied is not _ABSENT or (
+                key in _WRITTEN_WHEN_EMPTY and not _spelled_otherwise(cfg, key)):
             out[key] = merged
 
     # What each schema bump actually added to THIS config, computed from the
@@ -846,6 +873,10 @@ def _read_config_strict(root):
     except ValueError:
         return {}, False
     if not isinstance(parsed, dict):
+        return {}, False
+    if crew_config_files.tier_map_duplicates(text):
+        # R-05 review round 3: rewriting would keep one value of an exactly
+        # repeated tier key and erase the conflict crew_tiers reports.
         return {}, False
     return parsed, True
 

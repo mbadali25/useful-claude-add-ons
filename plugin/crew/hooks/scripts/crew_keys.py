@@ -469,6 +469,15 @@ KEY_META = {
     "environments.workflows": _unv("Deploy workflow globs, each mapped to its environment "
                                    "or `input:<name>`.", "1.1.16", _S + "crew_config.py",
                                    "object of glob to string"),
+    # R-05. `since` names the version R-05 lands as: the first above main's
+    # 1.3.188 (R-C1 rejects a row with none).
+    "tiers": _row("Machine-owned tier per target (`<kind>:<name>` -> `{\"tier\": "
+                  "\"dev\"|\"qa\"|\"prod\"}`); dev < qa < prod < unknown, an unlisted "
+                  "target is `unknown`, and a repo entry may only narrow. Written whole "
+                  "(`--set tiers=<map>`). Read through `crew_tiers` only, never the merged "
+                  "value; report-only until R-01.", "open-table", since="1.3.190",
+                  source=_S + "crew_tiers.py",
+                  type_="object of `<kind>:<name>` to {tier}"),
     # --- change requests
     "change.requireForProduction": _rat("Require an approved change request before "
                                         "`/crew:promote production`: a repo may turn it "
@@ -594,7 +603,7 @@ _FAMILY_OF_KEY = {
 _FAMILY_OF_SEGMENT = {
     "qa": "providers", "dev": "providers", "secondOpinion": "providers",
     "guards": "guards",
-    "cloud": "cloud", "production": "cloud", "unattendedCloud": "cloud",
+    "cloud": "cloud", "production": "cloud", "unattendedCloud": "cloud", "tiers": "cloud",
     "jira": "trackers", "obsidian": "trackers", "sdp": "trackers",
     "bitbucket": "trackers", "github": "trackers",
     "autopilot": "autopilot",
@@ -690,6 +699,8 @@ def layer_of(key):
     if crew_guards.ratchet_spec(key) is not None:
         return "both, ratchet"
     if key in ("guards.profile", "guards.overrides"):
+        return "both, ratchet"
+    if key == "tiers":  # R-05: the machine map is the authority; a repo may only narrow
         return "both, ratchet"
     if key in crew_config._RATCHETED:  # pylint: disable=protected-access
         return "both, widening warned"
@@ -787,6 +798,7 @@ _SHADOWING = (
     "environments.prodUnattended", "change.requireForProduction",
     "git.forbiddenTrailers",
     "route.enabled",
+    "tiers",
 )
 _PERSONAL = ("autopilot.mode", "autopilot.maxPhases", "autopilot.deploy",
              "autopilot.approval", "autopilot.questions")

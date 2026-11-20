@@ -45,7 +45,9 @@ changed in 0.16.0 and both are silent if unmentioned:
 - **What survives is a default, not a lock.** Every key here is overridable in
   a repo's own `.crew/config.json`, which is why step 1's `source` column
   exists. The personal `autopilot` keys are the exception: the STRICTER of the
-  two layers wins, and a silent layer imposes nothing. A repo file that spells
+  two layers wins, and a silent layer imposes nothing. The `tiers` map is the
+  other: the machine file is the authority, a repo entry can only make a
+  target stricter, and `--explain` shows the effective tier. A repo file that spells
   one at its default holds the global value down; `--show` names it as a
   `shadow:` and `--unset <path> --repo --apply` removes it on a yes.
 
