@@ -178,6 +178,9 @@ run, is read from the machine file alone. Never write it into a repo's
 `config.json`; a repo copy is ignored and reported (`CONFIG.md`,
 "`unattendedCloud`"). Its template shape, all `null` and naming nothing:
 `"unattendedCloud": {"aws": {"readOnly": {"profile": null, "identity": null, "region": null}, "nonProd": {}}}`.
+`tiers` (R-05) is `{}` in both templates, so every target is `unknown`. The
+machine file owns the tier map; a repo entry may only narrow it, and nothing
+acts on it yet (report-only; `/crew:config --show` prints each target's tier).
 
 The global file has its own guided walkthrough, `/crew:config`, defined in
 `global-config.md` beside this file. With no argument it opens a menu
@@ -337,6 +340,7 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
     "workflows": {},
     "preProduction": {}
   },
+  "tiers": {},
   "change": {
     "requireForProduction": false
   },

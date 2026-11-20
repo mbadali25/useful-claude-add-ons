@@ -95,7 +95,7 @@ LEAVES = GUARD_LEAVES + (
     "cloud.awsProfiles", "cloud.awsRegions", "cloud.azureSubscriptions",
     "humanOnly.approve", "humanOnly.promoteMarker", "scope.mode", "scope.allowCliApproval",
     "autopilot.sleep.schedule", "autopilot.sleep.approval", "autopilot.sleep.questions",
-    "autopilot.sleep.deploy") + UNATTENDED_LEAVES + ("worktrees.root",)
+    "autopilot.sleep.deploy") + UNATTENDED_LEAVES + ("worktrees.root", "tiers")
 
 # leaf (or `guards.<name>` for the twelve guards) -> (enforcing reader, where, layers)
 READERS = {
@@ -127,6 +127,7 @@ READERS = {
     "unattendedCloud.**": ("crew_config.unattended_cloud_block_problem", "crew_config.py:1268",
                            "machine"),
     "worktrees.root": ("crew_worktrees.resolve", "crew_worktrees.py:130", "both"),
+    "tiers": ("crew_tiers.read_layers", "crew_tiers.py:269", "both"),
 }
 
 _SLEEP_TIERS = {key: crew_guards.PERSONAL_KEYS[f"autopilot.{key}"][1] for key in SLEEP_KEYS}
@@ -155,6 +156,7 @@ DIRECTIONS = {
     "environments.workflows": ("pinned", None),
     "environments.preProduction": ("pinned", None),
     "unattendedCloud.**": ("pinned", None),
+    "tiers": ("pinned", None),
 }
 
 
@@ -359,6 +361,14 @@ def _raw_human_only(cfg, key):
     return Unknown(f"humanOnly.{key} = {value!r} is not null, true or false")
 
 
+def _tier_map_policy(layers):
+    """The `tiers` row: each layer's raw map, compared whole (`pinned`), so any
+    change needs confirming. Only `crew_tiers` decides a tier (R-05), and nothing
+    may import it (its T-I1), so this decides none; it only notices a change."""
+    return {"tiers": {layer: _canon(layers[layer]["cfg"].get("tiers"))
+                      for layer in ("machine", "repo")}}
+
+
 def _bool_domain(ctx, dotted, layers=("machine", "repo")):
     for layer in layers:
         value = _dig(ctx["layers"][layer]["cfg"], dotted)
@@ -443,6 +453,7 @@ def _compute(ctx):
 
     where = crew_worktrees.resolve(root)
     policy["worktrees.root"] = {"base": where["base"], "problem": bool(where["problem"])}
+    policy.update(_tier_map_policy(layers))
 
     envs = cloud_guard.environments_config(root)
     for key in ("nonProd", "workflows", "preProduction"):

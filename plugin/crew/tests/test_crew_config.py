@@ -1190,8 +1190,10 @@ def test_a_written_global_file_does_not_leak_a_repo_key(tmp_path, monkeypatch):
     monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", str(path))
     # Null where the machine layer gives null a meaning (an open key), the
     # first value of its tuple where it does not (T-0075: null is refused for
-    # an enum key at the machine layer).
-    updates = {p: None if crew_config.enum_values(p) is None
+    # an enum key at the machine layer). An opaque table (`tiers`, R-05) takes a
+    # map only, null refused, so it gets its empty map.
+    updates = {p: {} if p in crew_config._OPAQUE_TABLES  # pylint: disable=protected-access
+               else None if crew_config.enum_values(p) is None
                else crew_config.enum_values(p)[0] for p in
                crew_config.leaf_paths(crew_config.default_global_config())}
     merged, _ = crew_config.write_global_config(updates)

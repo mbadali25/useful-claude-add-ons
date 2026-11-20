@@ -24,7 +24,6 @@ repairs and the rest.
 | 2 | [R-06](docs/tickets/pending/R-06.md) | Measure what a crew-launched headless run reports as the answering model and whether a fallback shows; exercise the direct API path and its response metadata too | S | Fable 5.2 |  | 0 |
 | 3 | [R-07](docs/tickets/pending/R-07.md) | Measure the two attestation forms: an owner-presence signing key on Windows and Linux, and a forge review by the owner while agents use a separate account | S | Fable 5.2 |  | 0 |
 | 4 | [R-02](docs/tickets/pending/R-02.md) | Reproduce the host damage in a disposable VM with write auditing | M | Opus 5.5 |  | 0 |
-| 5 | [R-05](docs/tickets/pending/R-05.md) | Machine-owned tier map, report-only | S | Opus 5.5 |  | 0 |
 | 6 | [R-10](docs/tickets/pending/R-10.md) | Provider registry; one probe per attempt | M | Opus 5.5 | H | 1 |
 | 7 | [R-20](docs/tickets/pending/R-20.md) | Store tripwire stops refusing everyday commands | S | Opus 5.5 | H | 2 |
 | 8 | [R-21](docs/tickets/pending/R-21.md) | ADR and measurement: is a blocked prompt's hook text shown; does a plain reply arrive unchanged | S | Fable 5.2 |  | 2 |
@@ -45,7 +44,7 @@ repairs and the rest.
 | [R-02](docs/tickets/pending/R-02.md) | Reproduce the host damage in a disposable VM with write auditing | M | Opus 5.5 |  | — | READY |
 | [R-03](docs/tickets/pending/R-03.md) | Capture one refused IAM write and one refused dispatch | S | Haiku 5.5 |  | — | READY |
 | [R-04](docs/tickets/pending/R-04.md) | `crew_paths.py`: machine-owned roots and the deletion helper | M | Opus 5.5 |  | — | READY |
-| [R-05](docs/tickets/pending/R-05.md) | Machine-owned tier map, report-only | S | Opus 5.5 |  | — | READY |
+| [R-05](docs/tickets/pending/R-05.md) | Machine-owned tier map, report-only | S | Opus 5.5 |  | — | done (PR #805) |
 | [R-06](docs/tickets/pending/R-06.md) | Measure what a crew-launched headless run reports as the answering model and whether a fallback shows; exercise the direct API path and its response metadata too | S | Fable 5.2 |  | — | READY |
 | [R-07](docs/tickets/pending/R-07.md) | Measure the two attestation forms: an owner-presence signing key on Windows and Linux, and a forge review by the owner while agents use a separate account | S | Fable 5.2 |  | — | READY |
 

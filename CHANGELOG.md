@@ -18,6 +18,7 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.189: re-bump only - interim number on the tier-map branch (PR #805, commit db7f549bd, pushed, never on main) before CI found `test_crew_protected.py::test_coverage` red (R-32's comparator protects `tiers`, which R-05 makes a config leaf) and the `tiers` row changed plugin/crew again; the change is recorded under crew 1.3.190
 - crew 1.3.186: re-bump only - interim number on the crew-paths branch (PR #803, commit 394002c5f, pushed, never on main) before an ALLOWED row for crew_paths.py in test_worktree_config.py changed plugin/crew again; the change is recorded under crew 1.3.187
 - crew 1.3.185 (R-04): re-bump only - interim number on the crew-paths branch (PR #803, commits f694b76ab and 169ac8467, pushed, never on main) before PR #802 landed 1.3.185 for R-33; the R-04 change is recorded under crew 1.3.187
 - crew 1.3.184: re-bump only - interim number on the Never-lane tripwire branch (PR #802, commit 94f7586b8, pushed, never on main) before main moved to 1.3.183 (PR #801) and was merged in; the change is recorded under crew 1.3.185
@@ -148,6 +149,18 @@ read entries under any `## [` heading.
 - crew 1.3.160: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); main reached 1.3.161 and open PR #774 holds 1.3.157, so the branch re-bumped to 1.3.162; the change is recorded under crew 1.3.167
 - crew 1.3.159: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); the accepted-value test changed plugin/crew after the number was set, so the branch moved to 1.3.160; the change is recorded under crew 1.3.160
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
+
+### Added — crew 1.3.190: `crew_tiers.py`, a machine-owned tier map, report-only (R-05)
+
+- **Summary.** `crew` 1.3.190 adds the `tiers` config key and `crew_tiers.py`, one answer to which tier (dev, qa, prod or unknown) a target is in; nothing acts on the answer yet.
+- **What.** The machine config layer owns the map, a repo entry may only narrow it, and a target the machine does not list is `unknown`. `crew_tiers.py` has its own never-raising reader and an `explain`/`list` CLI; `resolve_config` never loads the map, `tiers` is written whole (`--set tiers=<map>`) and a path under it is refused. No guard, hook, launcher, autopilot or promote path imports `crew_tiers`. The report-only protected-policy comparator (`crew_protected.py`, R-32) gains a `pinned` `tiers` row read from each layer's raw map, so any change to a tier map needs confirming, and `tiers` is left out of the copy-safe repo blank.
+- **Tests.** `test_crew_tiers.py` (resolver, reader, narrowing, unknown-never-collapses and the no-importer checks T-I1/T-I2, with sabotage rows) and additions to the config, keys, upgrade and platform-sync suites.
+
+### Added — crew 1.3.188: copy-safe config blanks, a per-key list and an annotated template (R-C2)
+
+- **Summary.** `crew` 1.3.188 ships `plugin/crew/docs/configuration/`: a repo and a machine config blank you can copy into an empty layer without changing any effective setting, a per-key fact list and an annotated template, all generated and checked for staleness.
+- **What.** `docs/guides/crew/src/config_reference.py --write` also writes `config.blank.json` (repo layer), `global.blank.json` (machine layer), `keys.json` and `template.annotated.md`; `--check` fails when any is stale. `crew_keys.py` gains `BLANK_EXCLUDED` (each left-out key with its reason) and `blank_problems()`, which `problems()` runs: a repo-blank key must be repo-only or `null` by default (R1), the machine blank leaves out personal keys (R2), and blank plus exclusions is the layer. Nothing at runtime reads the new files; no hook or default changes.
+- **Tests.** `test_config_blanks.py` proves a blank in an empty layer changes no effective value through `explain_config`, `resolve_guard`, `resolve_personal`, `crew_humanonly.resolve` and `crew_autocycle.settings`, with in-memory sabotage rows; `scripts/_test/config-reference.py` gains must-block and must-allow rows for the new files.
 
 ### Added — crew 1.3.187: `crew_paths.py`, machine-owned run folders and the one safe delete (R-04)
 
