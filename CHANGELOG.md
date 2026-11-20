@@ -152,6 +152,12 @@ read entries under any `## [` heading.
 - crew 1.3.159: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); the accepted-value test changed plugin/crew after the number was set, so the branch moved to 1.3.160; the change is recorded under crew 1.3.160
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Fixed — crew 1.3.201: a Stop on a busy Windows host no longer blocks every turn (B-124)
+
+- **Summary.** `crew` 1.3.201 stops the end-of-turn loop on a loaded Windows host: when Git Bash cannot be told at `Stop`, the completion audit still runs and a fresh Stop is blocked at most 2 times per session and project, then let through with a visible `crew-hook: UNKNOWN` notice naming the checks that did not run.
+- **What.** `crew_hook.py` no longer refuses the whole `Stop` when the strict Git Bash probe answers could-not-tell. The completion audit runs on its direct Python route and a real block from it still blocks; `verify-gate.sh` and `context-watch.sh` are reported unchecked and not spawned. A continuation is let through only on verify-gate's own two literal `stop_hook_active` spellings before the first NUL. The per-session count lives in the temp directory; a count that cannot be read or written blocks. Each outcome writes a `gitbash-unknown` guard-log row when `.crew/` exists. A missing or broken Git Bash, `PreToolUse` and `UserPromptSubmit` block as before. No config key. Consulting the last-known-good Git Bash before probing is deferred (it lives in `crew_shell.py`, outside this harness PR).
+- **Tests.** `test_crew_stop_unknown.py` (must-block B1-B12, must-allow A1-A9) and 13 sabotage rows in `sabotage_crew_hook.py`, each turning a named test red.
+
 ### Changed — crew 1.3.200: `CONFIG.md` becomes a generated key index (R-C4)
 
 - **Summary.** `crew` 1.3.200 turns `plugin/crew/CONFIG.md` into a short generated index with one line per key, so it stays well under its 600-line cap as key families are added; the full reference moves to `plugin/crew/docs/configuration/reference.md`.

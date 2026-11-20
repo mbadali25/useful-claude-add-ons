@@ -239,8 +239,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.201**: A Stop on a busy Windows host no longer blocks every turn. `crew` 1.3.201 stops the end-of-turn loop on a loaded Windows host: when Git Bash cannot be told at `Stop`, the completion audit still runs and a fresh Stop is blocked at most 2 times per session and project, then let through with a visible `crew-hook: UNKNOWN` notice naming the checks that did not run.
 - **crew 1.3.200**: `CONFIG.md` becomes a generated key index (R-C4). `crew` 1.3.200 turns `plugin/crew/CONFIG.md` into a short generated index with one line per key, so it stays well under its 600-line cap as key families are added; the full reference moves to `plugin/crew/docs/configuration/reference.md`.
-- **crew 1.3.197**: The Configuration Guide and CI-checked worked examples (R-C3). `crew` 1.3.197 adds `plugin/crew/docs/configuration/guide.md`, a hand-written guide to crew's two configuration layers, the owner's set-up, the procedure an AI model follows to change a key, and worked example files, every one of which CI checks.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
