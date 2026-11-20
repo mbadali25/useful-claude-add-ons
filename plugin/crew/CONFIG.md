@@ -7,6 +7,7 @@ Generated from the code by `python3 docs/guides/crew/src/config_reference.py --w
 One line per key below. Everything else is in `docs/configuration/` beside this file:
 
 - `docs/configuration/reference.md`: the two layers and their exceptions, the human-only opt-out, the run approval, git commands, guard profiles, verify-gate trust, migrating and removed keys, and one table per family with each key's allowed values and arrival version.
+- `docs/configuration/guide.md`: how to configure crew, with examples.
 - `docs/configuration/keys.json`: the same per-key facts, for tools.
 - `docs/configuration/config.blank.json` and `docs/configuration/global.blank.json`: copy-safe blanks, one per layer.
 - `docs/configuration/template.annotated.md`: both blanks with each key's facts beside it.

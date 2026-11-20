@@ -3193,9 +3193,8 @@ def test_config_md_is_an_index():
     """R-C4: CONFIG.md is a header plus exactly one line per key, so it costs
     one line per key and stays under 600 lines as families are added. The
     family tables and the Values column live in reference.md, which the index
-    names. The `guide.md` pointer appears if and only if `guide.md` exists:
-    checked in both rendered states, and on the committed file against this
-    checkout."""
+    names. It always names `guide.md` (R-C3), and `guide.md` must exist, so
+    deleting the guide fails here instead of silently dropping the pointer."""
     with open(_CONFIG_MD_PATH, encoding="utf-8") as handle:
         text = handle.read()
     keys = _all_leaf_keys()
@@ -3211,15 +3210,11 @@ def test_config_md_is_an_index():
     assert not any("Values" in line for line in lines if line.startswith("|"))
     assert "docs/configuration/reference.md" in "\n".join(header)
 
+    assert "docs/configuration/guide.md" in "\n".join(header)
+    assert os.path.exists(_GUIDE_MD_PATH), _GUIDE_MD_PATH
     module = _load_config_reference()
-    model = module.Model()
-    with_guide = module.render_config_md(model, guide_exists=True)
-    without_guide = module.render_config_md(model, guide_exists=False)
-    assert "docs/configuration/guide.md" in "\n".join(_index_header_lines(with_guide))
-    assert "guide.md" not in without_guide
-    assert len(_index_header_lines(with_guide)) <= _INDEX_HEADER_MAX
-    assert len(_index_header_lines(without_guide)) <= _INDEX_HEADER_MAX
-    assert ("guide.md" in text) == os.path.exists(_GUIDE_MD_PATH)
+    rendered = module.render_config_md(module.Model())
+    assert "docs/configuration/guide.md" in "\n".join(_index_header_lines(rendered))
 
 
 def test_reference_md_has_every_family_table():

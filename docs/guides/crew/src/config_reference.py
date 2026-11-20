@@ -11,8 +11,9 @@ families and arrival versions):
 - `plugin/crew/CONFIG.md`, the key INDEX that ships with the plugin (R-C4): a
   short header naming where things are, then one line per key (Key | Layer |
   Default | Family | Summary), so it costs exactly one line per key and stays
-  under 600 lines (`test_crew_config.py`). It names
-  `docs/configuration/guide.md` only when that file exists.
+  under 600 lines (`test_crew_config.py`). It always names
+  `docs/configuration/guide.md` (R-C3); `test_crew_config.py` fails if that
+  file is deleted while the index still points at it.
 - `plugin/crew/docs/configuration/reference.md` (R-C4), what CONFIG.md held
   before: the layer rules, the long prose sections and one table per family
   with the allowed values and the arrival version. Since L-0725 both are
@@ -919,26 +920,24 @@ Generated from the code by `{command}`. Do not edit by hand: `python3 scripts/ch
 One line per key below. Everything else is in `docs/configuration/` beside this file:
 
 - `docs/configuration/reference.md`: the two layers and their exceptions, the human-only opt-out, the run approval, git commands, guard profiles, verify-gate trust, migrating and removed keys, and one table per family with each key's allowed values and arrival version.
-{guide}- `docs/configuration/keys.json`: the same per-key facts, for tools.
+- `docs/configuration/guide.md`: how to configure crew, with examples.
+- `docs/configuration/keys.json`: the same per-key facts, for tools.
 - `docs/configuration/config.blank.json` and `docs/configuration/global.blank.json`: copy-safe blanks, one per layer.
 - `docs/configuration/template.annotated.md`: both blanks with each key's facts beside it.
 - The reasoning behind the keys: `{rationale}`.
 """
 
-INDEX_GUIDE_LINE = "- `docs/configuration/guide.md`: how to configure crew, with examples.\n"
-
-
-def render_config_md(model=None, *, guide_exists):
+def render_config_md(model=None):
     """The whole of `plugin/crew/CONFIG.md`, the key index (R-C4): a short
-    header, then one table with one line per key. The `guide.md` pointer is
-    emitted only when `guide_exists` is true, so the index never names a file
-    that is not there."""
+    header, then one table with one line per key. The header always names
+    `guide.md`; the test that holds the index to this checkout fails if
+    `guide.md` is missing, so the pointer cannot dangle silently."""
     model = model or Model()
     keys = model.keys
     total, machine, repo_only = model.counts()
     out = [INDEX_HEAD.format(
         command=COMMAND, rationale=RATIONALE, total=total, machine=machine,
-        repo_only=repo_only, guide=INDEX_GUIDE_LINE if guide_exists else ""),
+        repo_only=repo_only),
         "| Key | Layer | Default | Family | Summary |", "|---|---|---|---|---|"]
     for key in model.leaves:
         row = keys.KEY_META[key]
@@ -1094,7 +1093,7 @@ def expected():
     """`{path: full expected text}` for all seven files."""
     model = Model()
     return {REFERENCE: render_reference(model),
-            CONFIG_MD: render_config_md(model, guide_exists=os.path.exists(GUIDE_MD)),
+            CONFIG_MD: render_config_md(model),
             REFERENCE_MD: render_reference_md(model),
             REPO_BLANK: render_repo_blank(model), GLOBAL_BLANK: render_global_blank(model),
             KEYS_JSON: render_keys_json(model), ANNOTATED: render_annotated(model)}

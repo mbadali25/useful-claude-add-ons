@@ -131,6 +131,10 @@ files, or a PM journal. Every key is listed, one line each with its layer and de
 `CONFIG.md`, the key index; the layer rules, the longer sections and each key's allowed values
 are in `docs/configuration/reference.md`, beside the copy-safe blanks.
 
+How to fill in both config files, step by step for an owner or an AI model, with worked example
+files checked in CI: [`docs/configuration/guide.md`](docs/configuration/guide.md). The per-key
+reference stays [`CONFIG.md`](CONFIG.md).
+
 Status is written to `.crew/STATUS.md` with honest states — `partial` and
 `blocked` are used, not rounded up to `done`. A status file that overstates
 progress is how the whole system quietly stops meaning anything.

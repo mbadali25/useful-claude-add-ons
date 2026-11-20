@@ -18,9 +18,8 @@ header, then one line per key), and the prose and family tables it held are in
 `plugin/crew/docs/configuration/reference.md`, generated whole too: a one-byte
 edit, a hand edit in a table row and a deleted file are stale there, and a row
 deleted from the index or a one-byte edit in its header is stale here. The
-index names `docs/configuration/guide.md` only when that file exists, so a
-pointer hand-added while it is absent (dangling) and a `guide.md` created while
-the index lacks the pointer (the second lander's duty) are both stale. So are
+index always names `docs/configuration/guide.md` (R-C3), so the pointer line
+removed from the index is stale. So are
 the four R-C2 files in `plugin/crew/docs/configuration/` (the two blanks,
 `keys.json` and `template.annotated.md`), and a `crew_keys.BLANK_EXCLUDED` that
 breaks the blank rules (R1, R2, a blank reason, an exclusion outside the layer)
@@ -171,18 +170,9 @@ def _index_header_one_byte(tmp):
 _GUIDE_POINTER = "- `docs/configuration/guide.md`: how to configure crew, with examples.\n"
 
 
-def _guide_pointer_dangling(tmp):
-    """The `guide.md` pointer hand-added to the index while `guide.md` is absent."""
-    assert not os.path.exists(os.path.join(tmp, GUIDE_MD))
-    edit(tmp, CONFIG_MD, "- `docs/configuration/keys.json`:",
-         _GUIDE_POINTER + "- `docs/configuration/keys.json`:")
-
-
-def _guide_created_index_unchanged(tmp):
-    """`guide.md` arrives (R-C3) and the index is not regenerated: the second
-    lander's duty, which `--check` must not let pass silently."""
-    with open(os.path.join(tmp, GUIDE_MD), "w", encoding="utf-8", newline="\n") as fh:
-        fh.write("# crew configuration guide\n")
+def _guide_pointer_removed(tmp):
+    """The `guide.md` pointer line removed from the index by hand."""
+    edit(tmp, CONFIG_MD, _GUIDE_POINTER, "")
 
 
 def _last_byte(tmp):
@@ -290,9 +280,7 @@ MUST_BLOCK = [
      "stale: plugin/crew/CONFIG.md", "CONFIG.md"),
     ("a one-byte edit in the CONFIG.md index header", _index_header_one_byte, 1,
      "stale: plugin/crew/CONFIG.md", "CONFIG.md"),
-    ("a guide.md pointer hand-added to the index while guide.md is absent",
-     _guide_pointer_dangling, 1, "stale: plugin/crew/CONFIG.md", "CONFIG.md"),
-    ("guide.md created while the index lacks its pointer", _guide_created_index_unchanged, 1,
+    ("the guide.md pointer removed from the index", _guide_pointer_removed, 1,
      "stale: plugin/crew/CONFIG.md", "CONFIG.md"),
     ("one byte appended to CONFIG.md", _last_byte, 1,
      "stale: plugin/crew/CONFIG.md", "CONFIG.md"),
