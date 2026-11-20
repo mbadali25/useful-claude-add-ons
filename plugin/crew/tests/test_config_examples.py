@@ -192,7 +192,7 @@ def _env(home):
 
 def _run(script, args, home):
     proc = subprocess.run([sys.executable, script, *args], capture_output=True,
-                          text=True, encoding="utf-8", errors="replace",
+                          text=True, encoding="utf-8", errors="strict",
                           env=_env(home), check=False, timeout=120)
     return proc.returncode, proc.stdout, proc.stderr
 
@@ -207,7 +207,7 @@ def _layout(data, layer, tmp):
     global_path = os.path.join(tmp, "machine.json")
     target = os.path.join(root, ".crew", "config.json") if layer == "repo" else global_path
     text = json.dumps(data, indent=2)
-    with open(target, "w", encoding="utf-8") as fh:
+    with open(target, "w", encoding="utf-8", errors="strict", newline="\n") as fh:
         fh.write(text)
     return root, global_path
 
@@ -647,7 +647,8 @@ def test_confirm_only_matches_propose(tmp_path):
 
 def _mutated(tmp_path, name, data):
     path = tmp_path / name
-    path.write_text(data if isinstance(data, str) else json.dumps(data), encoding="utf-8")
+    path.write_text(data if isinstance(data, str) else json.dumps(data), encoding="utf-8",
+                    errors="strict", newline="\n")
     return str(path)
 
 
@@ -709,13 +710,17 @@ def test_s4_repo_nonprod_not_a_list(tmp_path, keys):
 def test_s5_bad_value(tmp_path, keys, name):
     data = _load_example(name)
     data["pm"] = {"authority": "yolo"}
-    _check(tmp_path, keys, name, data, "(e)")
+    problems = _check(tmp_path, keys, name, data, "(e)")
+    _has(problems, "(e) pm.authority:", '"yolo"', "is not one of")
 
 
 def test_s6_bad_list_element(tmp_path, keys):
     data = _load_example("machine-reviewers-codex-first.json")
     data["qa"]["order"] = ["codex", "gpt"]
-    _check(tmp_path, keys, "machine-x.json", data, "(e)")
+    problems = _check(tmp_path, keys, "machine-x.json", data, "(e)")
+    # `(e) providers:` (the runtime validator) fires on this value too, so the
+    # row names the registry's list-element check or it proves nothing.
+    _has(problems, "(e) qa.order:", '"gpt"', "is not one of")
 
 
 @pytest.mark.parametrize("key,value,expected", [

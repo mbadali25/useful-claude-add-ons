@@ -47,16 +47,16 @@ are left out of the blank, each with its reason; `template.annotated.md` shows w
 3. See what is in force:
 
    ```
-   python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --explain --all
+   python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py" --explain --all
    ```
 
    Each row shows the effective value and which layer set it.
 4. Check both files. All three print findings and exit 0, so read the output:
 
    ```
-   python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --check
-   python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --check-global
-   python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --inert
+   python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py" --check
+   python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py" --check-global
+   python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py" --inert
    ```
 
    `--check` warns about the repo file, `--check-global` about the machine file, and `--inert`
@@ -72,7 +72,7 @@ Follow these steps in order. Do not ask the owner anything this guide or `keys.j
 2. See what is set now, and which layer set it:
 
    ```
-   python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --explain --all
+   python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py" --explain --all
    ```
 
 3. Ask the owner only these questions, and only for values not already set the way they want:
@@ -94,15 +94,15 @@ Follow these steps in order. Do not ask the owner anything this guide or `keys.j
    the write refuses if either file changed since the dry run:
 
    ```
-   python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --set tracker='"jira"' --repo
-   python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --set tracker='"jira"' --repo --apply --expect DIGEST --expect-global MACHINE_DIGEST
+   python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py" --set tracker='"jira"' --repo
+   python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py" --set tracker='"jira"' --repo --apply --expect DIGEST --expect-global MACHINE_DIGEST
    ```
 
 6. Write a machine key only through `/crew:config`, or as a `--set ... --global` dry run that you
    show the owner and apply only on the owner's yes:
 
    ```
-   python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --set qa.order='["kimi","codex","claude"]' --global
+   python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py" --set qa.order='["kimi","codex","claude"]' --global
    ```
 
 7. Never hand-edit either file. Never write a `machine-only` key into the repo file. Never write a
@@ -124,9 +124,9 @@ by typing a command twice, in two prompts:
 
 The route, the same for all three:
 
-1. The model runs `crew_confirm_config.py propose --layer machine --key <key>`, adding
-   `--value '"all"'` (or a JSON list) for the git key. For a protected key in an untracked repo
-   file, the layer is `repo` with `--root`.
+1. The model runs `crew_confirm_config.py propose --layer machine --key <key>` (`python3`, script
+   in `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/`), adding `--value '"all"'` (or a JSON list) for the
+   git key. For a protected key in an untracked repo file, the layer is `repo` with `--root`.
 2. The model relays what `propose` prints to the owner word for word. For a `humanOnly` key that
    is the two indented lines after "Relay the next two lines"; for the git key it is all three
    lines, the last of which says what the guards stop doing once it applies.

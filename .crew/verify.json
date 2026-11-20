@@ -861,7 +861,7 @@
         "plugin/crew/hooks/scripts/crew_gitallow.py",
         "plugin/crew/hooks/scripts/crew_tiers.py"
       ],
-      "seconds": 127,
+      "seconds": 151,
       "run": [
         "python3 -m pytest plugin/crew/tests/test_crew_keys.py -q",
         "python3 -m pytest plugin/crew/tests/test_config_blanks.py -q",
