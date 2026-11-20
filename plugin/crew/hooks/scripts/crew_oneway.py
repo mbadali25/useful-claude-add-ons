@@ -41,9 +41,13 @@ Reading a command:
    its target. An fd copy ends where its word ends: in `>&2list` the shell's
    target is the file `2list`, so that is read as `>&` with the target
    `2list`, never as `>&2` and a word `list`. A quoted empty word is a
-   target (`<<< ""`), and a target that opens a quote runs to the token that
-   closes it (`<<< "a b"`). The words stop at a comment, a `#` that starts
-   an unquoted word: `terraform state rm x # -help` is a hit. An operator
+   target (`<<< ""`). A target is the one place quotes are followed: it
+   runs to the token where every quote it opens is closed (`<<< "a b"`,
+   `<<< a" b"`), an escaped quote closes nothing (`<<< "a\\" b"`; the
+   escape is `\\` in bash and a backtick in powershell) and an escaped space
+   joins the next token. An operator inside the quotes is put back as it
+   stood (`>"a>b"` records `a>b`). The words stop at a comment, a `#` that
+   starts an unquoted word: `terraform state rm x # -help` is a hit. An operator
    with no target, or with a quoted one the segment never closes, makes the
    segment `could-not-tell` (`redirect-target-unseen`) unless its words are
    a hit, which wins: the shell writes somewhere the reader cannot see. A
@@ -151,6 +155,7 @@ _SEPARATORS_RE = re.compile(r"&&|\|\||[;|&\n\r]")
 _STRIP = "\"'(){}"
 _QUOTES = "\"'"
 _MARK = "\x01"
+_ESCAPE = {"bash": "\\", "powershell": "`"}
 _HIDE = str.maketrans({"&": "\x02", "|": "\x03"})
 _SHOW = str.maketrans({"\x02": "&", "\x03": "|"})
 # The marker characters in the command itself are replaced first, so no word
@@ -160,9 +165,16 @@ _UNMARK = str.maketrans({_MARK: "�", "\x02": "�", "\x03": "�"})
 
 def _protect(text, shell="bash"):
     """`text` with each redirection operator turned into a word of its own
-    that no separator cuts."""
+    that no separator cuts: the marker, a digit, the operator. The digit
+    says where the operator was glued to its neighbour (1 left, 2 right, 3
+    both), so a quoted target can put it back as it stood."""
     text = text.translate(_UNMARK)
-    return _REDIRECT_RE[shell].sub(lambda m: f" {_MARK}{m.group(0).translate(_HIDE)} ", text)
+
+    def mark(match):
+        glue = (match.start() > 0 and not text[match.start() - 1].isspace()) + 2 * (
+            match.end() < len(text) and not text[match.end()].isspace())
+        return f" {_MARK}{glue}{match.group(0).translate(_HIDE)} "
+    return _REDIRECT_RE[shell].sub(mark, text)
 
 
 def _comment(token):
@@ -171,28 +183,58 @@ def _comment(token):
     return token.lstrip("()").startswith("#")
 
 
-def _target(tokens, index):
+def _quotes(text, quote, skip, escape):
+    """(quote, skip) after `text`: the quote left open (or None) and
+    whether the last character escapes the next one. Nothing is escaped
+    inside single quotes."""
+    for char in text:
+        if skip:
+            skip = False
+        elif quote == "'":
+            quote = None if char == "'" else quote
+        elif char == escape:
+            skip = True
+        elif quote:
+            quote = None if char == quote else quote
+        elif char in _QUOTES:
+            quote = char
+    return quote, skip
+
+
+def _target(tokens, index, escape="\\"):
     """(target, next index) of the operator that stands before `index`;
     the target is None when the reader cannot see one.
 
     A quoted empty word is a target (`<<< ""`), so the word after it is not.
-    A target that opens a quote takes every token up to the one that closes
-    it (`<<< "a b"`); when nothing in the segment closes it, the rest of the
-    segment is the unseen target."""
+    The target runs to the token where every quote it opens is closed
+    (`<<< "a b"`, `<<< a" b"`); an escaped quote closes nothing and an
+    escaped space joins the next token. An operator lifted from inside the
+    quotes is put back as it stood. When nothing in the segment closes the
+    quote, the rest of the segment is the unseen target."""
     if index >= len(tokens) or tokens[index].startswith(_MARK) or _comment(tokens[index]):
         return None, index
-    quote = tokens[index][0]
-    end = index
-    if quote in _QUOTES and tokens[index].count(quote) % 2:
-        end += 1
-        while end < len(tokens) and not tokens[end].count(quote) % 2:
-            end += 1
-        if end == len(tokens):
-            return None, end
-    return " ".join(tokens[index:end + 1]).strip(_STRIP), end + 1
+    parts, quote, skip, glued = [], None, False, True
+    while True:
+        text, left, right = tokens[index], False, False
+        if text.startswith(_MARK):
+            text, left, right = text[2:].translate(_SHOW), text[1] in "13", text[1] in "23"
+        piece = text if glued or left else " " + text
+        parts.append(piece)
+        quote, skip = _quotes(piece, quote, skip, escape)
+        glued = right
+        index += 1
+        if quote is None and not skip and not glued:
+            break
+        if index == len(tokens):
+            if quote:
+                return None, index
+            break
+        if quote is None and tokens[index].startswith(_MARK) and tokens[index][1] in "02":
+            break  # the escaped space ends the word; the operator stands alone
+    return "".join(parts).strip(_STRIP), index
 
 
-def _lift(piece):
+def _lift(piece, escape="\\"):
     """One raw segment: {words, targets, dangling}, or None when empty.
 
     A token that is only brackets is dropped. A token that is only quotes is
@@ -211,11 +253,11 @@ def _lift(piece):
                 out.append(token.strip(_STRIP))
             index += 1
             continue
-        operator = token[1:].translate(_SHOW)
+        operator = token[2:].translate(_SHOW)
         index += 1
         if _FD_COPY_RE.fullmatch(operator):
             continue
-        target, index = _target(tokens, index)
+        target, index = _target(tokens, index, escape)
         if target is None:
             dangling.append(operator)
         else:
@@ -230,7 +272,7 @@ def raw_segments(text, shell="bash"):
     {words, targets: [(operator, target)], dangling: [operator]}."""
     segments = []
     for piece in _SEPARATORS_RE.split(_protect(text, shell)):
-        segment = _lift(piece)
+        segment = _lift(piece, _ESCAPE[shell])
         if segment is not None:
             segments.append(segment)
     return segments

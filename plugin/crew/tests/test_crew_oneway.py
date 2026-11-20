@@ -144,6 +144,15 @@ MUST_BLOCK = (
     ("bash", "terraform state rm x > out.txt # -h", "tf-state-write"),
     ("bash", "cd infra && terraform import a b # -help", "tf-import"),
     ("powershell", "terraform state rm x # -help", "tf-state-write"),
+    # round 6: an escaped quote closes nothing, and a quote that opens inside
+    # the word is followed too, so `b"` is the operand's end, not a subcommand.
+    ("bash", r'terraform <<< "a\" b" state rm x', "tf-state-write"),
+    ("bash", 'terraform <<< a" b" state rm x', "tf-state-write"),
+    ("bash", "terraform <<< a' b' state rm x", "tf-state-write"),
+    ("bash", r"terraform <<< a\ b state rm x", "tf-state-write"),
+    ("bash", r'terraform > "a\"b c" state rm x', "tf-state-write"),
+    ("powershell", 'terraform *> "a`" b" state rm x', "tf-state-write"),
+    ("bash", 'terraform state rm x >"a>b"', "tf-state-write"),
 )
 
 # (shell, command)
@@ -192,6 +201,11 @@ MUST_ALLOW = (
     ("bash", 'terraform state rm x "#" -help'),
     ("bash", 'terraform state list <<< ""'),
     ("bash", 'terraform state list <<< "a b"'),
+    # round 6: the escaped space makes `x state` one operand, so the shell
+    # runs `terraform rm y`.
+    ("bash", r"terraform <<< x\ state rm y"),
+    ("bash", r'terraform state list <<< "a\" b"'),
+    ("bash", 'terraform state list >"a>b"'),
 )
 
 # Known false negatives (Risks): terragrunt's `stack run` and `graph` run
@@ -232,6 +246,9 @@ COULD_NOT_TELL = (
     # round 5: everything after the head is a comment.
     ("terraform # state rm x", "tf-sub-unseen"),
     ("terraform state list > # out.txt", "redirect-target-unseen"),
+    # round 6: a quote opened inside the target and never closed.
+    ("terraform <<< it's state list", "redirect-target-unseen"),
+    (r'terraform state list > "a\"', "redirect-target-unseen"),
 )
 
 # Known over-reports pinned as hits (Risks).
@@ -496,6 +513,24 @@ READER_ROWS = (
     ('cat <<< "a" x', [seg(["cat", "x"], [("<<<", "a")])]),
     ('cat <<< "a b', [seg(["cat"], dangling=["<<<"])]),
     ('cat <<< "a # b" x', [seg(["cat", "x"], [("<<<", "a # b")])]),
+    # round 6: quotes are followed through the whole target.
+    (r'cat <<< "a\" b" x', [seg(["cat", "x"], [("<<<", r'a\" b')])]),
+    ('cat <<< a" b" x', [seg(["cat", "x"], [("<<<", 'a" b')])]),
+    (r"cat <<< a\ b x", [seg(["cat", "x"], [("<<<", r"a\ b")])]),
+    ("cat <<< a\\", [seg(["cat"], [("<<<", "a\\")])]),
+    (r"cat <<< a\ >f x", [seg(["cat", "x"], [("<<<", "a\\"), (">", "f")])]),
+    (r"cat <<< a\>f x", [seg(["cat", "x"], [("<<<", r"a\>f")])]),
+    ("cat <<< 'a\\' x", [seg(["cat", "x"], [("<<<", "a\\")])]),
+    ("""cat <<< 'b " c' x""", [seg(["cat", "x"], [("<<<", 'b " c')])]),
+    ("cat <<< it's x", [seg(["cat"], dangling=["<<<"])]),
+    # round 6: an operator inside a quoted target is put back as it stood.
+    ('a >"b>c" d', [seg(["a", "d"], [(">", "b>c")])]),
+    ('a > "b > c" d', [seg(["a", "d"], [(">", "b > c")])]),
+    ('a > "b >c" d', [seg(["a", "d"], [(">", "b >c")])]),
+    ('a > "b> c" d', [seg(["a", "d"], [(">", "b> c")])]),
+    ('a >"b 2>&1 c" d', [seg(["a", "d"], [(">", "b 2>&1 c")])]),
+    ('a >"b>|c" d', [seg(["a", "d"], [(">", "b>|c")])]),
+    ('a >"b<<<c" >>e', [seg(["a"], [(">", "b<<<c"), (">>", "e")])]),
     # the words stop at a comment.
     ("a b # c > d", [seg(["a", "b"])]),
     ("a b #c", [seg(["a", "b"])]),
@@ -515,6 +550,10 @@ PS_READER_ROWS = (
     ("a x*>&1", [seg(["a", "x*"])]),
     ("a b # c *> d", [seg(["a", "b"])]),
     ('a *> "" b', [seg(["a", "b"], [("*>", "")])]),
+    # round 6: powershell escapes with a backtick; a backslash escapes nothing.
+    ('a *> "b`" c" d', [seg(["a", "d"], [("*>", 'b`" c')])]),
+    ('a *> "b\\" c', [seg(["a", "c"], [("*>", "b\\")])]),
+    ('a *>"b*>c" d', [seg(["a", "d"], [("*>", "b*>c")])]),
 )
 
 
@@ -950,6 +989,24 @@ def case_cnt_unclosed_quoted_target(mod):
     assert_cnt(mod, 'terraform <<< "a; b" state rm x', "redirect-target-unseen")
 
 
+def case_block_escaped_quote_in_target(mod):
+    assert_hit(mod, r'terraform <<< "a\" b" state rm x', "tf-state-write")
+    assert_hit(mod, 'terraform *> "a`" b" state rm x', "tf-state-write", shell="powershell")
+
+
+def case_block_quote_opened_inside_target(mod):
+    assert_hit(mod, 'terraform <<< a" b" state rm x', "tf-state-write")
+
+
+def case_allow_escaped_space_in_target(mod):
+    assert_clear(mod, r"terraform <<< x\ state rm y")
+
+
+def case_reader_operator_inside_quoted_target(mod):
+    assert mod.raw_segments('a >"b>c" d') == [seg(["a", "d"], [(">", "b>c")])]
+    assert mod.raw_segments('a > "b > c" d') == [seg(["a", "d"], [(">", "b > c")])]
+
+
 def case_block_help_in_a_comment(mod):
     assert_hit(mod, "terraform state rm x # -help", "tf-state-write")
     assert_hit(mod, "terraform state rm x # -help", "tf-state-write", shell="powershell")
@@ -1060,7 +1117,8 @@ MUTATIONS = (
      "              if token.strip(_STRIP) or any(quote in token for quote in _QUOTES)]\n",
      "              if token.strip(_STRIP)]\n", ("case_block_empty_here_string",)),
     ("R18 a quoted target ends at its first token",
-     "    if quote in _QUOTES and tokens[index].count(quote) % 2:\n", "    if False:\n",
+     "        if quote is None and not skip and not glued:\n            break\n",
+     "        break\n",
      ("case_block_quoted_here_string_with_a_space", "case_cnt_unclosed_quoted_target")),
     ("R19 a comment's words are read as arguments",
      "            if _comment(token):\n                break\n", "",
@@ -1071,6 +1129,25 @@ MUTATIONS = (
     ("R21 a quoted `#` starts a comment",
      '    return token.lstrip("()").startswith("#")\n',
      '    return token.strip(_STRIP).startswith("#")\n', ("case_allow_quoted_hash_then_help",)),
+    ("R22 an escaped quote closes the target",
+     "        elif char == escape:\n            skip = True\n", "",
+     ("case_block_escaped_quote_in_target", "case_allow_escaped_space_in_target")),
+    ("R23 only a quote that opens the target is followed",
+     "        quote, skip = _quotes(piece, quote, skip, escape)\n",
+     "        quote, skip = _quotes(piece if quote or piece[:1] in _QUOTES else \"\", quote, skip,\n"
+     "                              escape)\n",
+     ("case_block_quote_opened_inside_target",)),
+    ("R24 powershell targets read with the bash escape",
+     "        segment = _lift(piece, _ESCAPE[shell])\n", "        segment = _lift(piece)\n",
+     ("case_block_escaped_quote_in_target",)),
+    ("R25 an operator inside a quoted target keeps the reader's padding",
+     '        piece = text if glued or left else " " + text\n',
+     '        piece = text if not parts else " " + text\n',
+     ("case_reader_operator_inside_quoted_target",)),
+    ("R26 an operator inside a quoted target keeps the reader's marker",
+     "            text, left, right = text[2:].translate(_SHOW), text[1] in \"13\", text[1] in \"23\"\n",
+     "            left, right = text[1] in \"13\", text[1] in \"23\"\n",
+     ("case_reader_operator_inside_quoted_target",)),
 )
 
 
