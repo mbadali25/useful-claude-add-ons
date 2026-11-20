@@ -239,8 +239,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.191**: `crew_oneway.py`, a report-only tripwire for hand-edited terraform state (R-34a). `crew` 1.3.191 adds `crew_oneway.py`, which recognises in a command's text the first one-way operation of the revision-3 plan, `hand-edit-terraform-state`: `terraform`, `tofu` or `terragrunt` running a `state` write (anything but `list`, `show`, `pull`, `identities`), `import`, `taint`, `untaint`, `force-unlock` or `refresh`. It refuses nothing yet.
 - **crew 1.3.190**: `crew_tiers.py`, a machine-owned tier map, report-only. `crew` 1.3.190 adds the `tiers` config key and `crew_tiers.py`, one answer to which tier (dev, qa, prod or unknown) a target is in; nothing acts on the answer yet.
-- **crew 1.3.188**: Copy-safe config blanks, a per-key list and an annotated template (R-C2). `crew` 1.3.188 ships `plugin/crew/docs/configuration/`: a repo and a machine config blank you can copy into an empty layer without changing any effective setting, a per-key fact list and an annotated template, all generated and checked for staleness.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
