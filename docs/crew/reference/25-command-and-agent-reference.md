@@ -165,7 +165,10 @@ the suite. An entry only some platforms can exercise (the PowerShell gate's,
 which are Windows-only) is declared in `PLATFORM_ONLY`. On any other host it is
 not applied, and it reads `PLATFORM-ONLY, NOT EXERCISED (win)`, counted on the
 last line, as in `SABOTAGE SUITE: PASS (N platform-only, not exercised on linux)`.
-On its own platform a skip fails like any other. Each entry runs in its own
+On its own platform a skip fails like any other. An entry that needs something
+the host may refuse is declared in `CAPABILITY_ONLY` with a probe (today one:
+making a directory link, a junction on Windows); where the probe says no it is
+not applied either and is counted the same way. Each entry runs in its own
 session (a job object on Windows) under the bound above; an overrun's whole
 process tree is killed, as is anything the entry leaves running.
 
