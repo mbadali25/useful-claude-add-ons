@@ -1290,7 +1290,9 @@ def _branch_delete(targets, where, eff, ctx, repo_unseen, refs=True):
     readings = []
     own_inside = _inside(eff, ctx.own_worktrees)
     for offset, name in named:
-        if not name:
+        if not name or _quoted_in(ctx.quoted, offset, offset + 1):
+            # a target the raw pass may have misread is never a hit: bash
+            # passes `o"wn"` as `own` (fix round 5).
             reading = (COULD_NOT_TELL, "branch-target-unseen", offset)
         else:
             reading = _branch_verdict(name, ctx, offset, own_inside)
@@ -1315,7 +1317,8 @@ def _worktree_remove(rest, where, eff, ctx, repo_unseen):
         return (COULD_NOT_TELL, "worktree-target-unseen", where)
     at = where + 1 + found[0]
     path = rest[1 + found[0]]
-    if not path or any(mark in path for mark in _TARGET_UNSEEN) or path.startswith("~"):
+    if (not path or any(mark in path for mark in _TARGET_UNSEEN) or path.startswith("~")
+            or _quoted_in(ctx.quoted, at, at + 1)):
         return (COULD_NOT_TELL, "worktree-target-unseen", at)
     if eff is None or ctx.own_worktrees is None:
         return (COULD_NOT_TELL, "worktree-owner-unseen", at)
@@ -1338,6 +1341,12 @@ def _git_delete(info, start, head):
     if sub is crew_gitallow.UNSEEN:
         return (COULD_NOT_TELL, "git-sub-unseen", sub_at)
     if sub not in DELETE_SUBS:
+        # A word the raw pass may have misread among the globals or as the
+        # subcommand (a dropped `-C ""`, half of `-c "a.b=x y"`) moves where
+        # the subcommand is read, so the one read here may not be git's
+        # (fix round 5): `git -C "" branch -D x > out` reads `-D` as it.
+        if _quoted_in(ctx.quoted, head + 1, sub_at + 1):
+            return (COULD_NOT_TELL, "git-sub-unseen", sub_at)
         return _CLEAR
     globals_ = args[:split]
     dirs = crew_gitallow.target_dirs(globals_)

@@ -763,6 +763,10 @@ GIT_BLOCK = (
     # quotes joined, as bash runs it (fix round 4).
     ("bash", 'su"do" git branch -D feature-x > out.txt', BR, DEL, "OWN"),
     ("bash", 'g"it" branch -D feature-x > out.txt', BR, DEL, "OWN"),
+    # a target the raw pass reads reliably is still a hit beside one it may
+    # have misread (fix round 5).
+    ("bash", 'git branch -D worktree-R-"34" feature-x > out.txt', BR, DEL, "OWN"),
+    ("bash", 'git worktree remove /w/r35 /w/r"34" > out.txt', WT, WDEL, "OWN"),
     ("bash", "git worktree remove ../r35", WT, WDEL, "OWN"),
     ("bash", "git worktree remove --force /w/r35", WT, WDEL, "OWN"),
     ("bash", "git -C ../r35 worktree remove .", WT, WDEL, "OWN"),
@@ -826,6 +830,20 @@ GIT_CNT = (
     ("bash", 'git worktree remove "/w/r34 backup" > out.txt', WT, "worktree-target-unseen",
      "OWN"),
     ("bash", 'git wo"rktree" remove /w/r35 > out.txt', None, "git-sub-unseen", "OWN"),
+    # a misread global moves where the subcommand is read: the dropped `""`
+    # makes `-C` take `branch`, half of the quoted value makes `y` the
+    # subcommand (fix round 5).
+    ("bash", 'git -C "" branch -D feature-x > out.txt', None, "git-sub-unseen", "OWN"),
+    ("bash", 'git -c "a.b=x y" branch -D feature-x > out.txt', None, "git-sub-unseen", "OWN"),
+    ("bash", 'git -C "" worktree remove /w/r35 > out.txt', None, "git-sub-unseen", "OWN"),
+    ("bash", 'git -c "a.b=x y" worktree remove /w/r35 > out.txt', None, "git-sub-unseen",
+     "OWN"),
+    # a target the raw pass may have misread is never a hit: bash passes
+    # `worktree-R-"34"` as the own `worktree-R-34` (fix round 5).
+    ("bash", 'git branch -D worktree-R-"34" > out.txt', BR, "branch-target-unseen", "OWN"),
+    ("bash", 'git push origin --delete worktree-R-"34" > out.txt', BR, "branch-target-unseen",
+     "OWN"),
+    ("bash", 'git worktree remove /w/r"34" > out.txt', WT, "worktree-target-unseen", "OWN"),
     # a bracket inside quotes is part of the word, which the raw pass strips:
     # `(worktree-R-34)` and `/w/r34)` are another branch and path (fix round 3).
     ("bash", "git branch -D '(worktree-R-34)' > out.txt", BR, "branch-target-unseen", "OWN"),
@@ -883,6 +901,8 @@ GIT_ALLOW = (
     # a quote the raw pass reads as the shell does is no reason to doubt.
     ("bash", 'git "branch" -D "worktree-R-34" > out.txt', "OWN"),
     ("bash", '(git branch -D "worktree-R-34") > out.txt', "OWN"),
+    ("bash", 'git -c "a.b=x" branch -D worktree-R-34 > out.txt', "OWN"),
+    ("bash", 'git -c "a.b=x" status > out.txt', "OWN"),
     # --no-delete clears -d: git lists, or creates, and deletes nothing (fix round 3).
     ("bash", "git branch -d --no-delete --list feature-x", "OWN"),
     ("bash", "git branch -d --no-del feature-x", "OWN"),
@@ -924,6 +944,11 @@ GIT_PINNED = (
     ("git push --delete origin v1.0", "hit", BR, DEL, "OWN"),
     # the remote is not compared.
     ("git push other-remote --delete feat/r-34-x", "clear", None, None, "OWN"),
+    # a misread global makes any subcommand unreadable, a non-delete too (fix round 5).
+    ('git -c "a.b=x y" status > out.txt', "could-not-tell", None, "git-sub-unseen", "OWN"),
+    # C5 decides the repository before C11 decides a tag (review round 1).
+    ("git --git-dir=/o/.git update-ref -d refs/tags/v1", "could-not-tell", BR,
+     "git-repo-unseen", "OWN"),
 )
 
 PATH_MODULES = pytest.mark.parametrize("pathmod", [ntpath, posixpath],
@@ -2379,6 +2404,25 @@ def case_cnt_quoted_global(mod):
                "git-repo-unseen", op=BR, ctx=own())
 
 
+def case_cnt_misread_global_moves_the_subcommand(mod):
+    for command in ('git -C "" branch -D feature-x > out.txt',
+                    'git -c "a.b=x y" branch -D feature-x > out.txt',
+                    'git -C "" worktree remove /w/r35 > out.txt',
+                    'git -c "a.b=x y" worktree remove /w/r35 > out.txt'):
+        assert_cnt(mod, command, "git-sub-unseen", op=None, ctx=own())
+
+
+def case_cnt_misread_branch_target(mod):
+    for command in ('git branch -D worktree-R-"34" > out.txt',
+                    'git push origin --delete worktree-R-"34" > out.txt'):
+        assert_cnt(mod, command, "branch-target-unseen", op=BR, ctx=own())
+
+
+def case_cnt_misread_worktree_path(mod):
+    assert_cnt(mod, 'git worktree remove /w/r"34" > out.txt', "worktree-target-unseen", op=WT,
+               ctx=own())
+
+
 def case_cnt_quoted_subcommand(mod):
     assert_cnt(mod, 'git wo"rktree" remove /w/r35 > out.txt', "git-sub-unseen", op=None,
                ctx=own())
@@ -2763,7 +2807,7 @@ MUTATIONS = (
      '        return (COULD_NOT_TELL, ("git-repo-unseen", BRANCH), where)\n'
      "    named = []\n", "    named = []\n", ("case_cnt_namespace_tag_delete",)),
     ("C-empty an empty worktree path resolved to the cwd",
-     "    if not path or any(", "    if any(", ("case_cnt_worktree_empty_path",)),
+     "    if (not path or any(", "    if (any(", ("case_cnt_worktree_empty_path",)),
     ("C-exec the shell builtin exec not a head prefix",
      '"if", "elif", "while", "until", "exec"))', '"if", "elif", "while", "until"))',
      ("case_block_exec_builtin",)),
@@ -2783,11 +2827,14 @@ MUTATIONS = (
      ("case_block_branch_refs_tags_operand", "case_block_branch_refs_heads_operand")),
     # Re-anchored by fix round 2: `_quoted_option` folded into the raw pass's
     # misread words, which also catch a dropped `""` and a split quoted path.
+    # Fix round 5 also reads a misread worktree path itself as unseen
+    # (C-raw-path), so the split quoted path now has two guards and is no
+    # longer red against this one alone; C-faithful still turns it red.
     ("C-quote a word after the subcommand the raw pass may have misread trusted",
      "    if reading[0] != HIT and _quoted_in(ctx.quoted, where, where + GIT_WINDOW + 1):\n",
      "    if False:\n",
      ("case_cnt_worktree_quoted_sub", "case_cnt_branch_quoted_option",
-      "case_cnt_push_dropped_empty_value", "case_cnt_worktree_split_quoted_path")),
+      "case_cnt_push_dropped_empty_value")),
     # R-34c fix round 2.
     ("C-raw-global a global the raw pass may have misread trusted",
      "    repo_unseen = _repo_unseen(globals_, dirs, info.repo_assign[start] < head\n"
@@ -2848,6 +2895,17 @@ MUTATIONS = (
      "        if repo_unseen:\n"
      '            return (COULD_NOT_TELL, ("git-repo-unseen", DELETE_SUBS[sub]), where)\n'
      "        rule = ", "        rule = ", ("case_cnt_repo_unseen_before_misread_target",)),
+    # R-34c fix round 5.
+    ("C-raw-sub a misread global trusted when the subcommand read is no delete",
+     "        if _quoted_in(ctx.quoted, head + 1, sub_at + 1):\n"
+     '            return (COULD_NOT_TELL, "git-sub-unseen", sub_at)\n', "",
+     ("case_cnt_misread_global_moves_the_subcommand",)),
+    ("C-raw-target a branch target the raw pass may have misread read as a hit",
+     "        if not name or _quoted_in(ctx.quoted, offset, offset + 1):\n",
+     "        if not name:\n", ("case_cnt_misread_branch_target",)),
+    ("C-raw-path a worktree path the raw pass may have misread read as a hit",
+     "            or _quoted_in(ctx.quoted, at, at + 1)):\n", "            ):\n",
+     ("case_cnt_misread_worktree_path",)),
 )
 
 
