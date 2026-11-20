@@ -150,6 +150,18 @@ read entries under any `## [` heading.
 - crew 1.3.159: re-bump only - interim number on the stop-budget reader branch (PR #788, pushed, never on main); the accepted-value test changed plugin/crew after the number was set, so the branch moved to 1.3.160; the change is recorded under crew 1.3.160
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Added — crew 1.3.192: `crew_oneway.py` reports direct terraform state-file writes and file-tool edits (R-34b)
+
+- **Summary.** `crew` 1.3.192 extends the report-only `crew_oneway.py` tripwire so writing, removing, moving or editing a terraform state file directly (a redirection, `rm`/`mv`/`cp`/`sed -i`, `git rm`, an object-store copy, or a Write/Edit/MultiEdit/NotebookEdit tool call) is reported as `hand-edit-terraform-state`. It still refuses nothing.
+- **What.** A state word is any `.tfstate` or `.tfstate.<anything>` basename, read as written, with quotes joined and with escapes removed. Redirections in every spelling (spaced, attached, `>>`, `1>`, `>|`, `&>`) are read per lifted target, with `2>&1` treated as a descriptor copy; head-keyed rows cover remove, move, write, in-place, copy (destination only), remote-copy and read heads, plus a git head table; words after `--` are read whole. File tools are read through `file_path`, `notebook_path` and `edits[].file_path`, pinned to `scope_guard.targets`. A line comment is dropped only when everything before the `#` is on a plain-character allow-list, so `echo ok # x; terraform state rm x` is clear. Nothing in the plugin imports the module.
+- **Tests.** `test_crew_oneway.py` adds must-block, must-allow and could-not-tell rows for each of these, pinned false negatives and known over-reports, linear-time rows, and `MUTATIONS` grows to 70 weakened copies, each proving every input it names red on its own.
+
+### Added — crew 1.3.191: `crew_oneway.py`, a report-only tripwire for hand-edited terraform state (R-34a)
+
+- **Summary.** `crew` 1.3.191 adds `crew_oneway.py`, which recognises in a command's text the first one-way operation of the revision-3 plan, `hand-edit-terraform-state`: `terraform`, `tofu` or `terragrunt` running a `state` write (anything but `list`, `show`, `pull`, `identities`), `import`, `taint`, `untaint`, `force-unlock` or `refresh`. It refuses nothing yet.
+- **What.** A `judge`/`payload`/`shapes` CLI returns `hit`, `clear` or `could-not-tell` (any `hit` wins, then any `could-not-tell`), reading the command first as plain words (`crew_gitallow.plain_commands`) and then raw, through chains, redirections (bash and the PowerShell all-streams forms), quoted redirect targets and global options. A finding names its rule, operation and position, never a word of the command. Nothing in the plugin imports the module, and a test fails if anything does.
+- **Tests.** `test_crew_oneway.py`: must-block, must-allow and could-not-tell rows for both shells, reader unit rows, parity of its option skipping with `tf_skip_options`, the no-importer check, and named mutations that each turn a row red.
+
 ### Added — crew 1.3.190: `crew_tiers.py`, a machine-owned tier map, report-only (R-05)
 
 - **Summary.** `crew` 1.3.190 adds the `tiers` config key and `crew_tiers.py`, one answer to which tier (dev, qa, prod or unknown) a target is in; nothing acts on the answer yet.
