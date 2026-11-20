@@ -53,13 +53,18 @@ command's directory (`cwd`, then each `-C`) is inside an own worktree, else
 could-not-tell. A worktree path is resolved against that directory and is
 clear only when it equals an own worktree. No own list, no `cwd` where one
 is needed, an expanded or globbed target, an option (or the worktree
-subcommand) the raw pass left holding a quote, or a repository crew cannot
+subcommand) the raw pass left holding a quote, a word after the subcommand
+the raw pass may have misread (an empty `""` it dropped, half of a quoted
+space, a word holding an escape), or a repository crew cannot
 see (`--git-dir`, `--work-tree`, `--namespace`, a `-C` holding `$` ` % * ?
-[ or a leading `~`, a leading `GIT_DIR=`/`GIT_WORK_TREE=`/`GIT_NAMESPACE=`)
+[ or a leading `~`, a leading `GIT_DIR=`/`GIT_WORK_TREE=`/`GIT_NAMESPACE=`,
+a global the raw pass may have misread such as `--git-"dir"=x`)
 is could-not-tell, never clear. A `git branch` operand is a branch name as
 spelled (`refs/heads/x` is not `x` there); push and update-ref read refs. A
-value-taking `git branch` option takes the next word (`--sort -r` is no
-`--remotes`). A `git` whose subcommand crew cannot read is
+value-taking `git branch` option takes the next word whatever it is
+(`--sort -r` is no `--remotes`, `--sort -- -D x` deletes `x`, and in
+`-D --sort refname x` only `x` is an operand). A `git` whose subcommand crew
+cannot read, or the raw pass may have misread, is
 could-not-tell with no operation (`git-sub-unseen`); a delete subcommand
 running past `GIT_WINDOW` words with no hit is could-not-tell
 (`git-window-exceeded`). Paths are compared lexically (`normpath`,
@@ -121,7 +126,8 @@ or terragrunt's `exec`; every such reading is judged and the worst kept, the
 earliest on a tie. terragrunt's `run`, `run-all` and `exec` are unwrapped; what
 `exec` runs is judged as a new command. A command's words are read once, so
 judging it takes time linear in its length; a git head reads only a window
-of the words after it, grown while its global options fill it.
+of the words after it, grown while its global options fill it, and is read
+once however many starts strip their prefixes down to it.
 
 It is a tripwire, not a boundary (plan 4.0, layer 1). It does not see
 terraform behind `bash -c`, `make`, a script, `xargs`, `sudo -u <user>` or a
@@ -228,15 +234,16 @@ SHAPES = tuple(row + (TF_STATE,) for row in _TF_SHAPES) + (
     ("the same, an own branch outside every own worktree", "branch-own-outside",
      COULD_NOT_TELL, BRANCH),
     ("the same, no own_branches in the context", "branch-owner-unseen", COULD_NOT_TELL, BRANCH),
-    ("the same, a target holding $ ` % * ? [ or none, or an option left holding a quote",
-     "branch-target-unseen", COULD_NOT_TELL, BRANCH),
+    ("the same, a target holding $ ` % * ? [ or none, an option left holding a quote, or a "
+     "word the raw pass may have misread", "branch-target-unseen", COULD_NOT_TELL, BRANCH),
     ("git push --prune or --mirror", "push-prune", COULD_NOT_TELL, BRANCH),
     ("git worktree remove, a path that is not an own worktree", "worktree-remove-other", HIT,
      WORKTREE),
     ("the same, no cwd or no own_worktrees in the context", "worktree-owner-unseen",
      COULD_NOT_TELL, WORKTREE),
-    ("the same, a path holding $ ` % * ? [, a leading ~, or none, or a subcommand or option "
-     "left holding a quote", "worktree-target-unseen", COULD_NOT_TELL, WORKTREE),
+    ("the same, a path holding $ ` % * ? [, a leading ~, or none, a subcommand or option "
+     "left holding a quote, or a word the raw pass may have misread", "worktree-target-unseen",
+     COULD_NOT_TELL, WORKTREE),
     ("a branch delete in a repository crew cannot see", "git-repo-unseen", COULD_NOT_TELL,
      BRANCH),
     ("a worktree remove in a repository crew cannot see", "git-repo-unseen", COULD_NOT_TELL,
@@ -406,14 +413,31 @@ def _target(tokens, gaps, index, escape="\\"):
     return "".join(parts).strip(_STRIP), index
 
 
+def _faithful(token, escape):
+    """Whether the raw pass reads the word `token` as the shell does: no
+    escape, and no quote or one pair of the same quote around a body that
+    holds none. `""` (an empty word, dropped), `/w/r34"` (half of a quoted
+    space) and `--git-"dir"=x` are not."""
+    body = token.strip("(){}")
+    if escape in body:
+        return False
+    if not any(quote in body for quote in _QUOTES):
+        return True
+    return (len(body) > 2 and body[0] == body[-1] and body[0] in _QUOTES
+            and not any(quote in body[1:-1] for quote in _QUOTES))
+
+
 def _lift(piece, escape="\\"):
-    """One raw segment: {words, targets, dangling}, or None when empty.
+    """One raw segment: {words, targets, dangling, quoted}, or None when
+    empty.
 
     A token that is only brackets is dropped. A token that is only quotes is
     an empty word: dropped as a word, kept as an operator's target. The
-    words stop at a comment (`# -help` is not an argument)."""
+    words stop at a comment (`# -help` is not an argument). `quoted` holds
+    the index of each word the raw pass may have misread (`_faithful`); a
+    dropped empty word is recorded at the index of the word after it."""
     tokens, gaps = _tokens(piece)
-    out, targets, dangling = [], [], []
+    out, targets, dangling, quoted = [], [], [], []
     index = 0
     while index < len(tokens):
         token = tokens[index]
@@ -422,6 +446,10 @@ def _lift(piece, escape="\\"):
                 break
             if token.strip(_STRIP):
                 out.append(token.strip(_STRIP))
+                if not _faithful(token, escape):
+                    quoted.append(len(out) - 1)
+            elif not _bare(token):
+                quoted.append(len(out))
             index += 1
             continue
         operator = token[2:].translate(_SHOW)
@@ -435,7 +463,7 @@ def _lift(piece, escape="\\"):
             targets.append((operator, target))
     if not (out or targets or dangling):
         return None
-    return {"words": out, "targets": targets, "dangling": dangling}
+    return {"words": out, "targets": targets, "dangling": dangling, "quoted": quoted}
 
 
 # F2: the characters a command may hold before a `#` for that `#` to end its
@@ -475,6 +503,12 @@ def _drop_comments(text):
 def raw_segments(text, shell="bash"):
     """The raw pass's segments of `text`, redirections lifted: a list of
     {words, targets: [(operator, target)], dangling: [operator]}."""
+    return [{key: segment[key] for key in ("words", "targets", "dangling")}
+            for segment in _raw_segments(text, shell)]
+
+
+def _raw_segments(text, shell):
+    """`raw_segments`, each segment also holding `quoted` (`_lift`)."""
     segments = []
     text = _drop_comments(text)
     for piece in _SEPARATORS_RE.split(_protect(text, shell)):
@@ -748,6 +782,7 @@ class _StateWords:  # pylint: disable=too-few-public-methods
         self.words = words
         self.ctx = ctx if ctx is not None else NO_CONTEXT
         self.prefix_end = _prefix_ends(words)
+        self.git_memo = {}  # (git head, assigned) -> reading (`_git`)
         # the first index at or after `i` assigning GIT_DIR, GIT_WORK_TREE
         # or GIT_NAMESPACE (C5), so a start reads its assignments at once.
         self.repo_assign = [count] * (count + 1)
@@ -897,8 +932,11 @@ def _git_state(info, head):
 # --- branch and worktree deletes (R-34c) -----------------------------------------------------
 
 # C1: the caller's context, read once in `judge`. None is "not given" (an
-# unknown), never "empty"; an empty own list is a known empty list.
-_Context = collections.namedtuple("_Context", ("cwd", "own_branches", "own_worktrees"))
+# unknown), never "empty"; an empty own list is a known empty list. `quoted`
+# is not the caller's: the raw pass sets it per segment to the sorted
+# indexes of the words it may have misread (`_lift`).
+_Context = collections.namedtuple("_Context", ("cwd", "own_branches", "own_worktrees", "quoted"),
+                                  defaults=((),))
 NO_CONTEXT = _Context(None, None, None)
 # C6: every path function is called through this one attribute, so the test
 # can run each path row under `ntpath` and under `posixpath`.
@@ -927,9 +965,6 @@ _BRANCH_LONG_FLAGS = ("--delete", "--create-reflog", "--force", "--move", "--cop
                       "--edit-description", "--list", "--show-current", "--remotes", "--all",
                       "--ignore-case", "--omit-empty", "--column", "--recurse-submodules",
                       "--no-")
-# Quotes the raw pass leaves inside a word (`re"move"`, `--del"ete"`): the
-# shell reads such a word differently from its spelling.
-_QUOTE_MARKS = ('"', "'")
 
 
 def _own_list(value):
@@ -976,9 +1011,17 @@ def _short(word, stop):
     return word[:1 + word[1:].index(stop)]
 
 
+def _quoted_in(quoted, low, high):
+    """Whether a word the raw pass may have misread stands at an index in
+    [`low`, `high`) (`quoted` sorted, `_Context.quoted`)."""
+    at = bisect.bisect_left(quoted, low)
+    return at < len(quoted) and quoted[at] < high
+
+
 def _repo_unseen(globals_, dirs, assigned):
     """C5: whether crew cannot tell which repository git acts on;
-    `assigned` is whether the segment's leading words set a `_REPO_VARS`."""
+    `assigned` is whether the segment's leading words set a `_REPO_VARS`,
+    or a global the raw pass may have misread stands (`--git-"dir"=x`)."""
     if dirs is crew_gitallow.UNSEEN or assigned:
         return True
     if any(word.split("=", 1)[0] == "--namespace" for word in globals_):
@@ -1012,17 +1055,6 @@ def _positionals(rest):
     return out
 
 
-def _options(rest):
-    """The words of `rest` before its first `--` that start with `-`."""
-    out = []
-    for word in rest:
-        if word == "--":
-            break
-        if word.startswith("-"):
-            out.append(word)
-    return out
-
-
 def _git_takes_value(word, cut, letter, value_opts, long_flags):
     """Whether option `word` (`cut`: its bundle read up to the value-taking
     short `letter`) takes the next word: `-<letter>` last in its bundle
@@ -1044,39 +1076,47 @@ def _push_takes_value(word, cut):
     return _git_takes_value(word, cut, "o", _PUSH_VALUE_OPTS, _PUSH_LONG_FLAGS)
 
 
-def _branch_remotes(rest):
-    """git branch: whether `-r`/`--remotes` stands before `--` as an option,
-    not as the value of the option before it (`--sort -r`)."""
+def _branch_words(rest):
+    """git branch, read in one pass: (cut, operands, remotes). A
+    value-taking option takes the next word whatever it is, so the value is
+    never an operand, a `--` separator or `-r` (`--sort -- -D x` deletes
+    `x`; `-D --sort refname x` deletes only `x`; `--sort -r` is no
+    `--remotes`). `cut` is every option word, bundles read up to `u`, an
+    option-shaped value too: a delete option read there can only
+    over-report. `operands` are indexes in `rest`."""
     # pylint: disable=protected-access
     hit = crew_gitallow._option_hit
-    taken = False
-    for word in rest:
-        if word == "--":
-            break
-        if taken or not word.startswith("-"):
-            taken = False
-            continue
-        cut = _short(word, "u")
-        if hit(cut, "-r") or hit(cut, "--remotes"):
-            return True
-        taken = _git_takes_value(word, cut, "u", _BRANCH_VALUE_OPTS, _BRANCH_LONG_FLAGS)
-    return False
+    cut, operands, remotes, dashdash, index = [], [], False, False, 0
+    while index < len(rest):
+        word = rest[index]
+        if dashdash or not word.startswith("-"):
+            operands.append(index)
+        elif word == "--":
+            dashdash = True
+        else:
+            short = _short(word, "u")
+            cut.append(short)
+            remotes = remotes or hit(short, "-r") or hit(short, "--remotes")
+            taken = _git_takes_value(word, short, "u", _BRANCH_VALUE_OPTS, _BRANCH_LONG_FLAGS)
+            if taken and index + 1 < len(rest):
+                index += 1  # the value
+                if rest[index].startswith("-"):
+                    cut.append(_short(rest[index], "u"))
+        index += 1
+    return cut, operands, remotes
 
 
 def _branch_targets(rest):
     """git branch: the delete targets as (index, name), or None when this is
-    not a branch delete (no delete option, or `-r`/`--remotes`). A delete
-    option is read in every option-shaped word, an option's value too, and a
-    value is still read as a target: both can only over-report."""
+    not a branch delete (no delete option, or `-r`/`--remotes`)."""
     # pylint: disable=protected-access
     hit = crew_gitallow._option_hit
-    options = _options(rest)
-    cut = [_short(word, "u") for word in options]
+    cut, operands, remotes = _branch_words(rest)
     if not any(hit(word, "-d") or hit(word, "-D") or hit(word, "--delete") for word in cut):
         return None
-    if _branch_remotes(rest):
+    if remotes:
         return None
-    return [(index, rest[index]) for index in _positionals(rest)]
+    return [(index, rest[index]) for index in operands]
 
 
 def _push_targets(rest):
@@ -1211,14 +1251,15 @@ def _git_delete(info, start, head):
         return _CLEAR  # nothing after git's globals (`git --version`)
     sub = crew_gitallow.subcommand(args)
     sub_at = head + 1 + split
+    ctx = info.ctx
     if sub is crew_gitallow.UNSEEN:
         return (COULD_NOT_TELL, "git-sub-unseen", sub_at)
     if sub not in DELETE_SUBS:
         return _CLEAR
-    ctx = info.ctx
     globals_ = args[:split]
     dirs = crew_gitallow.target_dirs(globals_)
-    repo_unseen = _repo_unseen(globals_, dirs, info.repo_assign[start] < head)
+    repo_unseen = _repo_unseen(globals_, dirs, info.repo_assign[start] < head
+                               or _quoted_in(ctx.quoted, head + 1, sub_at))
     eff = None if repo_unseen else _effective(ctx.cwd, dirs)
     where = sub_at + 1
     rest = info.words[where:where + GIT_WINDOW]
@@ -1249,26 +1290,29 @@ def _git_delete(info, start, head):
             reading = _CLEAR
     if reading[0] != HIT and len(info.words) > where + GIT_WINDOW:
         return (COULD_NOT_TELL, ("git-window-exceeded", DELETE_SUBS[sub]), sub_at)
-    if reading[0] != HIT and _quoted_option(rest, sub == "worktree"):
+    # A word after the subcommand that the raw pass may have misread (`_lift`:
+    # `--del"ete"`, `re"move"`, a dropped `""`, half of a quoted space)
+    # cannot clear: its meaning cannot be read from its spelling.
+    if reading[0] != HIT and _quoted_in(ctx.quoted, where, where + GIT_WINDOW + 1):
         rule = "worktree-target-unseen" if sub == "worktree" else "branch-target-unseen"
         return (COULD_NOT_TELL, rule, where)
     return reading
 
 
-def _quoted_option(rest, worktree):
-    """Whether an option word of `rest`, or the worktree subcommand, still
-    holds a quote (the raw pass keeps one inside a word: `--del"ete"`,
-    `re"move"`), so its meaning cannot be read from its spelling."""
-    words = [word for word in rest if word.startswith("-")] + rest[:1 if worktree else 0]
-    return any(mark in word for word in words for mark in _QUOTE_MARKS)
-
-
 def _git(info, start, head):
     """C3: the delete reading first, then the R-34b state reading, the first
     worst kept. A subcommand crew cannot read is `git-sub-unseen` with no
-    operation (C13), even beside a state word."""
-    deleted, stated = _git_delete(info, start, head), _git_state(info, head)
-    return _first_worst([deleted, stated])
+    operation (C13), even beside a state word.
+
+    Kept per git head (C14): many starts can strip their prefixes to the same
+    head (`exec exec ... git -c a=b ... branch`), and reading its globals at
+    each would be quadratic. A start changes the reading only through whether
+    its own assignments set a `_REPO_VARS`, so that is part of the key."""
+    key = (head, info.repo_assign[start] < head)
+    if key not in info.git_memo:
+        deleted, stated = _git_delete(info, start, head), _git_state(info, head)
+        info.git_memo[key] = _first_worst([deleted, stated])
+    return info.git_memo[key]
 
 
 def _state_head(info, start):
@@ -1354,9 +1398,10 @@ def _raw_pass(text, shell, ctx=NO_CONTEXT):
     makes the segment could-not-tell unless that reading is a hit, which
     wins (A7)."""
     out = []
-    for number, segment in enumerate(raw_segments(text, shell)):
+    for number, segment in enumerate(_raw_segments(text, shell)):
         where = {"pass": "raw", "command": number}
-        readings = [_judge_words(segment["words"], 0, ctx)]
+        quoted = ctx._replace(quoted=tuple(segment["quoted"]))
+        readings = [_judge_words(segment["words"], 0, quoted)]
         # A lifted target is part of the segment too (B3): in
         # `cat < terraform.tfstate > $OUT` the state word is the input's.
         held = any(_state_kind(word) for word in segment["words"]) or any(

@@ -612,6 +612,10 @@ GIT_LONG_COMMANDS = (
     (lambda n: "terragrunt exec -- " + "exec " * n + "git branch -D a", "hit"),
     (lambda n: "git branch -D " + "worktree-R-34 " * n, "could-not-tell"),
     (lambda n: "git worktree remove " + "-f " * n + "/w/r35", "could-not-tell"),
+    # fix round 2: every `exec` start strips its prefixes down to one git head
+    # whose globals are long, so that head is read once, not once per start.
+    (lambda n: "terragrunt exec -- " + "exec " * n + "git " + "-c a.b=c " * n
+     + "branch -D feature-x", "hit"),
 )
 
 
@@ -731,6 +735,8 @@ GIT_BLOCK = (
     ("bash", "exec git branch -D feature-x", BR, DEL, "OWN"),
     ("bash", "git branch -D feature-x > out.txt", BR, DEL, "OWN"),
     ("bash", "terragrunt exec -- git branch -D feature-x", BR, DEL, "OWN"),
+    # a branch option's value is the next word whatever it is (fix round 2).
+    ("bash", "git branch --sort -- -D feature-x", BR, DEL, "OWN"),
     ("powershell", "git.exe branch -D feature-x", BR, DEL, "OWN"),
     ("bash", "git worktree remove ../r35", WT, WDEL, "OWN"),
     ("bash", "git worktree remove --force /w/r35", WT, WDEL, "OWN"),
@@ -770,6 +776,18 @@ GIT_CNT = (
     ("bash", "git --namespace n branch -D feature-x", BR, "git-repo-unseen", "OWN"),
     ("bash", "GIT_DIR=/o/.git git branch -D worktree-R-34", BR, "git-repo-unseen", "OWN"),
     ("bash", "env GIT_WORK_TREE=/o git worktree remove .", WT, "git-repo-unseen", "OWN"),
+    ("bash", "GIT_WORK_TREE=/o git branch -D worktree-R-34", BR, "git-repo-unseen", "OWN"),
+    ("bash", "GIT_NAMESPACE=n git branch -D worktree-R-34", BR, "git-repo-unseen", "OWN"),
+    # a global the raw pass may have misread (fix round 2).
+    ("bash", 'git --git-"dir"=/o/.git branch -D worktree-R-34 > out.txt', BR, "git-repo-unseen",
+     "OWN"),
+    # a word after the subcommand the raw pass may have misread (fix round 2).
+    ("bash", 'git push -o "" origin :feature-x > out.txt', BR, "branch-target-unseen", "OWN"),
+    ("bash", 'git worktree remove /w/r34" backup" > out.txt', WT, "worktree-target-unseen",
+     "OWN"),
+    ("bash", 'git worktree remove "/w/r34 backup" > out.txt', WT, "worktree-target-unseen",
+     "OWN"),
+    ("bash", 'git wo"rktree" remove /w/r35 > out.txt', None, "git-sub-unseen", "OWN"),
     ("bash", 'git -C "$D" branch -D worktree-R-34', BR, "git-repo-unseen", "OWN"),
     ("bash", "git -C %D% branch -D feature-x", BR, "git-repo-unseen", "OWN"),
     # C5 beats the tag rule, the --prune row and an unreadable ref (review round 1).
@@ -814,6 +832,10 @@ GIT_ALLOW = (
     ("bash", "git push --receiv git-receive-pack origin --delete feat/r-34-x", "OWN"),
     ("bash", "git push --push-opt ci.skip origin --delete feat/r-34-x", "OWN"),
     ("bash", "git branch -uorigin/dev", "OWN"),
+    # an option's value is not an operand (fix round 2).
+    ("bash", "git branch -D --sort refname worktree-R-34", "OWN"),
+    # a quote the raw pass reads as the shell does is no reason to doubt.
+    ("bash", 'git "branch" -D "worktree-R-34" > out.txt', "OWN"),
     ("bash", "git branch feature-y", "OWN"),
     ("bash", "git branch -m old new", "OWN"),
     ("bash", "git branch --list", "OWN"),
@@ -944,7 +966,19 @@ def test_every_terraform_could_not_tell_row_stays_with_context(command, rule):
     ({"cwd": "/w", "own_branches": [], "own_worktrees": ["/w"]}, ("/w", (), ("/w",))),
 ])
 def test_the_context_is_read_once_and_junk_is_absent(given, expected):
-    assert tuple(crew_oneway._read_context(given)) == expected
+    # the fourth field, `quoted`, is the raw pass's, never the caller's.
+    assert tuple(crew_oneway._read_context(given)) == expected + ((),)
+
+
+@ON_BOTH
+def test_an_escaped_space_in_a_raw_worktree_path_never_clears(paths):
+    """Fix round 2: bash reads `/w/r34\\ backup` as one path. The raw pass
+    reads `/w/r34\\`, which ntpath folds into the own worktree; a word
+    holding the escape cannot clear (posixpath keeps the backslash: a hit)."""
+    result = run(crew_oneway, "git worktree remove /w/r34\\ backup > out.txt",
+                 ctx=ctx_of("OWN", paths))
+    assert result["verdict"] != "clear", result
+    assert result["operations"] == [WT], result
 
 
 @PATH_MODULES
@@ -1765,6 +1799,14 @@ def case_long_git_delete_chain_is_linear(mod):
     assert_linear(mod, make, own())
 
 
+def case_long_git_shared_head_is_linear(mod):
+    def make(n):
+        return ("terragrunt exec -- " + "exec " * n + "git " + "-c a.b=c " * n
+                + "branch -D feature-x")
+    assert_hit(mod, make(GROWTH_BIG), DEL, op=BR, ctx=own())
+    assert_linear(mod, make, own())
+
+
 def case_block_fd_copy_glued_to_a_word(mod):
     assert_hit(mod, "terraform state >&2list rm x.y", "tf-state-write")
 
@@ -2183,6 +2225,50 @@ def case_cnt_glob_dash_c(mod):
                ctx=ctx)
 
 
+# R-34c fix round 2.
+def case_cnt_push_dropped_empty_value(mod):
+    assert_cnt(mod, 'git push -o "" origin :feature-x > out.txt', "branch-target-unseen",
+               op=BR, ctx=own())
+
+
+def case_cnt_worktree_split_quoted_path(mod):
+    assert_cnt(mod, 'git worktree remove /w/r34" backup" > out.txt', "worktree-target-unseen",
+               op=WT, ctx=own())
+
+
+def case_cnt_quoted_global(mod):
+    assert_cnt(mod, 'git --git-"dir"=/o/.git branch -D worktree-R-34 > out.txt',
+               "git-repo-unseen", op=BR, ctx=own())
+
+
+def case_cnt_quoted_subcommand(mod):
+    assert_cnt(mod, 'git wo"rktree" remove /w/r35 > out.txt', "git-sub-unseen", op=None,
+               ctx=own())
+
+
+def case_block_branch_sort_dashdash_value(mod):
+    assert_hit(mod, "git branch --sort -- -D feature-x", DEL, op=BR, ctx=own())
+
+
+def case_allow_branch_value_not_operand(mod):
+    assert_clear(mod, "git branch -D --sort refname worktree-R-34", ctx=own())
+
+
+def case_cnt_assign_git_dir(mod):
+    assert_cnt(mod, "GIT_DIR=/o/.git git branch -D worktree-R-34", "git-repo-unseen", op=BR,
+               ctx=own())
+
+
+def case_cnt_assign_git_work_tree(mod):
+    assert_cnt(mod, "GIT_WORK_TREE=/o git branch -D worktree-R-34", "git-repo-unseen", op=BR,
+               ctx=own())
+
+
+def case_cnt_assign_git_namespace(mod):
+    assert_cnt(mod, "GIT_NAMESPACE=n git branch -D worktree-R-34", "git-repo-unseen", op=BR,
+               ctx=own())
+
+
 MUTATIONS = (
     ("1 rm added to the state read set",
      'STATE_READ = frozenset(("list", "show", "pull", "identities"))',
@@ -2478,7 +2564,7 @@ MUTATIONS = (
      "    for offset, name in named:\n", "    for offset, name in named[:1]:\n",
      ("case_block_own_and_other",)),
     ("14 -r deletes read as branch deletes",
-     "    if _branch_remotes(rest):\n        return None\n", "", ("case_allow_remote_delete",)),
+     "    if remotes:\n        return None\n", "", ("case_allow_remote_delete",)),
     ("15 exact --delete match only",
      '    if not any(hit(word, "-d") or hit(word, "-D") or hit(word, "--delete") for word in cut):\n',
      '    if not any(hit(word, "-d") or hit(word, "-D") or word == "--delete" for word in cut):\n',
@@ -2545,16 +2631,48 @@ MUTATIONS = (
     ("C14 the git word window removed (quadratic)",
      "    rest = info.words[where:where + GIT_WINDOW]\n", "    rest = info.words[where:]\n",
      ("case_long_git_delete_chain_is_linear",)),
-    ("C-sort a branch option's value read as -r",
-     '        taken = _git_takes_value(word, cut, "u", _BRANCH_VALUE_OPTS, _BRANCH_LONG_FLAGS)\n',
-     "        taken = False\n", ("case_block_branch_sort_value",)),
+    # Re-anchored by fix round 2: one scanner reads the options, operands and -r.
+    ("C-sort a branch option's value read as -r, a separator or an operand",
+     '            taken = _git_takes_value(word, short, "u", _BRANCH_VALUE_OPTS, _BRANCH_LONG_FLAGS)\n',
+     "            taken = False\n",
+     ("case_block_branch_sort_value", "case_block_branch_sort_dashdash_value",
+      "case_allow_branch_value_not_operand")),
     ("C-refs a git branch operand read as a ref",
      "        if not refs:\n            named.append((where + index, target))\n"
      "            continue\n", "",
      ("case_block_branch_refs_tags_operand", "case_block_branch_refs_heads_operand")),
-    ("C-quote an option left holding a quote read by its spelling",
-     "    if reading[0] != HIT and _quoted_option(rest, sub == \"worktree\"):\n",
-     "    if False:\n", ("case_cnt_worktree_quoted_sub", "case_cnt_branch_quoted_option")),
+    # Re-anchored by fix round 2: `_quoted_option` folded into the raw pass's
+    # misread words, which also catch a dropped `""` and a split quoted path.
+    ("C-quote a word after the subcommand the raw pass may have misread trusted",
+     "    if reading[0] != HIT and _quoted_in(ctx.quoted, where, where + GIT_WINDOW + 1):\n",
+     "    if False:\n",
+     ("case_cnt_worktree_quoted_sub", "case_cnt_branch_quoted_option",
+      "case_cnt_push_dropped_empty_value", "case_cnt_worktree_split_quoted_path")),
+    # R-34c fix round 2.
+    ("C-raw-global a global the raw pass may have misread trusted",
+     "    repo_unseen = _repo_unseen(globals_, dirs, info.repo_assign[start] < head\n"
+     "                               or _quoted_in(ctx.quoted, head + 1, sub_at))\n",
+     "    repo_unseen = _repo_unseen(globals_, dirs, info.repo_assign[start] < head)\n",
+     ("case_cnt_quoted_global",)),
+    ("C-faithful every raw word read as the shell reads it",
+     "    body = token.strip(\"(){}\")\n", "    return True\n",
+     ("case_cnt_worktree_split_quoted_path", "case_cnt_quoted_global",
+      "case_cnt_branch_quoted_option")),
+    ("C-empty-word a dropped quoted empty word not recorded",
+     "            elif not _bare(token):\n                quoted.append(len(out))\n", "",
+     ("case_cnt_push_dropped_empty_value",)),
+    ("C5-dir GIT_DIR dropped from the repository variables",
+     '_REPO_VARS = frozenset(("GIT_DIR", "GIT_WORK_TREE", "GIT_NAMESPACE"))',
+     '_REPO_VARS = frozenset(("GIT_WORK_TREE", "GIT_NAMESPACE"))', ("case_cnt_assign_git_dir",)),
+    ("C5-wt GIT_WORK_TREE dropped from the repository variables",
+     '_REPO_VARS = frozenset(("GIT_DIR", "GIT_WORK_TREE", "GIT_NAMESPACE"))',
+     '_REPO_VARS = frozenset(("GIT_DIR", "GIT_NAMESPACE"))', ("case_cnt_assign_git_work_tree",)),
+    ("C5-ns GIT_NAMESPACE dropped from the repository variables",
+     '_REPO_VARS = frozenset(("GIT_DIR", "GIT_WORK_TREE", "GIT_NAMESPACE"))',
+     '_REPO_VARS = frozenset(("GIT_DIR", "GIT_WORK_TREE"))', ("case_cnt_assign_git_namespace",)),
+    ("C14b a shared git head read again at every start (quadratic)",
+     "    if key not in info.git_memo:\n", "    if True:\n",
+     ("case_long_git_shared_head_is_linear",)),
 )
 
 
