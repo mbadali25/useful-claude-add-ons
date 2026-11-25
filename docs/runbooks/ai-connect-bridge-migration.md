@@ -62,13 +62,42 @@ or re-signing-in will not change which Claude account a session runs under.
 | # | Blocker | Who | Why it blocks |
 |---|---|---|---|
 | B1 | ~~Prove `100.117.116.57 → 100.87.39.3:9999` is allowed~~ **RESOLVED [P]** | dadeush-ai netmap | Packet-filter rule permits Srcs `100.117.116.57/32` → Dsts `100.87.39.3/32`, ports 0-65535, IPProto 6,17,1,58. Reverse path open. Re-confirm with step 7's `Test-NetConnection`. |
-| B2 | Tailnet policy may key the bridge rule on `tag:bridge`; `dadeush-ai` holds `tag:ai-peer` | **Owner only**, Tailscale admin console | An agent cannot and must not edit the policy file. Retag or widen before cutover. |
+| B2 | ~~Tailnet policy may key the bridge rule on `tag:bridge`; `dadeush-ai` holds `tag:ai-peer`~~ **RESOLVED [V], no retag needed** | Tailscale API, read-only | The live policy already permits `tag:ai-peer` on every port. See "B2 evidence" below. No policy edit, no retag, no admin-console step. |
 | B3 | TLS cert `tls\bridge-cert.pem` is bound to `100.117.116.57` | Owner decision | Peers using `wss://…:10000` (srl-anew documented) break until a new cert is issued. |
 | B4 | **Version gap to assess:** dadeush-ai runs ai-connect **0.2.5** **[P]**, the bridge runs **0.2.17** **[V]** — 12 versions apart, significance unchecked; **not** the cause of `state unknown` (see section 5) | Whoever owns the plugin changelog | Installed, but whether 0.2.5 can serve or read the migrated `config.yaml` / `messages.db` is unknown. Nothing listens on 9999 there and no scheduled task or service exists **[P]**. |
 | B5 | **CONFIRMED blocker [P]:** all three firewall profiles are enabled on dadeush-ai and **no** inbound rule matches `9999\|ai-connect` | dadeush-ai, needs admin | The tailnet permits 9999; Windows would drop it. Add an inbound allow rule on dadeush-ai **before cutover step 7**. |
 | B6 | **New [P]:** dadeush-ai's `config.yaml` already has `server.host: 127.0.0.1`, port 9999 | dadeush-ai | A bridge started there is **loopback-only and reachable by nothing** until `server.host` is changed to `100.87.39.3`. Explicit edit in section 4b. |
 
-**Do not begin section 4 until B2 is resolved and B4's version gap is assessed (B1 is closed). B5 and B6 are fixed inside section 4 (steps 4 and 7).**
+### B2 evidence
+
+**[V]** Read-only `GET` of the live tailnet policy through the Tailscale API (HTTP 200,
+`GET /api/v2/tailnet/mbadali25.github/acl` and `/devices`; the API key came from AWS Secrets Manager
+`prod/vpn/tailscale` and is not recorded here). The policy has exactly one rule, in `grants`, and no
+`acls` block:
+
+```
+{
+  "src": ["tag:bridge", "tag:ai-peer", "autogroup:admin"],
+  "dst": ["tag:bridge", "tag:ai-peer", "autogroup:admin"],
+  "ip":  ["*"],
+}
+```
+
+Why this resolves B2:
+- The grant is symmetric and `ip: ["*"]` covers every port, including 9999 and 10000.
+- `tag:ai-peer` is in `dst`, so traffic into `dadeush-ai` on 9999 is already permitted from `tag:bridge`, `tag:ai-peer` and `autogroup:admin`.
+- The policy's own `tests` block asserts `tag:ai-peer` -> `tag:ai-peer:9999` and `tag:ai-peer` -> `tag:bridge:9999`.
+- `tagOwners`: `"tag:ai-peer": ["autogroup:admin"]` and `"tag:bridge": ["autogroup:admin"]`.
+- Device tags from `/devices`: `dadeush-ai` = `['tag:ai-peer']`, authorized, does **not** carry `tag:bridge`; `dadeush-desktop` = `['tag:bridge']`, authorized.
+
+**No ACL edit and no retag is required for the cutover.** Retagging `dadeush-ai` to `tag:bridge` would
+also work and is purely a naming choice. The earlier owner-only admin-console prerequisite is
+**checked and cleared**: the policy was read through the API and needs no change.
+
+**Not tested:** live connectivity to `dadeush-ai:9999`, because nothing listens there yet. The ACL
+permits it, which is not the same as proven; cutover step 7's `Test-NetConnection` is the proof.
+
+**Do not begin section 4 until B4's version gap is assessed. B1 and B2 are resolved. The remaining blockers are B3 (owner decision on the TLS cert), B4 (version gap), B5 (inbound firewall rule for 9999 on dadeush-ai) and B6 (`server.host` is `127.0.0.1` on dadeush-ai). B5 and B6 are fixed inside section 4 (steps 4 and 7).**
 
 ---
 
@@ -143,7 +172,7 @@ Peers do **not** rediscover a moved bridge.
 4. Place the migrated files on dadeush-ai; set `server.host: 100.87.39.3` (replacing the existing `127.0.0.1`, B6) and `client.bridge_url: ws://100.87.39.3:9999`.
 5. Issue a new TLS cert for `100.87.39.3` if port 10000 is to keep serving (B3).
 6. Create the bridge scheduled task on dadeush-ai **with a boot trigger**, not logon-only.
-7. Add the inbound firewall allow rule for TCP 9999 on dadeush-ai (B5), then start it. Verify from dadeush-desktop: `Test-NetConnection 100.87.39.3 -Port 9999` succeeds. **If this fails, stop — B1/B5 was wrong. Do not touch the peers.**
+7. Add the inbound firewall allow rule for TCP 9999 on dadeush-ai (B5), then start it. Verify from dadeush-desktop: `Test-NetConnection 100.87.39.3 -Port 9999` succeeds. This is the first live test of the path; the ACL permits it (B2) but that was never exercised. **If this fails, stop — B1/B5 was wrong. Do not touch the peers.**
 8. Stop (do not yet delete) the bridge task on dadeush-desktop. Both bridges must never serve at once.
 9. Repoint peers one at a time, least critical first, confirming each appears in `peer_list` on the new bridge before moving to the next. Keep this session's own machine last so you retain a working vantage point.
 10. Only after all peers report on the new bridge: re-enable a watchdog **on dadeush-ai** with its `$HostName` updated, and remove/disable the old one permanently.
@@ -165,7 +194,8 @@ individually — there is no central undo. This asymmetry is the argument for do
 
 ## 6. Open unknowns
 
-- B2, B3, B4 (version gap), B5, B6 above. B1 is resolved **[P]**.
+- B3, B4 (version gap), B5, B6 above. B1 is resolved **[P]**; B2 is resolved **[V]** (no retag needed).
+- Live connectivity to `dadeush-ai:9999` was **not** tested: nothing listens there yet. The ACL permits it; that is not proof.
 - Which machine holds the 3 off-account sessions (section 1): unknown.
 - Which peers are *currently live* on the bridge versus merely enrolled: 10 names in `auth.peers`, 6 machines online, 8 sources in the ACL rule. The three sets do not match and nobody has reconciled them.
 - The bridge DB holds **43 distinct `to_peer` names** against 10 enrolled. The bare names `srl-ai`, `tss-ai`, `vault` and `crew-win-ai` each hold one unread message from 11-13 (legacy rows predating `dadeush-ai:s-*` registration). "Enrolled", "has traffic" and "online" are three different sets.
@@ -173,3 +203,10 @@ individually — there is no central undo. This asymmetry is the argument for do
 - `dadeush-legion` (offline 10h) and `dadeush-buntu` (offline 43d) are enrolled but absent. They will need repointing whenever they return, or they come back pointing at a dead bridge.
 - `mcp` port 9998 is configured but **nothing was listening** at inventory time.
 - `client.bridge_fingerprint` is unset and `config_loader.py:257` flags plain `ws://` as unencrypted. `ai-connect pin` would move peers to `wss://`. Out of scope for the move, worth deciding alongside B3.
+
+### Observation, outside this migration's scope (not a blocker)
+
+**[V]** The single grant (see B2 evidence) gives every tagged node full access to every other tagged
+node, on all ports and protocols. A compromise of any one peer reaches all of them. It is worth
+narrowing to the ports ai-connect actually uses (9999, 10000) at some point. Out of scope here; no
+change is proposed or needed for the cutover.
