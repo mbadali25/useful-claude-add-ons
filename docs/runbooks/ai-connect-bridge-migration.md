@@ -115,11 +115,53 @@ Stop the bridge without disabling this first and it comes back on the old host w
 leaving two bridges or a flapping one. **Disabling the watchdog is step 1 of the cutover, not a
 cleanup task.**
 
-Second hazard: the bridge scheduled task `\AI-Connect Bridge` uses a **LogonTrigger only — no boot
-trigger** **[V]** `schtasks /query /tn "AI-Connect Bridge" /xml`, running as
-`DADEUSH-DESKTOP\d3ade` with InteractiveToken. Replicated as-is on `dadeush-ai`, the bridge starts
-only when that user interactively logs in. On a headless box that is an availability regression; add
-a boot trigger or run it as a service there.
+### Second hazard: logon-only bridge trigger — FIXED on dadeush-desktop, 2026-11-25
+
+**What it was.** The bridge scheduled task `\AI-Connect Bridge` had a **LogonTrigger only, no boot
+trigger**, with principal LogonType `InteractiveToken`, so the bridge did **not** start until the
+user logged in interactively. Replicated as-is on a headless `dadeush-ai`, that is an availability
+regression.
+
+**What it is now.** **[V]** `schtasks /query /tn "AI-Connect Bridge" /xml`, re-read after the change:
+the principal's `LogonType` is **`S4U`**, and a **`BootTrigger` with `<Delay>PT1M</Delay>`** now sits
+beside the existing `LogonTrigger` (`DADEUSH-DESKTOP\d3ade`). The action, working directory,
+`MultipleInstancesPolicy IgnoreNew`, `ExecutionTimeLimit PT0S` and `RestartOnFailure`
+(`<Count>999</Count>`, `<Interval>PT1M</Interval>`) are unchanged.
+
+- **[V]** Pre-change task definition backed up to
+  `C:\Users\d3ade\.config\ai-connect\AI-Connect-Bridge-task-backup-20261125.xml` (1,404 B).
+  Rollback: `schtasks /create /tn "AI-Connect Bridge" /xml <that path> /f`.
+- **[V]** **S4U, not `SYSTEM`, was required.** The app resolves its config from `Path.home()` —
+  `config_loader.py:20` (`CONFIG_PATH = Path.home() / ".config" / "ai-connect" / "config.yaml"`),
+  and likewise `log_setup.py:9` and `root_policy.py:50`, in
+  `%LOCALAPPDATA%\ai-connect\app`. A `SYSTEM` principal resolves a different home and breaks the
+  app. Proven with a throwaway S4U probe task that reported `Path.home()` as `C:\Users\d3ade`.
+- **[I] Boot behaviour is UNPROVEN — no reboot has been performed.** What is verified is the task
+  *definition*: S4U principal plus a delayed BootTrigger. That the bridge actually comes up before
+  logon after a cold boot has not been observed.
+- **[V]** `\AI-Connect Watchdog` was deliberately **not** changed; its principal is still
+  `InteractiveToken` (`schtasks /query /tn "AI-Connect Watchdog" /xml`). Backup at
+  `C:\Users\d3ade\.config\ai-connect\AI-Connect-Watchdog-task-backup-20261125.xml` (1,454 B). The
+  owner chose to leave it, because the bridge task's own `RestartOnFailure` already covers the
+  pre-logon window.
+
+**Still open for the new host.** The fix was applied to `dadeush-desktop` only. The task created on
+`dadeush-ai` needs the same shape — S4U principal, delayed boot trigger, `RestartOnFailure` — or a
+service (section 4c step 6). Do not copy the old logon-only shape.
+
+### Third hazard: the bridge binds its address once, with no retry
+
+**[V]** `server/websocket_server.py:192-199` calls `websockets.serve` on `self.host` with **no
+retry**, and `server/main.py:108` awaits `server.start()` **unguarded**. If the Tailscale IP named by
+`server.host` is not yet assigned when the process starts, the bind raises `OSError` and the process
+dies — no backoff, no rebind, nothing in the call path that catches it.
+
+This is independent of which machine the bridge lives on, and it bites hardest at boot, when
+Tailscale may not have brought the interface up yet. At boot the **only** mitigation is the scheduled
+task's `RestartOnFailure` (999 attempts, 1-minute interval) — which is why the new BootTrigger
+carries a `PT1M` delay rather than firing immediately. A cutover to `dadeush-ai` inherits the same
+fragility: give that task the same delay and the same restart policy, and treat a bridge that is
+"configured but not listening" after a reboot as this failure first.
 
 ---
 
@@ -197,6 +239,8 @@ individually — there is no central undo. This asymmetry is the argument for do
 - B3, B4 (version gap), B5, B6 above. B1 is resolved **[P]**; B2 is resolved **[V]** (no retag needed).
 - Live connectivity to `dadeush-ai:9999` was **not** tested: nothing listens there yet. The ACL permits it; that is not proof.
 - Which machine holds the 3 off-account sessions (section 1): unknown.
+- Whether the bridge actually starts before logon on dadeush-desktop after the S4U + BootTrigger
+  change (section 3): **unproven**, no reboot has been performed.
 - Which peers are *currently live* on the bridge versus merely enrolled: 10 names in `auth.peers`, 6 machines online, 8 sources in the ACL rule. The three sets do not match and nobody has reconciled them.
 - The bridge DB holds **43 distinct `to_peer` names** against 10 enrolled. The bare names `srl-ai`, `tss-ai`, `vault` and `crew-win-ai` each hold one unread message from 11-13 (legacy rows predating `dadeush-ai:s-*` registration). "Enrolled", "has traffic" and "online" are three different sets.
 - The bridge **pushes** messages (`_route_message`, `websocket_server.py:644-708`) and replays unread rows on register (`_send_unread`), so no `peer_read` polling is needed. `delivered=1` means only that the websocket accepted the frame, not that a session read it.
