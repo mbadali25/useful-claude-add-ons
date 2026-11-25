@@ -3,8 +3,13 @@
 **Status: PLAN ONLY. Nothing has been executed. Nothing has been changed.**
 Written 2026-11-25. Author: useful-claude-add-ons session (`dadeush-desktop:s-useful-claude-add-ons-43`).
 
-Every line below is marked **[V]** verified in-session (with the command or path that proved it)
-or **[I]** inferred. Do not execute a step that depends on an **[I]** line until it is verified.
+Every line below is marked **[V]** verified in-session (with the command or path that proved it),
+**[P]** peer-reported, or **[I]** inferred. Do not execute a step that depends on an **[I]** or
+**[P]** line until it is verified.
+
+**[P] = peer-reported, not independently verified.** Every `dadeush-ai` fact marked **[P]** was
+reported by session `dadeush-ai:s-srl-ai`, which labelled each as verified on its own host with a
+command. None was reproduced from `dadeush-desktop` (see the blocked probe note in section 1).
 
 ---
 
@@ -23,16 +28,29 @@ or **[I]** inferred. Do not execute a step that depends on an **[I]** line until
 | `dadeush-ai` = `100.87.39.3`, tag `tag:ai-peer`, online, **same LAN** (`192.168.4.98`), 2ms direct, no DERP | **[V]** `tailscale ping --c 5` |
 | `dadeush-ai:9999` closed; its 22 and 445 open | **[V]** `Test-NetConnection` |
 | `dadeush-ai → here:9999` is permitted by ACL | **[V]** `tailscale debug netmap` packet filter (8 srcs → `100.117.116.57/32`, ports 0-65535) |
-| `here → dadeush-ai:9999` | **COULD NOT TELL** — that rule lives in dadeush-ai's own netmap |
+| `here → dadeush-ai:9999` is permitted by ACL | **[P]** `tailscale debug netmap` on dadeush-ai: a packet-filter rule with Srcs including `100.117.116.57/32`, Dsts `100.87.39.3/32` (+ `fd7a:115c:a1e0::7e48:2704/128`), ports 0-65535, IPProto 6,17,1,58 (TCP/UDP/ICMP/ICMPv6). The reverse path is open. |
+| ai-connect on dadeush-ai is **0.2.5** (bridge here: 0.2.17); nothing listening on 9999; no scheduled task or service for ai-connect/bridge | **[P]** reported by `dadeush-ai:s-srl-ai` |
+| Windows firewall on dadeush-ai: Domain, Private and Public profiles all `Enabled=True`; inbound enabled rules matching `9999\|ai-connect`: **none** | **[P]** reported by `dadeush-ai:s-srl-ai` |
+| dadeush-ai's `config.yaml` already has a `server:` section bound to `host: 127.0.0.1`, port 9999 | **[P]** reported by `dadeush-ai:s-srl-ai` |
+
+### Direct probe of dadeush-ai: attempted, blocked
+A read-only probe of dadeush-ai from dadeush-desktop was attempted and **blocked**. SMB
+`Test-Path '\\100.87.39.3\c$\Users'` returned `False`; SSH failed `Host key verification failed` with
+no `known_hosts` entry. No credential was guessed and `StrictHostKeyChecking` was not bypassed.
+That is why every dadeush-ai fact above is **[P]**, not **[V]**.
 
 ### The 3 "off-account" sessions
 The owner reported 3 sessions not on this account. **[V]** There are **no cross-account Tailscale
 peers** — every node is in tailnet `mbadali25.github`, the only human owner is `mbadali25@github`
 (`dadeush-buntun`), and all others are tagged devices, which have no human owner by design.
 **[I]** The split is therefore a *Claude account* split (memory names `badalim@anewbiz.net`), not a
-VPN one. `dadeush-ai` has exactly 3 sessions (`srl-ai`, `tss-ai`, `vault`) and they are the only
-peers reporting `state unknown` while every other peer reports busy/idle/waiting with a timestamp —
-consistent with them being those 3, but **not verified**. `peer_list` carries no account field.
+VPN one. `peer_list` carries no account field.
+
+**Correction:** an earlier draft placed these sessions on `dadeush-ai` because it has 3 sessions
+(`srl-ai`, `tss-ai`, `vault`) reporting `state unknown`. **[P]** `srl-ai` reports its Claude account
+as `mbadali25@gmail.com`, the **same** account. So dadeush-ai is **not** where the off-account
+sessions live; the 3-sessions / 3-state-unknown match was coincidence. **Which machine holds the
+off-account sessions is unknown.**
 
 **This means: there is nothing to migrate on the Tailscale side for the account split.** Retagging
 or re-signing-in will not change which Claude account a session runs under.
@@ -43,13 +61,14 @@ or re-signing-in will not change which Claude account a session runs under.
 
 | # | Blocker | Who | Why it blocks |
 |---|---|---|---|
-| B1 | Prove `100.117.116.57 → 100.87.39.3:9999` is allowed | dadeush-ai (`tailscale debug netmap`) — **asked, reply pending** | Every peer must reach the new bridge. Unproven = all 19 peers drop. |
+| B1 | ~~Prove `100.117.116.57 → 100.87.39.3:9999` is allowed~~ **RESOLVED [P]** | dadeush-ai netmap | Packet-filter rule permits Srcs `100.117.116.57/32` → Dsts `100.87.39.3/32`, ports 0-65535, IPProto 6,17,1,58. Reverse path open. Re-confirm with step 7's `Test-NetConnection`. |
 | B2 | Tailnet policy may key the bridge rule on `tag:bridge`; `dadeush-ai` holds `tag:ai-peer` | **Owner only**, Tailscale admin console | An agent cannot and must not edit the policy file. Retag or widen before cutover. |
 | B3 | TLS cert `tls\bridge-cert.pem` is bound to `100.117.116.57` | Owner decision | Peers using `wss://…:10000` (srl-anew documented) break until a new cert is issued. |
-| B4 | Is ai-connect even installed on dadeush-ai, and what version | dadeush-ai — **asked, reply pending** | A 0.1.x or absent install changes the whole procedure. |
-| B5 | Windows firewall inbound TCP 9999 on dadeush-ai | dadeush-ai — **asked, reply pending** | Tailnet ACL can allow it while the host firewall drops it. |
+| B4 | **Version gap to assess:** dadeush-ai runs ai-connect **0.2.5** **[P]**, the bridge runs **0.2.17** **[V]** — 12 versions apart, significance unchecked | Whoever owns the plugin changelog | Installed, but whether 0.2.5 can serve or read the migrated `config.yaml` / `messages.db` is unknown. Nothing listens on 9999 there and no scheduled task or service exists **[P]**. |
+| B5 | **CONFIRMED blocker [P]:** all three firewall profiles are enabled on dadeush-ai and **no** inbound rule matches `9999\|ai-connect` | dadeush-ai, needs admin | The tailnet permits 9999; Windows would drop it. Add an inbound allow rule on dadeush-ai **before cutover step 7**. |
+| B6 | **New [P]:** dadeush-ai's `config.yaml` already has `server.host: 127.0.0.1`, port 9999 | dadeush-ai | A bridge started there is **loopback-only and reachable by nothing** until `server.host` is changed to `100.87.39.3`. Explicit edit in section 4b. |
 
-**Do not begin section 4 until B1, B2 and B4 are resolved.**
+**Do not begin section 4 until B2 is resolved and B4's version gap is assessed (B1 is closed). B5 and B6 are fixed inside section 4 (steps 4 and 7).**
 
 ---
 
@@ -103,6 +122,10 @@ On **this** machine (3 live sites, **[V]** by tree scan excluding `venv` and `*.
 2. `config.yaml:29` — `client.bridge_url: ws://100.117.116.57:9999`
 3. `ai-connect-watchdog.ps1:16` — `$HostName = '100.117.116.57'`
 
+On the **new host, dadeush-ai** (**[P]** state; both edits are required):
+1. `config.yaml` `server.host`: change the existing `127.0.0.1` to `100.87.39.3` (B6). Left as is, the bridge binds loopback only and no peer can reach it.
+2. Add an inbound Windows firewall allow rule for TCP 9999 (and 10000 if TLS is kept) (B5).
+
 Backups (`config.yaml.bak-20261104-buntun`, `-20261105-tss`, `-20261106`, `-20261108-peer`) and
 `srl-anew-SETUP.md` lines 30/34/35/48/54/71 also contain the address but need no edit.
 
@@ -116,11 +139,11 @@ Peers do **not** rediscover a moved bridge.
 
 1. Disable `\AI-Connect Watchdog` on dadeush-desktop (section 3).
 2. Snapshot: copy `config.yaml`, `user.token`, `observer.token`, `messages.db` to a known-good backup path. This is the rollback set.
-3. Confirm ai-connect is installed on dadeush-ai at a matching version (B4); install/upgrade if not.
-4. Place the migrated files on dadeush-ai; set `server.host: 100.87.39.3`, `client.bridge_url: ws://100.87.39.3:9999`.
+3. Assess the 0.2.5 vs 0.2.17 gap on dadeush-ai (B4); upgrade to match the bridge if the gap matters.
+4. Place the migrated files on dadeush-ai; set `server.host: 100.87.39.3` (replacing the existing `127.0.0.1`, B6) and `client.bridge_url: ws://100.87.39.3:9999`.
 5. Issue a new TLS cert for `100.87.39.3` if port 10000 is to keep serving (B3).
 6. Create the bridge scheduled task on dadeush-ai **with a boot trigger**, not logon-only.
-7. Start it. Verify from dadeush-desktop: `Test-NetConnection 100.87.39.3 -Port 9999` succeeds. **If this fails, stop — B1/B5 was wrong. Do not touch the peers.**
+7. Add the inbound firewall allow rule for TCP 9999 on dadeush-ai (B5), then start it. Verify from dadeush-desktop: `Test-NetConnection 100.87.39.3 -Port 9999` succeeds. **If this fails, stop — B1/B5 was wrong. Do not touch the peers.**
 8. Stop (do not yet delete) the bridge task on dadeush-desktop. Both bridges must never serve at once.
 9. Repoint peers one at a time, least critical first, confirming each appears in `peer_list` on the new bridge before moving to the next. Keep this session's own machine last so you retain a working vantage point.
 10. Only after all peers report on the new bridge: re-enable a watchdog **on dadeush-ai** with its `$HostName` updated, and remove/disable the old one permanently.
@@ -138,12 +161,15 @@ individually — there is no central undo. This asymmetry is the argument for do
 - `peer_list` from a session on the new bridge returns **19 peers across 6 machines** (the pre-move baseline recorded in this file). Fewer = a peer was lost; name it before proceeding.
 - `Get-NetTCPConnection -State Listen` on dadeush-ai shows `100.87.39.3:9999` (and `:10000` if TLS was reissued).
 - Nothing listens on `100.117.116.57:9999` any more.
-- The 3 `dadeush-ai` sessions' `state unknown` is **a pre-existing condition, not caused by the move** — do not use it as a success signal either way. Its cause is still unknown (B4 query pending).
+- `state unknown` in `peer_list` is **cosmetic and pre-existing**; do not use it as a success signal either way. **[V]** from source on this machine: `client/tools.py:262-265` prints it when `peer.get("state")` is empty; `server/peer_registry.py:33` initialises `state` to `""`; it is only set when a client sends `set_state` (`websocket_server.py:521-526`, `_set_state` `:595-600`); `_peer_list` (`:798-808`) just reads it. The cause is the **absence of a state report**: those sessions have no `peer_set_state` hooks (`state_hooks.py`). It is not a heartbeat or an error path.
 
 ## 6. Open unknowns
 
-- B1, B2, B3, B4, B5 above.
+- B2, B3, B4 (version gap), B5, B6 above. B1 is resolved **[P]**.
+- Which machine holds the 3 off-account sessions (section 1): unknown.
 - Which peers are *currently live* on the bridge versus merely enrolled: 10 names in `auth.peers`, 6 machines online, 8 sources in the ACL rule. The three sets do not match and nobody has reconciled them.
+- The bridge DB holds **43 distinct `to_peer` names** against 10 enrolled. The bare names `srl-ai`, `tss-ai`, `vault` and `crew-win-ai` each hold one unread message from 11-13 (legacy rows predating `dadeush-ai:s-*` registration). "Enrolled", "has traffic" and "online" are three different sets.
+- The bridge **pushes** messages (`_route_message`, `websocket_server.py:644-708`) and replays unread rows on register (`_send_unread`), so no `peer_read` polling is needed. `delivered=1` means only that the websocket accepted the frame, not that a session read it.
 - `dadeush-legion` (offline 10h) and `dadeush-buntu` (offline 43d) are enrolled but absent. They will need repointing whenever they return, or they come back pointing at a dead bridge.
 - `mcp` port 9998 is configured but **nothing was listening** at inventory time.
 - `client.bridge_fingerprint` is unset and `config_loader.py:257` flags plain `ws://` as unencrypted. `ai-connect pin` would move peers to `wss://`. Out of scope for the move, worth deciding alongside B3.
