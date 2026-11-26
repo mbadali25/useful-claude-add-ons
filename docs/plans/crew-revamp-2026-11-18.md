@@ -17,7 +17,7 @@
 > | O5 | The admin accounts are inventoried by ticket (R-A9 and the tickets it depends on), not assumed. |
 > | O6 | Approval of a plan of record is attested by a presence key, plus the owner's forge review where a pipeline is the executor. |
 >
-> Plan revision: 3 (102 tickets, 14 phases). Cross-review: GPT 6.2 Astra, two rounds, logged in section 10 (revision 2, 30 findings) and section 11 (revision 3, 29 findings). Companion memory note: crew plugin vision, 2026-11-18. Approval page: https://claude.ai/artifact/FJN2Ub27v38iwaFT9FngG8.
+> Plan revision: 3 (102 tickets, 14 phases). Cross-review: GPT 6.2 Astra, two rounds, logged in section 10 (revision 2, 30 findings) and section 11 (revision 3, 29 findings). Companion memory note: crew plugin vision, 2026-11-18. Approval page: artifact FJN2Ub27v38iwaFT9FngG8, published under a previous Claude login and no longer reachable from the current account.
 >
 > The sentence below, "Nothing here starts until the owner approves it", was true when written. It is kept as written; the approval above lifts it. The ticket queue made from section 6 is `pending-tickets.md` and `docs/tickets/pending/`.
 
